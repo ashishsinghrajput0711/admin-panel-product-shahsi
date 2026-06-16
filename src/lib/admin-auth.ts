@@ -38,16 +38,24 @@ type RegisterPayload = {
 };
 
 function getApiRootUrl() {
-  const rawUrl = process.env.NEXT_PUBLIC_ADMIN_API_URL;
+  const rawUrl = process.env.NEXT_PUBLIC_ADMIN_API_URL || "/api/proxy";
 
-  if (!rawUrl) {
-    throw new Error("NEXT_PUBLIC_ADMIN_API_URL missing hai.");
-  }
-
-  const cleanUrl = rawUrl.replace(/\/$/, "");
+  let cleanUrl = rawUrl.trim().replace(/\/$/, "");
 
   if (cleanUrl.endsWith("/admin/catalog")) {
-    return cleanUrl.replace(/\/admin\/catalog$/, "");
+    cleanUrl = cleanUrl.replace(/\/admin\/catalog$/, "");
+  }
+
+  if (cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://")) {
+    return cleanUrl;
+  }
+
+  if (typeof window !== "undefined") {
+    const normalizedPath = cleanUrl.startsWith("/")
+      ? cleanUrl
+      : `/${cleanUrl}`;
+
+    return `${window.location.origin}${normalizedPath}`.replace(/\/$/, "");
   }
 
   return cleanUrl;
