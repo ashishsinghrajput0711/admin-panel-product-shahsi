@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL =
-  process.env.NEXT_PUBLIC_ADMIN_API_URL?.replace(/\/admin\/catalog\/?$/, "") ||
-  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.BACKEND_API_URL?.replace(/\/$/, "") ||
   "http://65.1.135.224:3001";
 
 type RouteContext = {
@@ -11,12 +10,28 @@ type RouteContext = {
   }>;
 };
 
+function buildTargetUrl(path: string[], search: string) {
+  const backendPath = path.join("/");
+
+  return `${BACKEND_URL}/${backendPath}${search}`;
+}
+
 async function proxyRequest(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
 
-  const backendPath = path.join("/");
-  const search = request.nextUrl.search;
-  const targetUrl = `${BACKEND_URL.replace(/\/$/, "")}/${backendPath}${search}`;
+  const targetUrl = buildTargetUrl(path, request.nextUrl.search);
+
+  if (targetUrl.includes("/api/proxy")) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Proxy configuration error: BACKEND_API_URL must point to backend server, not /api/proxy.",
+        targetUrl,
+      },
+      { status: 500 }
+    );
+  }
 
   const headers = new Headers();
 
