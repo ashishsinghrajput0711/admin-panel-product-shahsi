@@ -50,15 +50,20 @@ function getApiRootUrl() {
     return cleanUrl;
   }
 
-  if (typeof window !== "undefined") {
-    const normalizedPath = cleanUrl.startsWith("/")
-      ? cleanUrl
-      : `/${cleanUrl}`;
+  const normalizedPath = cleanUrl.startsWith("/") ? cleanUrl : `/${cleanUrl}`;
 
+  if (typeof window !== "undefined") {
     return `${window.location.origin}${normalizedPath}`.replace(/\/$/, "");
   }
 
-  return cleanUrl;
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}${normalizedPath}`.replace(
+      /\/$/,
+      ""
+    );
+  }
+
+  return `http://localhost:3000${normalizedPath}`.replace(/\/$/, "");
 }
 
 function findTokenDeep(value: unknown): string | null {
