@@ -1124,10 +1124,54 @@ function TaxonomySearchModal({
   onSelect: (taxonomy: TaxonomyCategory) => void;
   onClose: () => void;
 }) {
-  const [search, setSearch] = useState("dresses");
+  const [search, setSearch] = useState("");
   const [items, setItems] = useState<TaxonomyCategory[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [taxonomyError, setTaxonomyError] = useState<string | null>(null);
+
+  const [pendingTaxonomy, setPendingTaxonomy] =
+  useState<TaxonomyCategory | null>(null);
+
+  const hasMore = page < totalPages;
+
+  async function loadTaxonomies({
+    nextPage,
+    append,
+    query,
+  }: {
+    nextPage: number;
+    append: boolean;
+    query: string;
+  }) {
+    const normalizedSearch = query.replace(/\s+in\s+.+$/i, "").trim();
+
+    const result = await searchTaxonomyCategories({
+      apiRootUrl: getApiRootUrl(),
+      search: normalizedSearch,
+      page: nextPage,
+      limit: 20,
+      token: getToken(),
+    });
+
+    setItems((previous) => {
+      if (!append) return result.items;
+
+      const existingIds = new Set(previous.map((item) => item.taxonomyId));
+      const uniqueNextItems = result.items.filter(
+        (item) => !existingIds.has(item.taxonomyId)
+      );
+
+      return [...previous, ...uniqueNextItems];
+    });
+
+    setPage(result.page);
+    setTotal(result.total);
+    setTotalPages(result.totalPages);
+  }
 
   useEffect(() => {
     let ignore = false;
@@ -1137,9 +1181,11 @@ function TaxonomySearchModal({
         setIsLoading(true);
         setTaxonomyError(null);
 
+        const normalizedSearch = search.replace(/\s+in\s+.+$/i, "").trim();
+
         const result = await searchTaxonomyCategories({
           apiRootUrl: getApiRootUrl(),
-          search,
+          search: normalizedSearch,
           page: 1,
           limit: 20,
           token: getToken(),
@@ -1148,6 +1194,9 @@ function TaxonomySearchModal({
         if (ignore) return;
 
         setItems(result.items);
+        setPage(result.page);
+        setTotal(result.total);
+        setTotalPages(result.totalPages);
       } catch (error) {
         if (!ignore) {
           setTaxonomyError(
@@ -1168,6 +1217,29 @@ function TaxonomySearchModal({
       window.clearTimeout(timeout);
     };
   }, [search]);
+
+  async function handleLoadMore() {
+    if (isLoadingMore || !hasMore) return;
+
+    try {
+      setIsLoadingMore(true);
+      setTaxonomyError(null);
+
+      await loadTaxonomies({
+        nextPage: page + 1,
+        append: true,
+        query: search,
+      });
+    } catch (error) {
+      setTaxonomyError(
+        error instanceof Error
+          ? error.message
+          : "More taxonomy categories load failed."
+      );
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-4">
@@ -1204,6 +1276,20 @@ function TaxonomySearchModal({
               <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
             ) : null}
           </div>
+
+          <div className="mt-2 flex items-center justify-between text-xs text-neutral-500">
+            <span>
+              {total > 0
+                ? `${items.length} of ${total} categories loaded`
+                : "Search or browse taxonomy categories"}
+            </span>
+
+            {totalPages > 1 ? (
+              <span>
+                Page {page} of {totalPages}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1228,17 +1314,18 @@ function TaxonomySearchModal({
 
           {items.length > 0 ? (
             <div className="divide-y divide-neutral-200">
-              {items.map((taxonomy) => {
-                const selected = taxonomy.taxonomyId === selectedTaxonomyId;
+             {items.map((taxonomy) => {
+  const selected =
+    taxonomy.taxonomyId ===
+    (pendingTaxonomy?.taxonomyId || selectedTaxonomyId);
 
-                return (
+  return (
                   <button
                     key={taxonomy.taxonomyId}
                     type="button"
-                    onClick={() => {
-                      onSelect(taxonomy);
-                      onClose();
-                    }}
+                  onClick={() => {
+  setPendingTaxonomy(taxonomy);
+}}
                     className="flex w-full items-start gap-3 px-5 py-3 text-left hover:bg-neutral-50"
                   >
                     <span
@@ -1261,29 +1348,86 @@ function TaxonomySearchModal({
                       </span>
                     </span>
 
-                    {taxonomy.metafieldCount !== undefined &&
-                    taxonomy.metafieldCount !== null ? (
-                      <span className="shrink-0 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
-                        {taxonomy.metafieldCount} metafields
-                      </span>
-                    ) : null}
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {taxonomy.metafieldCount !== undefined &&
+                      taxonomy.metafieldCount !== null ? (
+                        <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
+                          {taxonomy.metafieldCount} metafields
+                        </span>
+                      ) : null}
+
+                      {taxonomy.isLeaf ? (
+                        <span className="text-[10px] uppercase tracking-[0.12em] text-neutral-400">
+                          Leaf
+                        </span>
+                      ) : (
+                        <span className="text-[10px] uppercase tracking-[0.12em] text-neutral-400">
+                          Parent
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
             </div>
           ) : null}
+
+          {items.length > 0 && hasMore ? (
+            <div className="border-t border-neutral-200 p-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+                className="h-10 w-full rounded-xl"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Loading more...
+                  </>
+                ) : (
+                  <>Load more categories</>
+                )}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
-        <div className="flex h-14 shrink-0 items-center justify-end border-t border-neutral-200 px-5">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            className="rounded-xl"
-          >
-            Cancel
-          </Button>
-        </div>
+       <div className="flex h-14 shrink-0 items-center justify-between border-t border-neutral-200 px-5">
+  <p className="text-xs text-neutral-500">
+    {pendingTaxonomy
+      ? `Selected: ${getTaxonomyDisplayLabel(pendingTaxonomy)}`
+      : total > 0
+        ? `${items.length} loaded out of ${total}`
+        : "No category selected"}
+  </p>
+
+  <div className="flex items-center gap-2">
+    <Button
+      type="button"
+      variant="outline"
+      onClick={onClose}
+      className="rounded-xl"
+    >
+      Cancel
+    </Button>
+
+    <Button
+      type="button"
+      disabled={!pendingTaxonomy}
+      onClick={() => {
+        if (!pendingTaxonomy) return;
+
+        onSelect(pendingTaxonomy);
+        onClose();
+      }}
+      className="rounded-xl bg-neutral-950 px-5 text-white hover:bg-neutral-800"
+    >
+      Done
+    </Button>
+  </div>
+</div>
       </div>
     </div>
   );

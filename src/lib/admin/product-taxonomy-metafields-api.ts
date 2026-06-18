@@ -169,10 +169,36 @@ export async function searchTaxonomyCategories({
     );
   }
 
-  return {
-    items: extractArray<TaxonomyCategory>(data, ["items", "categories"]),
-    raw: data,
-  };
+  const responseData =
+  data?.data && typeof data.data === "object" && !Array.isArray(data.data)
+    ? (data.data as {
+        items?: TaxonomyCategory[];
+        categories?: TaxonomyCategory[];
+        page?: number;
+        limit?: number;
+        total?: number;
+        totalPages?: number;
+      })
+    : null;
+
+const items = extractArray<TaxonomyCategory>(data, ["items", "categories"]);
+
+const total = Number(responseData?.total || items.length || 0);
+const currentPage = Number(responseData?.page || page);
+const currentLimit = Number(responseData?.limit || limit);
+const totalPages =
+  Number(responseData?.totalPages || 0) ||
+  Math.max(1, Math.ceil(total / currentLimit));
+
+return {
+  items,
+  page: currentPage,
+  limit: currentLimit,
+  total,
+  totalPages,
+  hasMore: currentPage < totalPages,
+  raw: data,
+};
 }
 
 export async function getTaxonomyCategoryMetafields({
