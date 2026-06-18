@@ -1,0 +1,274 @@
+export type TaxonomyCategory = {
+  id?: string | null;
+  taxonomyId: string;
+  name?: string | null;
+  fullPath?: string | null;
+  label?: string | null;
+  parentName?: string | null;
+  level?: number | null;
+  isLeaf?: boolean | null;
+  metafieldCount?: number | null;
+};
+
+export type CategoryMetafieldDefinition = {
+  id?: string | null;
+  key: string;
+  label: string;
+  description?: string | null;
+  type:
+    | "single_line_text"
+    | "multi_line_text"
+    | "single_select"
+    | "multi_select"
+    | "number"
+    | "boolean"
+    | "color"
+    | "url"
+    | "product_reference"
+    | "list_product_reference"
+    | string;
+  options?: string[] | null;
+  placeholder?: string | null;
+  isRequired?: boolean | null;
+  isFilterable?: boolean | null;
+  isSearchable?: boolean | null;
+  isVisibleOnStorefront?: boolean | null;
+  sortOrder?: number | null;
+  group?: string | null;
+  isActive?: boolean | null;
+};
+
+export type CategoryMetafieldValue =
+  | string
+  | number
+  | boolean
+  | string[]
+  | null
+  | undefined;
+
+export type CategoryMetafieldRecord = Record<string, CategoryMetafieldValue>;
+
+type ApiSuccessResponse<T> = {
+  success?: boolean;
+  data?: T;
+  message?: string;
+  error?: unknown;
+};
+
+function getHeaders(token?: string | null): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function readJson<T>(
+  response: Response,
+  fallbackMessage: string
+): Promise<T | null> {
+  const text = await response.text();
+
+  if (!text.trim()) return null;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`${fallbackMessage}. Body: ${text}`);
+  }
+}
+
+function getApiError(data: unknown, fallback: string) {
+  if (!data || typeof data !== "object") return fallback;
+
+  const record = data as {
+    message?: unknown;
+    error?: unknown;
+  };
+
+  if (typeof record.message === "string" && record.message.trim()) {
+    return record.message;
+  }
+
+  if (typeof record.error === "string" && record.error.trim()) {
+    return record.error;
+  }
+
+  if (Array.isArray(record.error)) {
+    return record.error.join(", ");
+  }
+
+  if (record.error && typeof record.error === "object") {
+    return JSON.stringify(record.error, null, 2);
+  }
+
+  return fallback;
+}
+
+function extractArray<T>(data: unknown, keys: string[]): T[] {
+  if (Array.isArray(data)) return data as T[];
+
+  if (!data || typeof data !== "object") return [];
+
+  const record = data as Record<string, unknown>;
+
+  for (const key of keys) {
+    if (Array.isArray(record[key])) return record[key] as T[];
+  }
+
+  if (record.data && typeof record.data === "object") {
+    return extractArray<T>(record.data, keys);
+  }
+
+  return [];
+}
+
+export async function searchTaxonomyCategories({
+  apiRootUrl,
+  search,
+  page = 1,
+  limit = 20,
+  token,
+}: {
+  apiRootUrl: string;
+  search: string;
+  page?: number;
+  limit?: number;
+  token?: string | null;
+}) {
+  const params = new URLSearchParams();
+
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+
+  if (search.trim()) {
+    params.set("search", search.trim());
+  }
+
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/taxonomy/categories?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+      cache: "no-store",
+    }
+  );
+
+  const data = await readJson<
+    ApiSuccessResponse<{
+      items?: TaxonomyCategory[];
+      categories?: TaxonomyCategory[];
+      total?: number;
+      page?: number;
+      limit?: number;
+    }>
+  >(response, "Taxonomy categories API JSON response nahi de rahi");
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Taxonomy categories load failed: ${response.status}`)
+    );
+  }
+
+  return {
+    items: extractArray<TaxonomyCategory>(data, ["items", "categories"]),
+    raw: data,
+  };
+}
+
+export async function getTaxonomyCategoryMetafields({
+  apiRootUrl,
+  taxonomyId,
+  token,
+}: {
+  apiRootUrl: string;
+  taxonomyId: string;
+  token?: string | null;
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/taxonomy/categories/${encodeURIComponent(
+      taxonomyId
+    )}/metafields`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+      cache: "no-store",
+    }
+  );
+
+  const data = await readJson<
+    ApiSuccessResponse<{
+      taxonomy?: TaxonomyCategory;
+      metafields?: CategoryMetafieldDefinition[];
+      definitions?: CategoryMetafieldDefinition[];
+    }>
+  >(response, "Taxonomy metafields API JSON response nahi de rahi");
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Taxonomy metafields load failed: ${response.status}`)
+    );
+  }
+
+  const definitions = extractArray<CategoryMetafieldDefinition>(data, [
+    "metafields",
+    "definitions",
+    "items",
+  ]);
+
+  const taxonomy =
+    data?.data && typeof data.data === "object" && "taxonomy" in data.data
+      ? data.data.taxonomy
+      : null;
+
+  return {
+    taxonomy: taxonomy || null,
+    metafields: definitions.sort(
+      (a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0)
+    ),
+    raw: data,
+  };
+}
+
+export async function saveProductCategoryMetafields({
+  apiRootUrl,
+  productId,
+  taxonomyId,
+  categoryMetafields,
+  token,
+}: {
+  apiRootUrl: string;
+  productId: string;
+  taxonomyId: string;
+  categoryMetafields: CategoryMetafieldRecord;
+  token?: string | null;
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/${encodeURIComponent(
+      productId
+    )}/category-metafields`,
+    {
+      method: "PATCH",
+      headers: getHeaders(token),
+      body: JSON.stringify({
+        taxonomyId,
+        categoryMetafields,
+      }),
+    }
+  );
+
+  const data = await readJson<
+    ApiSuccessResponse<{
+      productId?: string;
+      taxonomy?: TaxonomyCategory;
+      categoryMetafields?: CategoryMetafieldRecord;
+    }>
+  >(response, "Category metafields save API JSON response nahi de rahi");
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Category metafields save failed: ${response.status}`)
+    );
+  }
+
+  return data;
+}

@@ -6,7 +6,10 @@ import { AdminAuthGuard } from "@/components/admin/admin-auth-guard";
 import {
   BadgeDollarSign,
   Boxes,
+  ChevronDown,
+  ChevronRight,
   Database,
+  FolderTree,
   ImageIcon,
   Layers3,
   LayoutDashboard,
@@ -18,16 +21,11 @@ import {
   Send,
 } from "lucide-react";
 
-const catalogTabs = [
+const productSubTabs = [
   {
-    label: "Overview",
-    href: "/admin/catalog",
-    icon: LayoutDashboard,
-  },
-  {
-    label: "Product",
-    href: "/admin/catalog/products",
-    icon: Package,
+    label: "Categories",
+    href: "/admin/catalog/categories",
+    icon: FolderTree,
   },
   {
     label: "Variants",
@@ -70,10 +68,10 @@ const catalogTabs = [
     icon: Shirt,
   },
   {
-  label: "Publishing",
-  href: "/admin/catalog/publishing",
-  icon: Send,
-},
+    label: "Publishing",
+    href: "/admin/catalog/publishing",
+    icon: Send,
+  },
   {
     label: "Search Data",
     href: "/admin/catalog/search",
@@ -88,68 +86,107 @@ export default function CatalogLayout({
 }) {
   const pathname = usePathname();
 
+  const isOverviewActive = pathname === "/admin/catalog";
+
+  const isProductSectionActive =
+    pathname.startsWith("/admin/catalog/products") ||
+    productSubTabs.some((item) => pathname.startsWith(item.href));
+
   return (
-
-     <AdminAuthGuard>
-    <div className="min-h-screen bg-[#fbfaf6]">
-      <div className="grid min-h-screen lg:grid-cols-[290px_1fr]">
-        <aside className="border-r border-neutral-200 bg-white">
-          <div className="sticky top-0 flex h-screen flex-col">
-            <div className="border-b border-neutral-200 px-6 py-6">
-              <p className="text-xs uppercase tracking-[0.22em] text-neutral-500">
-                Admin Panel
-              </p>
-
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-                Catalog Management
-              </h1>
-
-              <p className="mt-2 text-sm text-neutral-500">
-                Shahsi + Gownloop catalog engine
-              </p>
-            </div>
-
-            <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5">
-              {catalogTabs.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  item.href === "/admin/catalog"
-                    ? pathname === item.href
-                    : pathname.startsWith(item.href);
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                      isActive
-                        ? "bg-neutral-950 text-white shadow-sm"
-                        : "text-neutral-600 hover:bg-[#f7f2ea] hover:text-neutral-950"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-
-            <div className="border-t border-neutral-200 p-4">
-              <div className="rounded-2xl bg-[#f7f2ea] p-4">
-                <p className="text-sm font-medium text-neutral-950">
-                  Build Order
+    <AdminAuthGuard>
+      <div className="min-h-screen bg-[#fbfaf6]">
+        <div className="grid min-h-screen lg:grid-cols-[290px_1fr]">
+          <aside className="border-r border-neutral-200 bg-white">
+            <div className="sticky top-0 flex h-screen flex-col">
+              <div className="border-b border-neutral-200 px-6 py-6">
+                <p className="text-xs uppercase tracking-[0.22em] text-neutral-500">
+                  Admin Panel
                 </p>
-                <p className="mt-1 text-xs leading-5 text-neutral-600">
-                  Product → Variants → Attributes → Pricing → Inventory → Media
+
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+                  Catalog Management
+                </h1>
+
+                <p className="mt-2 text-sm text-neutral-500">
+                  Shahsi + Gownloop catalog engine
                 </p>
               </div>
-            </div>
-          </div>
-        </aside>
 
-        <section className="min-w-0">{children}</section>
+              <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5">
+                <Link
+                  href="/admin/catalog"
+                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                    isOverviewActive
+                      ? "bg-neutral-950 text-white shadow-sm"
+                      : "text-neutral-600 hover:bg-[#f7f2ea] hover:text-neutral-950"
+                  }`}
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Overview</span>
+                </Link>
+
+                <Link
+                  href="/admin/catalog/products"
+                  className={`flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                    isProductSectionActive
+                      ? "bg-neutral-950 text-white shadow-sm"
+                      : "text-neutral-600 hover:bg-[#f7f2ea] hover:text-neutral-950"
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <Package className="h-4 w-4" />
+                    <span>Product</span>
+                  </span>
+
+                  {isProductSectionActive ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Link>
+
+                {isProductSectionActive ? (
+                  <div className="ml-4 space-y-1 border-l border-neutral-200 pl-3">
+                    {productSubTabs.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = pathname.startsWith(item.href);
+
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`flex items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-medium transition ${
+                            isActive
+                              ? "bg-[#f7f2ea] text-neutral-950"
+                              : "text-neutral-500 hover:bg-[#f7f2ea] hover:text-neutral-950"
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </nav>
+
+              <div className="border-t border-neutral-200 p-4">
+                <div className="rounded-2xl bg-[#f7f2ea] p-4">
+                  <p className="text-sm font-medium text-neutral-950">
+                    Build Order
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-600">
+                    Product → Categories → Variants → Attributes → Pricing →
+                    Inventory → Media
+                  </p>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <section className="min-w-0">{children}</section>
+        </div>
       </div>
-    </div>
     </AdminAuthGuard>
   );
 }

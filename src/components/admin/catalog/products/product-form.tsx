@@ -3,6 +3,11 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
+
+import { ProductShopifyMetafieldsSection } from "@/components/admin/catalog/products/product-shopify-metafields-section";
+
+import { ProductMediaSection } from "@/components/admin/catalog/products/product-media-section";
+import type { ProductMediaItem } from "@/lib/admin/product-media-upload";
 import {
   AlignCenter,
   AlignLeft,
@@ -122,17 +127,20 @@ function getDefaultFormValues(
     description: "",
     shortDescription: "",
     brand: "",
-    categoryId: "",
-    subcategoryId: "",
+   categoryId: "",
+subcategoryId: "",
+categories: [],
     businessType: "SHAHSI",
     commerceTypes: ["RETAIL"],
     productType: "DRESS",
     status: "DRAFT",
     price: 0,
     salePrice: undefined,
-    seoTitle: "",
-    seoDescription: "",
-    ...defaultValues,
+  seoTitle: "",
+seoDescription: "",
+productMetafields: {},
+categoryMetafields: {},
+...defaultValues,
   };
 }
 
@@ -298,14 +306,25 @@ export function ProductForm({
   defaultValues,
   onSubmit,
   isSubmitting = false,
+  productId,
+  mediaItems = [],
+  pendingMediaFiles = [],
+  onPendingMediaFilesChange,
+  onMediaChanged,
 }: {
   defaultValues?: Partial<ProductFormValues>;
   onSubmit: (values: ProductFormValues) => void;
   isSubmitting?: boolean;
+  productId?: string;
+  mediaItems?: ProductMediaItem[];
+  pendingMediaFiles?: File[];
+  onPendingMediaFilesChange?: (files: File[]) => void;
+  onMediaChanged?: () => void;
 }) {
-  const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
-  const [isCategoryLoading, setIsCategoryLoading] = useState(true);
-  const [categoryError, setCategoryError] = useState<string | null>(null);
+const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
+const [isCategoryLoading, setIsCategoryLoading] = useState(true);
+const [categoryError, setCategoryError] = useState<string | null>(null);
+const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
 const form = useForm<ProductFormValues>({
   resolver: zodResolver(productSchema) as Resolver<ProductFormValues>,
@@ -315,8 +334,16 @@ const form = useForm<ProductFormValues>({
   const name = form.watch("name");
   const sku = form.watch("sku");
   const categoryId = form.watch("categoryId");
+  const selectedCategorySlugs = form.watch("categories") ?? [];
   const commerceTypes = form.watch("commerceTypes") ?? [];
   const descriptionValue = form.watch("description") ?? "";
+
+  const formValues = form.watch();
+
+const selectedCategoryLabel =
+  categoryOptions.find((category) => category.slug === categoryId)?.label ||
+  categoryId ||
+  "Selected category";
 
   useEffect(() => {
     form.reset(getDefaultFormValues(defaultValues));
@@ -383,6 +410,29 @@ const form = useForm<ProductFormValues>({
       });
     }
   }
+
+
+ function handleMetafieldsChange(nextValues: ProductFormValues) {
+  form.setValue("taxonomyId", nextValues.taxonomyId || "", {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("taxonomy", nextValues.taxonomy ?? null, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("productMetafields", nextValues.productMetafields || {}, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("categoryMetafields", nextValues.categoryMetafields || {}, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+}
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 pb-20">
@@ -462,6 +512,14 @@ const form = useForm<ProductFormValues>({
         </div>
       </FormSection>
 
+      <ProductMediaSection
+  productId={productId}
+  mediaItems={mediaItems}
+  pendingFiles={pendingMediaFiles}
+  onPendingFilesChange={onPendingMediaFilesChange}
+  onMediaChanged={onMediaChanged}
+/>
+
       <FormSection
         icon={<Settings2 className="h-4 w-4" />}
         title="Category and settings"
@@ -475,43 +533,53 @@ const form = useForm<ProductFormValues>({
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Field
-            label="Category"
-            error={form.formState.errors.categoryId?.message}
-          >
-            <select
-              value={categoryId || ""}
-              onChange={(event) =>
-                form.setValue("categoryId", event.target.value, {
-                  shouldValidate: true,
-                  shouldDirty: true,
-                })
-              }
-              disabled={isCategoryLoading || Boolean(categoryError)}
-              className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+         <Field
+  label="Categories"
+  error={form.formState.errors.categoryId?.message}
+>
+  <button
+    type="button"
+    disabled={isCategoryLoading || Boolean(categoryError)}
+    onClick={() => setIsCategoryModalOpen(true)}
+    className="min-h-9 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-left text-sm outline-none transition hover:border-neutral-500 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+  >
+    {isCategoryLoading ? (
+      "Loading categories..."
+    ) : selectedCategorySlugs.length > 0 ? (
+      <span className="flex flex-wrap gap-1">
+        {selectedCategorySlugs.slice(0, 3).map((slug) => {
+          const category = categoryOptions.find((item) => item.slug === slug);
+
+          return (
+            <span
+              key={slug}
+              className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-800"
             >
-              <option value="">
-                {isCategoryLoading ? "Loading categories..." : "Select category"}
-              </option>
+              {category?.name || slug}
+            </span>
+          );
+        })}
 
-              {categoryId ? (
-                <option value={categoryId}>
-                  Current saved value: {categoryId}
-                </option>
-              ) : null}
+        {selectedCategorySlugs.length > 3 ? (
+          <span className="rounded-full bg-neutral-950 px-2 py-0.5 text-xs font-medium text-white">
+            +{selectedCategorySlugs.length - 3}
+          </span>
+        ) : null}
+      </span>
+    ) : (
+      "Select categories"
+    )}
+  </button>
 
-              {categoryOptions.map((category) => (
-                <option key={category.id} value={category.slug}>
-                  {"- ".repeat(Math.max(category.level - 1, 0))}
-                  {category.label}
-                  {typeof category.productCount === "number"
-                    ? ` (${category.productCount})`
-                    : ""}
-                  {category.isActive === false ? " - inactive" : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
+  <p className="mt-1 text-[11px] text-neutral-500">
+    Primary category:{" "}
+    <span className="font-medium text-neutral-800">
+      {categoryOptions.find((item) => item.slug === categoryId)?.label ||
+        categoryId ||
+        "Not selected"}
+    </span>
+  </p>
+</Field>
 
           <Field label="Business type">
             <select
@@ -550,6 +618,12 @@ const form = useForm<ProductFormValues>({
           </Field>
         </div>
       </FormSection>
+
+ <ProductShopifyMetafieldsSection
+  values={formValues}
+  onChange={handleMetafieldsChange}
+  primaryCategoryLabel={selectedCategoryLabel}
+/>
 
       <div className="grid gap-3 xl:grid-cols-2">
         <FormSection
@@ -661,6 +735,32 @@ const form = useForm<ProductFormValues>({
           </Button>
         </div>
       </div>
+
+      <CategoryTreeSelectorModal
+  open={isCategoryModalOpen}
+  categories={categoryOptions}
+  selectedSlugs={selectedCategorySlugs}
+  primarySlug={categoryId || ""}
+  onClose={() => setIsCategoryModalOpen(false)}
+  onApply={({ selectedSlugs, primarySlug }) => {
+    form.setValue("categories", selectedSlugs, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    form.setValue("categoryId", primarySlug, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    form.setValue("subcategoryId", selectedSlugs[1] || "", {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    setIsCategoryModalOpen(false);
+  }}
+/>
     </form>
   );
 }
@@ -1312,6 +1412,249 @@ function Field({
       {children}
 
       {error ? <span className="mt-1 block text-xs text-red-600">{error}</span> : null}
+    </div>
+  );
+}
+
+
+function CategoryTreeSelectorModal({
+  open,
+  categories,
+  selectedSlugs,
+  primarySlug,
+  onClose,
+  onApply,
+}: {
+  open: boolean;
+  categories: CategoryOption[];
+  selectedSlugs: string[];
+  primarySlug: string;
+  onClose: () => void;
+  onApply: (values: { selectedSlugs: string[]; primarySlug: string }) => void;
+}) {
+  const [draftSelectedSlugs, setDraftSelectedSlugs] = useState<string[]>([]);
+  const [draftPrimarySlug, setDraftPrimarySlug] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+
+    setDraftSelectedSlugs(selectedSlugs);
+    setDraftPrimarySlug(primarySlug || selectedSlugs[0] || "");
+    setSearchTerm("");
+  }, [open, selectedSlugs, primarySlug]);
+
+  if (!open) return null;
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  const visibleCategories = normalizedSearch
+    ? categories.filter((category) => {
+        const target = [
+          category.name,
+          category.slug,
+          category.path,
+          category.label,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        return target.includes(normalizedSearch);
+      })
+    : categories;
+
+  function toggleCategory(slug: string) {
+    setDraftSelectedSlugs((current) => {
+      const exists = current.includes(slug);
+
+      if (exists) {
+        const next = current.filter((item) => item !== slug);
+
+        if (draftPrimarySlug === slug) {
+          setDraftPrimarySlug(next[0] || "");
+        }
+
+        return next;
+      }
+
+      if (!draftPrimarySlug) {
+        setDraftPrimarySlug(slug);
+      }
+
+      return [...current, slug];
+    });
+  }
+
+  function removeCategory(slug: string) {
+    setDraftSelectedSlugs((current) => {
+      const next = current.filter((item) => item !== slug);
+
+      if (draftPrimarySlug === slug) {
+        setDraftPrimarySlug(next[0] || "");
+      }
+
+      return next;
+    });
+  }
+
+  function applySelection() {
+    const finalPrimarySlug = draftPrimarySlug || draftSelectedSlugs[0] || "";
+
+    onApply({
+      selectedSlugs: draftSelectedSlugs,
+      primarySlug: finalPrimarySlug,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 p-4">
+      <div className="mx-auto flex h-[88vh] max-w-6xl flex-col rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-neutral-950">
+              Associated Categories
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Select multiple categories and choose one primary category.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-3 py-1 text-2xl leading-none text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="border-b border-neutral-200 px-5 py-4">
+          <div className="flex min-h-10 flex-wrap gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-2">
+            {draftSelectedSlugs.length > 0 ? (
+              draftSelectedSlugs.map((slug) => {
+                const category = categories.find((item) => item.slug === slug);
+                const isPrimary = draftPrimarySlug === slug;
+
+                return (
+                  <span
+                    key={slug}
+                    className={`inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs font-semibold ${
+                      isPrimary
+                        ? "bg-neutral-950 text-white"
+                        : "bg-white text-neutral-800 ring-1 ring-neutral-200"
+                    }`}
+                  >
+                    {category?.name || slug}
+                    {isPrimary ? "Primary" : null}
+
+                    <button
+                      type="button"
+                      onClick={() => removeCategory(slug)}
+                      className="text-current opacity-70 hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })
+            ) : (
+              <span className="px-1 py-1 text-sm text-neutral-400">
+                No category selected
+              </span>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-200 px-3">
+            <Search className="h-4 w-4 text-neutral-400" />
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search categories"
+              className="h-10 flex-1 bg-transparent text-sm outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto px-5 py-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">
+            Category tree
+          </p>
+
+          <div className="space-y-1">
+            {visibleCategories.map((category) => {
+              const isChecked = draftSelectedSlugs.includes(category.slug);
+              const isPrimary = draftPrimarySlug === category.slug;
+
+              return (
+                <div
+                  key={category.id}
+                  className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-neutral-50"
+                  style={{
+                    paddingLeft: `${Math.max(category.level - 1, 0) * 24 + 8}px`,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleCategory(category.slug)}
+                    className="h-4 w-4"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(category.slug)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="block truncate text-sm font-medium text-neutral-900">
+                      {category.name}
+                    </span>
+                    <span className="block truncate text-xs text-neutral-500">
+                      {category.path}
+                      {typeof category.productCount === "number"
+                        ? ` • ${category.productCount} products`
+                        : ""}
+                    </span>
+                  </button>
+
+                  {isChecked ? (
+                    <button
+                      type="button"
+                      onClick={() => setDraftPrimarySlug(category.slug)}
+                      className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                        isPrimary
+                          ? "bg-neutral-950 text-white"
+                          : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                      }`}
+                    >
+                      {isPrimary ? "Primary" : "Set primary"}
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-neutral-200 px-5 py-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-md"
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            type="button"
+            className="rounded-md bg-neutral-950 text-white hover:bg-neutral-800"
+            onClick={applySelection}
+            disabled={draftSelectedSlugs.length === 0}
+          >
+            Apply
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
