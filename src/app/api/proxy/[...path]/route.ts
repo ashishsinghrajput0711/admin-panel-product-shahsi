@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL =
   process.env.BACKEND_API_URL?.replace(/\/$/, "") ||
+  process.env.NEXT_PUBLIC_ADMIN_API_URL?.replace(/\/$/, "") ||
   "http://65.1.135.224:3001";
 
 type RouteContext = {
@@ -14,6 +15,62 @@ function buildTargetUrl(path: string[], search: string) {
   const backendPath = path.join("/");
 
   return `${BACKEND_URL}/${backendPath}${search}`;
+}
+
+function shouldSkipHeader(headerName: string) {
+  const name = headerName.toLowerCase();
+
+  return (
+    name === "host" ||
+    name === "connection" ||
+    name === "content-length" ||
+    name === "accept-encoding" ||
+    name === "x-forwarded-host" ||
+    name === "x-forwarded-proto" ||
+    name === "x-forwarded-for"
+  );
+}
+
+function buildForwardHeaders(request: NextRequest, hasBody: boolean) {
+  const headers = new Headers();
+
+  request.headers.forEach((value, key) => {
+    if (shouldSkipHeader(key)) return;
+
+    headers.set(key, value);
+  });
+
+  if (!hasBody) {
+    headers.delete("content-type");
+  }
+
+  return headers;
+}
+
+async function getForwardBody(request: NextRequest): Promise<BodyInit | undefined> {
+  if (request.method === "GET" || request.method === "HEAD") {
+    return undefined;
+  }
+
+  const contentType = request.headers.get("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    return request.formData();
+  }
+
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    return request.text();
+  }
+
+  if (contentType.includes("application/json")) {
+    return request.text();
+  }
+
+  const arrayBuffer = await request.arrayBuffer();
+
+  if (!arrayBuffer.byteLength) return undefined;
+
+  return arrayBuffer;
 }
 
 async function proxyRequest(request: NextRequest, context: RouteContext) {
@@ -33,24 +90,14 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     );
   }
 
-  const headers = new Headers();
-
-  const authorization = request.headers.get("authorization");
-  const contentType = request.headers.get("content-type");
-  const accept = request.headers.get("accept");
-
-  if (authorization) headers.set("authorization", authorization);
-  if (contentType) headers.set("content-type", contentType);
-  if (accept) headers.set("accept", accept);
-
-  let body: BodyInit | undefined;
-
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    const text = await request.text();
-    body = text || undefined;
-  }
-
   try {
+    const body = await getForwardBody(request);
+    const headers = buildForwardHeaders(request, Boolean(body));
+
+    if (body instanceof FormData) {
+      headers.delete("content-type");
+    }
+
     const backendResponse = await fetch(targetUrl, {
       method: request.method,
       headers,
@@ -58,16 +105,24 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
       cache: "no-store",
     });
 
-    const responseText = await backendResponse.text();
+    const responseHeaders = new Headers();
 
-    return new NextResponse(responseText, {
+    const contentType = backendResponse.headers.get("content-type");
+    if (contentType) {
+      responseHeaders.set("content-type", contentType);
+    }
+
+    const setCookie = backendResponse.headers.get("set-cookie");
+    if (setCookie) {
+      responseHeaders.set("set-cookie", setCookie);
+    }
+
+    const responseBody = await backendResponse.arrayBuffer();
+
+    return new NextResponse(responseBody, {
       status: backendResponse.status,
       statusText: backendResponse.statusText,
-      headers: {
-        "content-type":
-          backendResponse.headers.get("content-type") ||
-          "application/json; charset=utf-8",
-      },
+      headers: responseHeaders,
     });
   } catch (error) {
     return NextResponse.json(
