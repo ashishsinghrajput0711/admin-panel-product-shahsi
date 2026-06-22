@@ -819,11 +819,10 @@ export function VariantForm({
           </Field>
         </div>
 
-        <p className="mt-3 text-xs text-neutral-500">
-          Reserved Stock UI me display/edit ho sakta hai, lekin create/update
-          variant API body me nahi bheja jaata kyunki backend DTO reject karta
-          hai.
-        </p>
+       <p className="mt-3 text-xs text-neutral-500">
+  Reserved stock backend me save hota hai aur inventory tracking ke liye use
+  hota hai.
+</p>
       </section>
 
       <section className="rounded-[1.5rem] bg-white p-6 ring-1 ring-neutral-200">

@@ -7,6 +7,8 @@ export type TaxonomyCategory = {
   parentName?: string | null;
   level?: number | null;
   isLeaf?: boolean | null;
+  childrenCount?: number | null;
+  pathSegments?: string[] | null;
   metafieldCount?: number | null;
 };
 
@@ -201,6 +203,97 @@ return {
 };
 }
 
+
+
+
+export async function getTaxonomyRootCategories({
+  apiRootUrl,
+  token,
+}: {
+  apiRootUrl: string;
+  token?: string | null;
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/taxonomy/categories/roots`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+      cache: "no-store",
+    }
+  );
+
+  const data = await readJson<
+    ApiSuccessResponse<{
+      items?: TaxonomyCategory[];
+      categories?: TaxonomyCategory[];
+      roots?: TaxonomyCategory[];
+    }>
+  >(response, "Taxonomy roots API JSON response nahi de rahi");
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Taxonomy roots load failed: ${response.status}`)
+    );
+  }
+
+  const items = extractArray<TaxonomyCategory>(data, [
+    "items",
+    "categories",
+    "roots",
+  ]);
+
+  return {
+    items,
+    raw: data,
+  };
+}
+
+export async function getTaxonomyCategoryChildren({
+  apiRootUrl,
+  taxonomyId,
+  token,
+}: {
+  apiRootUrl: string;
+  taxonomyId: string;
+  token?: string | null;
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/taxonomy/categories/${encodeURIComponent(
+      taxonomyId
+    )}/children`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+      cache: "no-store",
+    }
+  );
+
+  const data = await readJson<
+    ApiSuccessResponse<{
+      items?: TaxonomyCategory[];
+      categories?: TaxonomyCategory[];
+      children?: TaxonomyCategory[];
+    }>
+  >(response, "Taxonomy children API JSON response nahi de rahi");
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Taxonomy children load failed: ${response.status}`)
+    );
+  }
+
+  const items = extractArray<TaxonomyCategory>(data, [
+    "items",
+    "categories",
+    "children",
+  ]);
+
+  return {
+    items,
+    raw: data,
+  };
+}
+
 export async function getTaxonomyCategoryMetafields({
   apiRootUrl,
   taxonomyId,
@@ -253,6 +346,48 @@ export async function getTaxonomyCategoryMetafields({
     ),
     raw: data,
   };
+}
+
+
+export async function saveProductTaxonomy({
+  apiRootUrl,
+  productId,
+  taxonomy,
+  token,
+}: {
+  apiRootUrl: string;
+  productId: string;
+  taxonomy: TaxonomyCategory;
+  token?: string | null;
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/${encodeURIComponent(productId)}/taxonomy`,
+    {
+      method: "PATCH",
+      headers: getHeaders(token),
+      body: JSON.stringify({
+        taxonomyCategoryId: taxonomy.id || taxonomy.taxonomyId,
+        taxonomyId: taxonomy.taxonomyId,
+        taxonomyName: taxonomy.name || taxonomy.label || "",
+        taxonomyPath: taxonomy.fullPath || taxonomy.label || taxonomy.name || "",
+      }),
+    }
+  );
+
+  const data = await readJson<
+    ApiSuccessResponse<{
+      productId?: string;
+      taxonomy?: TaxonomyCategory;
+    }>
+  >(response, "Product taxonomy save API JSON response nahi de rahi");
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Product taxonomy save failed: ${response.status}`)
+    );
+  }
+
+  return data;
 }
 
 export async function saveProductCategoryMetafields({

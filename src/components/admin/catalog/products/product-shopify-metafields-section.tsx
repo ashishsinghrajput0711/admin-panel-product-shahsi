@@ -16,7 +16,9 @@ import {
 import { Button } from "@/components/ui/button";
 import type { ProductFormValues } from "./product-schema";
 import {
+  getTaxonomyCategoryChildren,
   getTaxonomyCategoryMetafields,
+  getTaxonomyRootCategories,
   searchTaxonomyCategories,
   type CategoryMetafieldDefinition,
   type TaxonomyCategory,
@@ -80,6 +82,50 @@ type ProductPickerApiResponse = {
   products?: ProductPickerItem[];
   message?: string;
   error?: unknown;
+};
+
+
+type AttributeOptionItem = {
+  id?: string | null;
+  label?: string | null;
+  name?: string | null;
+  value?: string | null;
+  colorHex?: string | null;
+  hexCode?: string | null;
+  hex?: string | null;
+  isActive?: boolean | null;
+};
+
+type CatalogAttributeItem = {
+  id?: string | null;
+  name?: string | null;
+  label?: string | null;
+  code?: string | null;
+  slug?: string | null;
+  key?: string | null;
+  options?: AttributeOptionItem[] | null;
+};
+
+type AttributesApiResponse = {
+  success?: boolean;
+  data?:
+    | CatalogAttributeItem[]
+    | {
+        data?: CatalogAttributeItem[];
+        attributes?: CatalogAttributeItem[];
+        items?: CatalogAttributeItem[];
+      };
+  attributes?: CatalogAttributeItem[];
+  items?: CatalogAttributeItem[];
+  message?: string;
+  error?: unknown;
+};
+
+type ColorPresetOption = {
+  id: string;
+  label: string;
+  value: string;
+  colorHex: string;
 };
 
 const productMetafieldFields: ProductMetafieldField[] = [
@@ -330,14 +376,22 @@ function getTaxonomyParentLabel(taxonomy: TaxonomyCategory) {
 }
 
 function getTaxonomyDisplayLabel(taxonomy: TaxonomyCategory) {
-  if (taxonomy.label) return taxonomy.label;
-
-  const parent = getTaxonomyParentLabel(taxonomy);
-
-  if (taxonomy.name && parent) return `${taxonomy.name} in ${parent}`;
   if (taxonomy.name) return taxonomy.name;
 
-  return taxonomy.fullPath || taxonomy.taxonomyId;
+  if (taxonomy.label) {
+    return taxonomy.label.replace(/\s+in\s+.+$/i, "").trim();
+  }
+
+  if (taxonomy.fullPath) {
+    const parts = taxonomy.fullPath
+      .split(">")
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    return parts[parts.length - 1] || taxonomy.fullPath;
+  }
+
+  return taxonomy.taxonomyId;
 }
 
 function normalizeOptions(options: unknown) {
@@ -443,6 +497,117 @@ function extractPickerItems(data: ProductPickerApiResponse | null) {
   return [];
 }
 
+
+function extractAttributes(data: AttributesApiResponse | null) {
+  if (!data) return [];
+
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.attributes)) return data.attributes;
+  if (Array.isArray(data.items)) return data.items;
+
+  if (data.data && typeof data.data === "object") {
+    if (Array.isArray(data.data.data)) return data.data.data;
+    if (Array.isArray(data.data.attributes)) return data.data.attributes;
+    if (Array.isArray(data.data.items)) return data.data.items;
+  }
+
+  return [];
+}
+
+function normalizeHexValue(value: unknown) {
+  const raw = String(value || "").trim();
+
+  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toLowerCase();
+
+  return "";
+}
+
+function getAttributeIdentity(attribute: CatalogAttributeItem) {
+  return String(
+    attribute.code ||
+      attribute.slug ||
+      attribute.key ||
+      attribute.name ||
+      attribute.label ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function mapColorOptions(attribute: CatalogAttributeItem): ColorPresetOption[] {
+  if (!Array.isArray(attribute.options)) return [];
+
+  return attribute.options
+    .map((option) => {
+      const label = String(option.label || option.name || option.value || "")
+        .trim();
+
+      const colorHex = normalizeHexValue(
+        option.colorHex || option.hexCode || option.hex
+      );
+
+      if (!label || !colorHex) return null;
+
+      return {
+        id: String(option.id || option.value || label),
+        label,
+        value: String(option.value || label),
+        colorHex,
+      };
+    })
+    .filter(Boolean) as ColorPresetOption[];
+}
+
+async function fetchColorPresetOptions() {
+  const params = new URLSearchParams();
+
+  params.set("page", "1");
+  params.set("limit", "100");
+  params.set("search", "color");
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const text = await response.text();
+  const data = text.trim() ? (JSON.parse(text) as AttributesApiResponse) : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Color attributes load failed: ${response.status}`)
+    );
+  }
+
+  const attributes = extractAttributes(data);
+
+  const colorAttribute =
+    attributes.find((attribute) => {
+      const identity = getAttributeIdentity(attribute);
+      return identity === "color" || identity === "/color";
+    }) ||
+    attributes.find((attribute) => {
+      const identity = getAttributeIdentity(attribute);
+      return identity.includes("color") && !identity.includes("family");
+    });
+
+  if (!colorAttribute) return [];
+
+  return mapColorOptions(colorAttribute);
+}
+
+function isColorMetafield(definition: CategoryMetafieldDefinition) {
+  const key = String(definition.key || "").trim().toLowerCase();
+  const label = String(definition.label || "").trim().toLowerCase();
+
+  return definition.type === "color" || key === "color" || label === "color";
+}
+
 async function fetchProductPicker({
   search,
   searchBy,
@@ -495,6 +660,17 @@ async function fetchProductPicker({
         ? (data.data as { meta?: unknown }).meta
         : null,
   };
+}
+
+async function fetchSelectedProductById(productId: string) {
+  const result = await fetchProductPicker({
+    search: productId,
+    searchBy: "productId",
+    page: 1,
+    limit: 1,
+  });
+
+  return result.items.find((item) => item.id === productId) || result.items[0] || null;
 }
 
 function ProductPickerModal({
@@ -792,10 +968,77 @@ function ProductReferenceInput({
   placeholder?: string | null;
   onChange: (value: MetafieldValue) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const selectedIds = getStringArrayValue(value);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [draftIds, setDraftIds] = useState<string[]>([]);
 
-  function handlePickerChange(ids: string[]) {
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [selectedProductsById, setSelectedProductsById] = useState<
+    Record<string, ProductPickerItem>
+  >({});
+  const [isSelectedLoading, setIsSelectedLoading] = useState(false);
+
+  const selectedIds = getStringArrayValue(value);
+  const activeIds = isEditorOpen ? draftIds : selectedIds;
+
+  useEffect(() => {
+    if (!isEditorOpen) {
+      setDraftIds(selectedIds);
+    }
+  }, [isEditorOpen, selectedIds.join("|")]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadSelectedProductDetails() {
+      const missingIds = activeIds.filter((id) => !selectedProductsById[id]);
+
+      if (missingIds.length === 0) return;
+
+      try {
+        setIsSelectedLoading(true);
+
+        const products = await Promise.all(
+          missingIds.map((id) => fetchSelectedProductById(id).catch(() => null))
+        );
+
+        if (ignore) return;
+
+        setSelectedProductsById((previous) => {
+          const next = { ...previous };
+
+          products.forEach((product, index) => {
+            const fallbackId = missingIds[index];
+
+            if (product?.id) {
+              next[product.id] = product;
+              return;
+            }
+
+            next[fallbackId] = {
+              id: fallbackId,
+              title: fallbackId,
+            };
+          });
+
+          return next;
+        });
+      } finally {
+        if (!ignore) {
+          setIsSelectedLoading(false);
+        }
+      }
+    }
+
+    loadSelectedProductDetails();
+
+    return () => {
+      ignore = true;
+    };
+  }, [activeIds.join("|")]);
+
+  function applyIds(ids: string[]) {
     if (multiple) {
       onChange(ids);
       return;
@@ -804,60 +1047,290 @@ function ProductReferenceInput({
     onChange(ids[0] || "");
   }
 
+  function openEditor() {
+    setDraftIds(selectedIds);
+    setIsEditorOpen(true);
+  }
+
+  function handleDone() {
+    applyIds(draftIds);
+    setIsEditorOpen(false);
+    setIsPickerOpen(false);
+  }
+
+  function handleCancel() {
+    setDraftIds(selectedIds);
+    setIsEditorOpen(false);
+    setIsPickerOpen(false);
+  }
+
+  function removeDraftProduct(id: string) {
+    setDraftIds((previous) => previous.filter((selectedId) => selectedId !== id));
+  }
+
+  function clearDraftProducts() {
+    setDraftIds([]);
+  }
+
+
+  function moveDraftProduct(sourceId: string, targetId: string) {
+  if (sourceId === targetId) return;
+
+  setDraftIds((previous) => {
+    const sourceIndex = previous.indexOf(sourceId);
+    const targetIndex = previous.indexOf(targetId);
+
+    if (sourceIndex === -1 || targetIndex === -1) return previous;
+
+    const next = [...previous];
+    const [removed] = next.splice(sourceIndex, 1);
+
+    next.splice(targetIndex, 0, removed);
+
+    return next;
+  });
+}
+
+function handleDragStart(id: string) {
+  setDraggedId(id);
+}
+
+function handleDragEnter(id: string) {
+  if (!draggedId || draggedId === id) return;
+
+  setDragOverId(id);
+  moveDraftProduct(draggedId, id);
+}
+
+function handleDragEnd() {
+  setDraggedId(null);
+  setDragOverId(null);
+}
+
   return (
-    <div className="space-y-2">
-      <div className="rounded-xl border border-neutral-200 bg-white p-2">
-        {selectedIds.length > 0 ? (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {selectedIds.map((id) => (
-              <span
-                key={id}
-                className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700"
+    <div className="rounded-xl border border-neutral-200 bg-white">
+      {!isEditorOpen ? (
+        <button
+          type="button"
+          onClick={openEditor}
+          className="grid w-full grid-cols-[220px_1fr] items-center gap-4 px-4 py-3 text-left transition hover:bg-neutral-50"
+        >
+          <div>
+            <p className="text-sm font-medium text-neutral-950">{label}</p>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              Product {multiple ? "(List)" : ""}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            {selectedIds.length > 0 ? (
+              <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-lg border border-neutral-300 bg-white px-2 py-1.5">
+                {selectedIds.slice(0, 4).map((id) => {
+                  const product = selectedProductsById[id];
+                  const title = product ? getProductTitle(product) : id;
+                  const image = product ? getProductImage(product) : "";
+
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-neutral-100 px-1.5 py-1 text-sm text-neutral-900"
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded bg-white ring-1 ring-neutral-200">
+                        {image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={image}
+                            alt={title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <ImageIcon className="h-3.5 w-3.5 text-neutral-400" />
+                        )}
+                      </span>
+
+                      <span className="truncate">{title}</span>
+                    </span>
+                  );
+                })}
+
+                {selectedIds.length > 4 ? (
+                  <span className="rounded-md bg-neutral-100 px-2 py-1 text-sm text-neutral-600">
+                    +{selectedIds.length - 4} more
+                  </span>
+                ) : null}
+
+                {isSelectedLoading ? (
+                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-500">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex h-10 items-center rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-400">
+                {placeholder || "Select products"}
+              </div>
+            )}
+          </div>
+        </button>
+      ) : (
+        <div className="animate-in slide-in-from-top-1 duration-150">
+          <div className="grid grid-cols-[220px_1fr] gap-4 border-b border-neutral-200 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-neutral-950">{label}</p>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                Product {multiple ? "(List)" : ""}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsPickerOpen(true)}
+                className="h-9 rounded-xl px-4 text-sm"
               >
-                {id}
+                Select products
+              </Button>
+
+              {draftIds.length > 0 ? (
                 <button
                   type="button"
-                  onClick={() =>
-                    handlePickerChange(
-                      selectedIds.filter((selectedId) => selectedId !== id)
-                    )
-                  }
-                  className="rounded-full p-0.5 hover:bg-neutral-200"
+                  onClick={clearDraftProducts}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700"
                 >
-                  <X className="h-3 w-3" />
+                  Clear all
                 </button>
-              </span>
-            ))}
+              ) : null}
+            </div>
           </div>
-        ) : (
-          <p className="mb-2 px-1 text-xs text-neutral-400">
-            {placeholder || "No products selected"}
-          </p>
-        )}
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setIsOpen(true)}
-          className="h-9 rounded-full text-xs"
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Select products
-        </Button>
-      </div>
+          {draftIds.length > 0 ? (
+            <div className="divide-y divide-neutral-100">
+              {draftIds.map((id) => {
+                const product = selectedProductsById[id];
+                const title = product ? getProductTitle(product) : id;
+                const image = product ? getProductImage(product) : "";
 
-      <p className="text-[11px] text-neutral-400">
-        Product IDs backend me {multiple ? "ordered array" : "single ID"} ke form
-        me save honge.
-      </p>
+                return (
+                 <div
+  key={id}
+  draggable
+  onDragStart={() => handleDragStart(id)}
+  onDragEnter={() => handleDragEnter(id)}
+  onDragOver={(event) => event.preventDefault()}
+  onDragEnd={handleDragEnd}
+  className={`grid grid-cols-[220px_1fr_32px] items-center gap-4 px-4 py-3 transition-all duration-200 ease-out ${
+    draggedId === id
+      ? "scale-[0.99] bg-neutral-100 opacity-60"
+      : dragOverId === id
+        ? "bg-neutral-50"
+        : "bg-white"
+  }`}
+>
+                    <div className="flex justify-end pr-3">
+                     <button
+  type="button"
+  draggable
+  onDragStart={() => handleDragStart(id)}
+  onDragEnd={handleDragEnd}
+  className="flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700 active:cursor-grabbing"
+  aria-label="Drag product"
+>
+  <span className="text-lg leading-none">⋮⋮</span>
+</button>
+                    </div>
 
-      {isOpen ? (
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-neutral-200 bg-neutral-50">
+                        {image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={image}
+                            alt={title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <ImageIcon className="h-4 w-4 text-neutral-400" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-neutral-950">
+                          {title}
+                        </p>
+
+                        {product?.sku || product?.slug ? (
+                          <p className="mt-0.5 truncate text-xs text-neutral-500">
+                            {product.sku || product.slug}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removeDraftProduct(id)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
+                      aria-label={`Remove ${title}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
+
+              {isSelectedLoading ? (
+                <div className="flex items-center gap-2 px-4 py-3 text-xs text-neutral-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading selected product details...
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="grid grid-cols-[220px_1fr] gap-4 px-4 py-6">
+              <div />
+              <p className="text-sm text-neutral-500">
+                {placeholder || "No products selected"}
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-3">
+            <p className="text-[11px] text-neutral-400">
+              Product IDs backend me {multiple ? "ordered array" : "single ID"} ke
+              form me save honge.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                className="h-9 rounded-xl"
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="button"
+                onClick={handleDone}
+                className="h-9 rounded-xl bg-neutral-950 px-5 text-white hover:bg-neutral-800"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPickerOpen ? (
         <ProductPickerModal
           fieldLabel={label}
-          selectedIds={selectedIds}
+          selectedIds={draftIds}
           multiple={multiple}
-          onChange={handlePickerChange}
-          onClose={() => setIsOpen(false)}
+          onChange={setDraftIds}
+          onClose={() => setIsPickerOpen(false)}
         />
       ) : null}
     </div>
@@ -931,14 +1404,176 @@ function ProductMetafieldInput({
   );
 }
 
+function ColorAttributeSelect({
+  value,
+  onChange,
+  onColorSelect,
+}: {
+  value: MetafieldValue;
+  onChange: (value: MetafieldValue) => void;
+  onColorSelect?: (color: { color: string; colorHex: string }) => void;
+}) {
+  const [options, setOptions] = useState<ColorPresetOption[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const textValue = stringifyValue(value);
+  const selectedOption = options.find(
+    (option) =>
+      option.colorHex.toLowerCase() === textValue.toLowerCase() ||
+      option.label.toLowerCase() === textValue.toLowerCase() ||
+      option.value.toLowerCase() === textValue.toLowerCase()
+  );
+
+  const selectedHex = selectedOption?.colorHex || normalizeHexValue(textValue);
+  const selectedLabel = selectedOption?.label || "";
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadColors() {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const result = await fetchColorPresetOptions();
+
+        if (!ignore) {
+          setOptions(result);
+        }
+      } catch (loadError) {
+        if (!ignore) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Color options load failed."
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadColors();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  function handleSelect(optionValue: string) {
+    const option = options.find((item) => item.value === optionValue);
+
+    if (!option) {
+      onChange("");
+      onColorSelect?.({
+        color: "",
+        colorHex: "",
+      });
+      return;
+    }
+
+   onChange(option.label);
+
+onColorSelect?.({
+  color: option.label,
+  colorHex: option.colorHex,
+});
+  }
+
+ function handleManualHex(nextHex: string) {
+  onChange(nextHex);
+
+  if (/^#[0-9a-f]{6}$/i.test(nextHex)) {
+    const matchedOption = options.find(
+      (option) => option.colorHex.toLowerCase() === nextHex.toLowerCase()
+    );
+
+    onColorSelect?.({
+      color: matchedOption?.label || nextHex,
+      colorHex: nextHex.toLowerCase(),
+    });
+  }
+}
+
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-2 sm:grid-cols-[1fr_170px]">
+        <div className="relative">
+          <select
+            value={selectedOption?.value || ""}
+            onChange={(event) => handleSelect(event.target.value)}
+            className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 pr-10 text-sm outline-none transition focus:border-neutral-950"
+          >
+            <option value="">
+              {isLoading ? "Loading colors..." : "Select saved color"}
+            </option>
+
+            {options.map((option) => (
+              <option key={option.id} value={option.value}>
+                {option.label} · {option.colorHex}
+              </option>
+            ))}
+          </select>
+
+          <div
+            className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border border-neutral-300"
+            style={{
+              backgroundColor: selectedHex || "#ffffff",
+            }}
+          />
+        </div>
+
+        <input
+          value={textValue}
+          onChange={(event) => handleManualHex(event.target.value)}
+          placeholder="#c4abab"
+          className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+        />
+      </div>
+
+      {selectedOption ? (
+        <div className="flex items-center gap-2 text-xs text-neutral-500">
+          <span
+            className="h-4 w-4 rounded-full border border-neutral-300"
+            style={{ backgroundColor: selectedOption.colorHex }}
+          />
+          <span>
+            Selected:{" "}
+            <span className="font-medium text-neutral-800">
+              {selectedOption.label}
+            </span>{" "}
+            {selectedOption.colorHex}
+          </span>
+        </div>
+      ) : null}
+
+      {error ? (
+        <p className="text-xs text-red-600">
+          {error}
+        </p>
+      ) : (
+        <p className="text-xs text-neutral-400">
+          Saved colors Attributes → Color options se aa rahe hain. New color ho
+          to hex manually daalo.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DynamicCategoryMetafieldInput({
   definition,
   value,
   onChange,
+  onColorSelect,
 }: {
   definition: CategoryMetafieldDefinition;
   value: MetafieldValue;
   onChange: (value: MetafieldValue) => void;
+  onColorSelect?: (color: { color: string; colorHex: string }) => void;
 }) {
   const textValue = stringifyValue(value);
   const options = normalizeOptions(definition.options);
@@ -1045,29 +1680,15 @@ function DynamicCategoryMetafieldInput({
     );
   }
 
-  if (definition.type === "color") {
-    return (
-      <div className="flex gap-2">
-        <input
-          type="color"
-          value={
-            typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
-              ? value
-              : "#ffffff"
-          }
-          onChange={(event) => onChange(event.target.value)}
-          className="h-10 w-12 rounded-xl border border-neutral-200 bg-white p-1"
-        />
-
-        <input
-          value={textValue}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={definition.placeholder || "Dusty Rose or #ffffff"}
-          className="h-10 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
-        />
-      </div>
-    );
-  }
+if (isColorMetafield(definition)) {
+  return (
+    <ColorAttributeSelect
+      value={value}
+      onChange={onChange}
+      onColorSelect={onColorSelect}
+    />
+  );
+}
 
   if (definition.type === "url") {
     return (
@@ -1125,6 +1746,7 @@ function TaxonomySearchModal({
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
+ 
   const [items, setItems] = useState<TaxonomyCategory[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -1136,8 +1758,69 @@ function TaxonomySearchModal({
   const [pendingTaxonomy, setPendingTaxonomy] =
   useState<TaxonomyCategory | null>(null);
 
+  const [currentParent, setCurrentParent] = useState<TaxonomyCategory | null>(
+  null
+);
+const [breadcrumb, setBreadcrumb] = useState<TaxonomyCategory[]>([]);
+const [isBrowseMode, setIsBrowseMode] = useState(true);
+
   const hasMore = page < totalPages;
 
+
+  
+
+async function loadRootCategories() {
+  const result = await getTaxonomyRootCategories({
+    apiRootUrl: getApiRootUrl(),
+    token: getToken(),
+  });
+
+  setCurrentParent(null);
+  setBreadcrumb([]);
+  setItems(result.items);
+  setPage(1);
+  setTotal(result.items.length);
+  setTotalPages(1);
+}
+
+async function loadChildren(parent: TaxonomyCategory) {
+  const result = await getTaxonomyCategoryChildren({
+    apiRootUrl: getApiRootUrl(),
+    taxonomyId: parent.taxonomyId,
+    token: getToken(),
+  });
+
+  setCurrentParent(parent);
+  setBreadcrumb((previous) => [...previous, parent]);
+  setItems(result.items);
+  setPage(1);
+  setTotal(result.items.length);
+  setTotalPages(1);
+}
+
+async function goBackOneLevel() {
+  const nextBreadcrumb = breadcrumb.slice(0, -1);
+  const previousParent = nextBreadcrumb[nextBreadcrumb.length - 1] || null;
+
+  setBreadcrumb(nextBreadcrumb);
+  setCurrentParent(previousParent);
+
+  if (!previousParent) {
+    await loadRootCategories();
+    return;
+  }
+
+  const result = await getTaxonomyCategoryChildren({
+    apiRootUrl: getApiRootUrl(),
+    taxonomyId: previousParent.taxonomyId,
+    token: getToken(),
+  });
+
+  setItems(result.items);
+  setPage(1);
+  setTotal(result.items.length);
+  setTotalPages(1);
+}
   async function loadTaxonomies({
     nextPage,
     append,
@@ -1173,50 +1856,73 @@ function TaxonomySearchModal({
     setTotalPages(result.totalPages);
   }
 
-  useEffect(() => {
-    let ignore = false;
+useEffect(() => {
+  let ignore = false;
 
-    const timeout = window.setTimeout(async () => {
-      try {
-        setIsLoading(true);
-        setTaxonomyError(null);
+  const timeout = window.setTimeout(async () => {
+    try {
+      setIsLoading(true);
+      setTaxonomyError(null);
 
-        const normalizedSearch = search.replace(/\s+in\s+.+$/i, "").trim();
+      const normalizedSearch = search.replace(/\s+in\s+.+$/i, "").trim();
 
-        const result = await searchTaxonomyCategories({
+      if (!normalizedSearch) {
+        setIsBrowseMode(true);
+
+        const result = await getTaxonomyRootCategories({
           apiRootUrl: getApiRootUrl(),
-          search: normalizedSearch,
-          page: 1,
-          limit: 20,
           token: getToken(),
         });
 
         if (ignore) return;
 
+        setCurrentParent(null);
+        setBreadcrumb([]);
         setItems(result.items);
-        setPage(result.page);
-        setTotal(result.total);
-        setTotalPages(result.totalPages);
-      } catch (error) {
-        if (!ignore) {
-          setTaxonomyError(
-            error instanceof Error
-              ? error.message
-              : "Taxonomy categories load failed."
-          );
-        }
-      } finally {
-        if (!ignore) {
-          setIsLoading(false);
-        }
+        setPage(1);
+        setTotal(result.items.length);
+        setTotalPages(1);
+        return;
       }
-    }, 300);
 
-    return () => {
-      ignore = true;
-      window.clearTimeout(timeout);
-    };
-  }, [search]);
+      setIsBrowseMode(false);
+      setCurrentParent(null);
+      setBreadcrumb([]);
+
+      const result = await searchTaxonomyCategories({
+        apiRootUrl: getApiRootUrl(),
+        search: normalizedSearch,
+        page: 1,
+        limit: 20,
+        token: getToken(),
+      });
+
+      if (ignore) return;
+
+      setItems(result.items);
+      setPage(result.page);
+      setTotal(result.total);
+      setTotalPages(result.totalPages);
+    } catch (error) {
+      if (!ignore) {
+        setTaxonomyError(
+          error instanceof Error
+            ? error.message
+            : "Taxonomy categories load failed."
+        );
+      }
+    } finally {
+      if (!ignore) {
+        setIsLoading(false);
+      }
+    }
+  }, 300);
+
+  return () => {
+    ignore = true;
+    window.clearTimeout(timeout);
+  };
+}, [search]);
 
   async function handleLoadMore() {
     if (isLoadingMore || !hasMore) return;
@@ -1276,7 +1982,26 @@ function TaxonomySearchModal({
               <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
             ) : null}
           </div>
+{isBrowseMode && breadcrumb.length > 0 ? (
+  <div className="mt-3 flex items-center justify-between rounded-xl bg-neutral-50 px-3 py-2">
+    <div className="min-w-0 text-xs text-neutral-500">
+      Browsing:{" "}
+      <span className="font-medium text-neutral-800">
+        {breadcrumb
+          .map((item) => item.name || item.label || item.taxonomyId)
+          .join(" / ")}
+      </span>
+    </div>
 
+    <button
+      type="button"
+      onClick={goBackOneLevel}
+      className="shrink-0 text-xs font-medium text-neutral-700 underline underline-offset-4 hover:text-neutral-950"
+    >
+      Back
+    </button>
+  </div>
+) : null}
           <div className="mt-2 flex items-center justify-between text-xs text-neutral-500">
             <span>
               {total > 0
@@ -1323,8 +2048,24 @@ function TaxonomySearchModal({
                   <button
                     key={taxonomy.taxonomyId}
                     type="button"
-                  onClick={() => {
+    onClick={async () => {
   setPendingTaxonomy(taxonomy);
+
+  if (isBrowseMode && taxonomy.isLeaf === false) {
+    try {
+      setIsLoading(true);
+      setTaxonomyError(null);
+      await loadChildren(taxonomy);
+    } catch (error) {
+      setTaxonomyError(
+        error instanceof Error
+          ? error.message
+          : "Child categories load failed."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
 }}
                     className="flex w-full items-start gap-3 px-5 py-3 text-left hover:bg-neutral-50"
                   >
@@ -1396,11 +2137,13 @@ function TaxonomySearchModal({
 
        <div className="flex h-14 shrink-0 items-center justify-between border-t border-neutral-200 px-5">
   <p className="text-xs text-neutral-500">
-    {pendingTaxonomy
-      ? `Selected: ${getTaxonomyDisplayLabel(pendingTaxonomy)}`
-      : total > 0
-        ? `${items.length} loaded out of ${total}`
-        : "No category selected"}
+   {pendingTaxonomy?.isLeaf === false
+  ? "Parent category selected hai. Final leaf category select karo."
+  : pendingTaxonomy
+    ? `Selected: ${getTaxonomyDisplayLabel(pendingTaxonomy)}`
+    : total > 0
+      ? `${items.length} loaded out of ${total}`
+      : "No category selected"}
   </p>
 
   <div className="flex items-center gap-2">
@@ -1415,7 +2158,7 @@ function TaxonomySearchModal({
 
     <Button
       type="button"
-      disabled={!pendingTaxonomy}
+      disabled={!pendingTaxonomy || pendingTaxonomy.isLeaf === false}
       onClick={() => {
         if (!pendingTaxonomy) return;
 
@@ -1519,19 +2262,38 @@ function CategoryMetafieldsCard({
                 ) : null}
               </label>
 
-              <DynamicCategoryMetafieldInput
-                definition={definition}
-                value={getValue(values, "categoryMetafields", definition.key)}
-                onChange={(value) =>
-                  updateValue(
-                    values,
-                    "categoryMetafields",
-                    definition.key,
-                    value,
-                    onChange
-                  )
-                }
-              />
+            <DynamicCategoryMetafieldInput
+  definition={definition}
+  value={
+  isColorMetafield(definition)
+    ? getValue(values, "categoryMetafields", "color") ||
+      getValue(values, "categoryMetafields", definition.key)
+    : getValue(values, "categoryMetafields", definition.key)
+}
+  onChange={(value) =>
+    updateValue(
+      values,
+      "categoryMetafields",
+      definition.key,
+      value,
+      onChange
+    )
+  }
+  onColorSelect={
+  isColorMetafield(definition)
+    ? (colorOption) => {
+        onChange({
+          ...values,
+          categoryMetafields: {
+            ...(values.categoryMetafields || {}),
+            color: colorOption.color,
+            colorHex: colorOption.colorHex,
+          },
+        });
+      }
+    : undefined
+}
+/>
 
               {definition.description ? (
                 <p className="text-[11px] text-neutral-400">
@@ -1597,9 +2359,11 @@ function ProductMetafieldsCard({
                 : "space-y-1.5"
             }
           >
-            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-              {field.label}
-            </label>
+         {field.type !== "product_picker" ? (
+  <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+    {field.label}
+  </label>
+) : null}
 
             <ProductMetafieldInput
               field={field}

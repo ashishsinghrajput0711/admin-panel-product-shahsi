@@ -47,6 +47,10 @@ export const productSchema = z.object({
 
   status: z.enum(["DRAFT", "ACTIVE", "INACTIVE", "ARCHIVED"]),
 
+  tags: z.array(z.string()).optional(),
+occasionTags: z.array(z.string()).optional(),
+metaKeywords: z.array(z.string()).optional(),
+
   productType: z.enum([
     "DRESS",
     "ACCESSORY",

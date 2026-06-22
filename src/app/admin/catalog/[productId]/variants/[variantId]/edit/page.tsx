@@ -307,6 +307,7 @@ function buildProductVariantPatchPayload(values: VariantFormValues) {
     mtoPrice: toOptionalNumber(values.mtoPrice),
 
     stock: toRequiredNumber(values.stock),
+    reservedStock: toRequiredNumber(values.reservedStock),
 
     attributes:
       Object.keys(attributesPayload).length > 0 ? attributesPayload : undefined,

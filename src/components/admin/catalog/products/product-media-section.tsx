@@ -269,8 +269,8 @@ function ModalShell({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[1.5rem] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[1.5rem] bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h3 className="text-base font-semibold text-neutral-950">{title}</h3>
 
           <button
@@ -814,7 +814,7 @@ async function handleSaveMediaDetails() {
     setIsUploading(true);
     setMediaError(null);
 
-    await updateProductMediaDetails({
+    const updatedMedia = await updateProductMediaDetails({
       apiRootUrl: getApiRootUrl(),
       mediaId: editingMedia.id,
       token: getToken(),
@@ -832,8 +832,24 @@ async function handleSaveMediaDetails() {
       },
     });
 
+    setEditingMedia((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        ...updatedMedia,
+        name: updatedMedia?.name ?? mediaName,
+        title: updatedMedia?.title ?? mediaName,
+        altText: updatedMedia?.altText ?? mediaAltText,
+        caption: updatedMedia?.caption ?? mediaCaption,
+        viewType: updatedMedia?.viewType ?? mediaViewType,
+        colorName: updatedMedia?.colorName ?? mediaColorName,
+      };
+    });
+
+    await onMediaChanged?.();
+
     setEditingMedia(null);
-    onMediaChanged?.();
   } catch (error) {
     setMediaError(
       error instanceof Error ? error.message : "Media details update failed."
@@ -1217,11 +1233,11 @@ async function handleSaveMediaDetails() {
                   placeholder="Product media"
                   className="mt-2 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
                 />
-              </div>
-            </div>
+                  </div>
+      </div>
 
-            <div className="flex justify-end gap-2 border-t border-neutral-200 pt-4">
-              <Button
+      <div className="sticky bottom-0 -mx-5 mt-4 flex justify-end gap-2 border-t border-neutral-200 bg-white px-5 pt-4 pb-1">
+        <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsUrlModalOpen(false)}
@@ -1417,114 +1433,159 @@ async function handleSaveMediaDetails() {
           </div>
         </ModalShell>
       ) : null}
-
-      {editingMedia ? (
+{editingMedia ? (
   <ModalShell
     title="Edit media details"
     onClose={() => setEditingMedia(null)}
   >
-    <div className="space-y-4 p-5">
-      <div className="grid gap-5 md:grid-cols-[220px_1fr]">
-        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
-          <MediaPreview
-            item={editingMedia}
-            className="h-56 w-full object-contain"
-          />
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-              Media name
-            </label>
-            <input
-              value={mediaName}
-              onChange={(event) => setMediaName(event.target.value)}
-              placeholder="Front view image"
-              className="mt-2 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
+    <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="space-y-4">
+        <div className="grid gap-5 md:grid-cols-[220px_1fr]">
+          <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
+            <MediaPreview
+              item={editingMedia}
+              className="h-full max-h-[420px] w-full object-contain"
             />
           </div>
 
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-              Alt description
-            </label>
-            <textarea
-              value={mediaAltText}
-              onChange={(event) => setMediaAltText(event.target.value)}
-              placeholder="Describe this media for SEO and accessibility"
-              rows={4}
-              className="mt-2 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
-            />
-          </div>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                    Media ID
+                  </p>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <code
+                      title={editingMedia.id}
+                      className="min-w-0 flex-1 truncate rounded-lg bg-white px-3 py-2 text-xs text-neutral-700 ring-1 ring-neutral-200"
+                    >
+                      {editingMedia.id}
+                    </code>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigator.clipboard.writeText(editingMedia.id)
+                      }
+                      className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+
+                {editingMedia.productId ? (
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                      Product ID
+                    </p>
+
+                    <code
+                      title={editingMedia.productId}
+                      className="mt-1.5 block truncate rounded-lg bg-white px-3 py-2 text-xs text-neutral-700 ring-1 ring-neutral-200"
+                    >
+                      {editingMedia.productId}
+                    </code>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
             <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                Caption
+                Media name
               </label>
               <input
-                value={mediaCaption}
-                onChange={(event) => setMediaCaption(event.target.value)}
-                placeholder="Optional caption"
-                className="mt-2 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
+                value={mediaName}
+                onChange={(event) => setMediaName(event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-neutral-200 px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+                placeholder="Media name"
               />
             </div>
 
             <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                View type
+                Alt description
               </label>
-              <select
-                value={mediaViewType}
-                onChange={(event) => setMediaViewType(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
-              >
-                <option value="">Select view</option>
-                <option value="front">Front</option>
-                <option value="back">Back</option>
-                <option value="side">Side</option>
-                <option value="detail">Detail</option>
-                <option value="lifestyle">Lifestyle</option>
-              </select>
+              <textarea
+                value={mediaAltText}
+                onChange={(event) => setMediaAltText(event.target.value)}
+                className="mt-2 min-h-28 w-full rounded-xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+                placeholder="Alt description"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                  Caption
+                </label>
+                <input
+                  value={mediaCaption}
+                  onChange={(event) => setMediaCaption(event.target.value)}
+                  className="mt-2 h-11 w-full rounded-xl border border-neutral-200 px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+                  placeholder="Caption"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                  View type
+                </label>
+                <select
+                  value={mediaViewType}
+                  onChange={(event) => setMediaViewType(event.target.value)}
+                  className="mt-2 h-11 w-full rounded-xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+                >
+                  <option value="">Select view type</option>
+                  <option value="front">Front</option>
+                  <option value="back">Back</option>
+                  <option value="side">Side</option>
+                  <option value="detail">Detail</option>
+                  <option value="flatlay">Flatlay</option>
+                  <option value="video">Video</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                Color name
+              </label>
+              <input
+                value={mediaColorName}
+                onChange={(event) => setMediaColorName(event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-neutral-200 px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+                placeholder="Color name"
+              />
             </div>
           </div>
-
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-              Color name
-            </label>
-            <input
-              value={mediaColorName}
-              onChange={(event) => setMediaColorName(event.target.value)}
-              placeholder="Blush Pink"
-              className="mt-2 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
-            />
-          </div>
         </div>
-      </div>
 
-      <div className="flex justify-end gap-2 border-t border-neutral-200 pt-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setEditingMedia(null)}
-          className="rounded-full"
-        >
-          Cancel
-        </Button>
+        <div className="sticky bottom-0 -mx-5 mt-4 flex justify-end gap-2 border-t border-neutral-200 bg-white px-5 pb-1 pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setEditingMedia(null)}
+            className="rounded-full"
+          >
+            Cancel
+          </Button>
 
-        <Button
-          type="button"
-          disabled={isUploading}
-          onClick={handleSaveMediaDetails}
-          className="rounded-full bg-neutral-950 text-white hover:bg-neutral-800"
-        >
-          {isUploading ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : null}
-          Save details
-        </Button>
+          <Button
+            type="button"
+            onClick={handleSaveMediaDetails}
+            disabled={isUploading}
+            className="rounded-full bg-neutral-950 text-white"
+          >
+            {isUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            Save details
+          </Button>
+        </div>
       </div>
     </div>
   </ModalShell>

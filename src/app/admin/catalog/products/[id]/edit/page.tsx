@@ -10,6 +10,12 @@ import { syncProductCategories } from "@/lib/admin/category-product-sync";
 import type { ProductMediaItem } from "@/lib/admin/product-media-upload";
 import { saveProductMetafields } from "@/lib/admin/product-metafields-api";
 
+import { saveProductTags } from "@/lib/admin/product-tags-api";
+import {
+  getProductSeo,
+  saveProductSeo,
+} from "@/lib/admin/product-seo-api";
+
 import { saveProductCategoryMetafields } from "@/lib/admin/product-taxonomy-metafields-api";
 import {
   buildCatalogProductPayload,
@@ -71,12 +77,24 @@ categoryMetafields?: MetafieldRecord | null;
   salePrice?: number | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
+
+
+
+  tags?: string[] | null;
+occasionTags?: string[] | null;
+metaKeywords?: string[] | null;
   metafields?: {
     productMetafields?: MetafieldRecord | null;
+    data?: {
+  metafields?: MetafieldRecord | null;
+} | null;
     categoryMetafields?: MetafieldRecord | null;
     [key: string]: unknown;
   } | null;
   productMetafields?: MetafieldRecord | null;
+  data?: {
+    metafields?: MetafieldRecord | null;
+  } | null;
 
 };
 
@@ -277,23 +295,62 @@ function getProductCategorySlugs(product: BackendProduct) {
 }
 
 function getProductMetafields(product: BackendProduct): MetafieldRecord {
-  if (
-    product.metafields &&
-    typeof product.metafields === "object" &&
-    product.metafields.productMetafields &&
-    typeof product.metafields.productMetafields === "object"
-  ) {
-    return product.metafields.productMetafields;
+  const allowedKeys = [
+    "productFaqs",
+    "careInstructions",
+    "compositionOrigin",
+    "customBadge",
+    "seeMoreFrom",
+    "primaryCollection",
+    "secondaryCollection",
+    "similarColorProducts",
+    "matchWithAccessories",
+    "completeTheLook",
+    "advancedProductTitle",
+    "similarStyleProduct",
+    "style",
+    "fabric",
+    "print",
+    "printSwatch",
+    "similarPrintTitle",
+    "similarPrintProducts",
+  ];
+
+  const possibleSources = [
+    product.metafields,
+    product.productMetafields,
+    product.data && typeof product.data === "object"
+      ? (product.data as { metafields?: MetafieldRecord }).metafields
+      : null,
+  ];
+
+  for (const source of possibleSources) {
+    if (!source || typeof source !== "object") continue;
+
+    const sourceRecord = source as MetafieldRecord;
+
+    const extracted = allowedKeys.reduce<MetafieldRecord>((acc, key) => {
+      if (sourceRecord[key] !== undefined) {
+        acc[key] = sourceRecord[key];
+      }
+
+      return acc;
+    }, {});
+
+    if (Object.keys(extracted).length > 0) {
+      return extracted;
+    }
   }
 
-  if (
-    product.productMetafields &&
-    typeof product.productMetafields === "object"
-  ) {
-    return product.productMetafields;
-  }
+  const productRecord = product as unknown as MetafieldRecord;
 
-  return {};
+  return allowedKeys.reduce<MetafieldRecord>((acc, key) => {
+    if (productRecord[key] !== undefined) {
+      acc[key] = productRecord[key];
+    }
+
+    return acc;
+  }, {});
 }
 
 function getCategoryMetafields(product: BackendProduct): MetafieldRecord {
@@ -376,10 +433,13 @@ taxonomy: product.taxonomy
         : product.compareAtPrice !== null && product.compareAtPrice !== undefined
           ? Number(product.compareAtPrice)
           : undefined,
-    seoTitle: product.seoTitle || "",
-    seoDescription: product.seoDescription || "",
-    productMetafields: getProductMetafields(product),
-    categoryMetafields: getCategoryMetafields(product),
+seoTitle: product.seoTitle || "",
+seoDescription: product.seoDescription || "",
+tags: Array.isArray(product.tags) ? product.tags : [],
+occasionTags: [],
+metaKeywords: [],
+productMetafields: getProductMetafields(product),
+categoryMetafields: getCategoryMetafields(product),
   };
 }
 
@@ -432,13 +492,39 @@ export default function EditProductPage() {
           );
         }
 
-        const nextProduct = extractProduct(data, productId);
-        const nextDefaultValues = mapProductToFormValues(nextProduct);
-        const nextCategorySlugs = getProductCategorySlugs(nextProduct);
+      const nextProduct = extractProduct(data, productId);
+const mappedValues = mapProductToFormValues(nextProduct);
+const nextCategorySlugs = getProductCategorySlugs(nextProduct);
 
-        setProduct(nextProduct);
-        setDefaultValues(nextDefaultValues);
-        setPreviousCategorySlugs(nextCategorySlugs);
+let seoData: Awaited<ReturnType<typeof getProductSeo>> | null = null;
+
+try {
+  seoData = await getProductSeo({
+    apiRootUrl: getApiRootUrl(),
+    productId,
+    token: getToken(),
+  });
+} catch (seoError) {
+  console.warn("PRODUCT_SEO_LOAD_FAILED:", seoError);
+}
+
+const nextDefaultValues: ProductFormValues = {
+  ...mappedValues,
+  seoTitle:
+    seoData?.seoTitle ||
+    seoData?.metaTitle ||
+    mappedValues.seoTitle ||
+    "",
+  seoDescription:
+    seoData?.seoDescription ||
+    seoData?.metaDescription ||
+    mappedValues.seoDescription ||
+    "",
+};
+
+setProduct(nextProduct);
+setDefaultValues(nextDefaultValues);
+setPreviousCategorySlugs(nextCategorySlugs);
       } catch (error) {
         setPageError(
           error instanceof Error ? error.message : "Product detail load failed."
@@ -484,6 +570,46 @@ export default function EditProductPage() {
             `Product update failed: ${response.status} ${response.statusText}`
         );
       }
+      try {
+  await saveProductSeo({
+    apiRootUrl,
+    productId,
+    values: {
+      seoTitle: values.seoTitle || "",
+      seoDescription: values.seoDescription || "",
+    },
+    token,
+  });
+} catch (seoError) {
+  console.warn("PRODUCT_SEO_SAVE_FAILED:", seoError);
+
+  setSuccessMessage(
+    "Product update ho gaya, but SEO save me backend error aaya. SEO API response check karni hogi."
+  );
+
+  return;
+}
+
+try {
+  await saveProductTags({
+    apiRootUrl,
+    productId,
+    values: {
+      tags: values.tags || [],
+      occasionTags: values.occasionTags || [],
+      metaKeywords: values.metaKeywords || [],
+    },
+    token,
+  });
+} catch (tagsError) {
+  console.warn("PRODUCT_TAGS_SAVE_FAILED:", tagsError);
+
+  setSuccessMessage(
+    "Product update aur SEO save ho gaya, but tags save me backend error aaya. Tags API response check karni hogi."
+  );
+
+  return;
+}
 
       console.log("PRODUCT_METAFIELDS_BEFORE_SAVE:", values.productMetafields);
 console.log("CATEGORY_METAFIELDS_BEFORE_SAVE:", values.categoryMetafields);
@@ -499,9 +625,9 @@ console.log("CATEGORY_METAFIELDS_BEFORE_SAVE:", values.categoryMetafields);
 } catch (metafieldsError) {
   console.warn("PRODUCT_METAFIELDS_SAVE_FAILED:", metafieldsError);
 
-  setSuccessMessage(
-    "Product update ho gaya, but metafields save me backend error aaya. Metafields API response check karni hogi."
-  );
+ setSuccessMessage(
+  "Product update aur SEO save ho gaya, but product metafields save me backend error aaya. Metafields API response check karni hogi."
+);
 
   return;
 }
@@ -538,16 +664,16 @@ const selectedCategorySlugs = getSelectedProductCategorySlugs(values);
         });
 
         setPreviousCategorySlugs(selectedCategorySlugs);
-        setSuccessMessage(
-          "Product update ho gaya, metafields save ho gaye aur category assignment sync ho gayi."
-        );
+      setSuccessMessage(
+  "Product update ho gaya, SEO, tags, metafields save ho gaye aur category assignment sync ho gayi."
+);
       } catch (categorySyncError) {
         console.warn("CATEGORY_SYNC_FAILED:", categorySyncError);
 
         setPreviousCategorySlugs(selectedCategorySlugs);
-        setSuccessMessage(
-          "Product update aur metafields save ho gaye, but category assignment sync me backend error aaya. Category-products API backend se check karni hogi."
-        );
+      setSuccessMessage(
+  "Product update, SEO, tags aur metafields save ho gaye, but category assignment sync me backend error aaya. Category-products API backend se check karni hogi."
+);
       }
     } catch (error) {
       setPageError(

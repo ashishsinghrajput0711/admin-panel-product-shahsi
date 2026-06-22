@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 
+import { ProductTagsSection } from "@/components/admin/catalog/products/product-tags-section";
+
 import { ProductShopifyMetafieldsSection } from "@/components/admin/catalog/products/product-shopify-metafields-section";
 
 import { ProductMediaSection } from "@/components/admin/catalog/products/product-media-section";
@@ -136,8 +138,11 @@ categories: [],
     status: "DRAFT",
     price: 0,
     salePrice: undefined,
-  seoTitle: "",
+seoTitle: "",
 seoDescription: "",
+tags: [],
+occasionTags: [],
+metaKeywords: [],
 productMetafields: {},
 categoryMetafields: {},
 ...defaultValues,
@@ -434,6 +439,23 @@ const selectedCategoryLabel =
   });
 }
 
+
+function handleTagsChange(nextValues: ProductFormValues) {
+  form.setValue("tags", nextValues.tags || [], {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("occasionTags", nextValues.occasionTags || [], {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("metaKeywords", nextValues.metaKeywords || [], {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+}
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 pb-20">
       <FormSection
@@ -686,6 +708,7 @@ const selectedCategoryLabel =
           ) : null}
         </FormSection>
       </div>
+    <ProductTagsSection values={formValues} onChange={handleTagsChange} />
 
       <FormSection
         icon={<Search className="h-4 w-4" />}

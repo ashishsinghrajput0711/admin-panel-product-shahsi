@@ -691,18 +691,76 @@ export async function updateProductImageDetails({
 }
 
 
-export type UpdateProductMediaDetailsPayload = {
-  name?: string | null;
-  title?: string | null;
-  altText?: string | null;
-  caption?: string | null;
-  viewType?: string | null;
-  colorName?: string | null;
-  position?: number | null;
-  sortOrder?: number | null;
-  isPrimary?: boolean | null;
-  status?: string | null;
-};
+export async function updateProductMediaDetails({
+  apiRootUrl,
+  mediaId,
+  token,
+  payload,
+}: {
+  apiRootUrl: string;
+  mediaId: string;
+  token?: string | null;
+  payload: {
+    name?: string | null;
+    title?: string | null;
+    altText?: string | null;
+    caption?: string | null;
+    viewType?: string | null;
+    colorName?: string | null;
+    position?: number | null;
+    sortOrder?: number | null;
+    isPrimary?: boolean;
+    status?: string | null;
+  };
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/media/${encodeURIComponent(mediaId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "*/*",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const text = await response.text();
+
+  let data: {
+    success?: boolean;
+    data?: {
+      media?: ProductMediaItem;
+    };
+    media?: ProductMediaItem;
+    message?: string | string[];
+    error?: unknown;
+  } | null = null;
+
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Media details update API JSON response nahi de rahi. Body: ${text}`);
+    }
+  }
+
+  if (!response.ok) {
+    const message =
+      typeof data?.message === "string"
+        ? data.message
+        : Array.isArray(data?.message)
+          ? data.message.join(", ")
+          : typeof data?.error === "string"
+            ? data.error
+            : `Media details update failed: ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return data?.data?.media || data?.media || null;
+}
 
 type MediaDetailsApiResponse<T> = {
   success?: boolean;
@@ -760,38 +818,4 @@ function getMediaDetailsApiError(data: unknown, fallback: string) {
   return fallback;
 }
 
-export async function updateProductMediaDetails({
-  apiRootUrl,
-  mediaId,
-  payload,
-  token,
-}: {
-  apiRootUrl: string;
-  mediaId: string;
-  payload: UpdateProductMediaDetailsPayload;
-  token?: string | null;
-}) {
-  const response = await fetch(
-    `${apiRootUrl}/admin/catalog/media/${encodeURIComponent(mediaId)}`,
-    {
-      method: "PATCH",
-      headers: getMediaDetailsHeaders(token),
-      body: JSON.stringify(payload),
-    }
-  );
 
-  const data = await readMediaDetailsJson<
-    MediaDetailsApiResponse<ProductMediaItem>
-  >(response, "Media details update API JSON response nahi de rahi");
-
-  if (!response.ok) {
-    throw new Error(
-      getMediaDetailsApiError(
-        data,
-        `Media details update failed: ${response.status}`
-      )
-    );
-  }
-
-  return data?.data ?? data;
-}

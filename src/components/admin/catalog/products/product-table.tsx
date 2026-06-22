@@ -493,20 +493,16 @@ export function ProductTable({
                         )}
                       </Button>
 
-                      <Button
-                        asChild
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 shrink-0 rounded-full px-2 text-[11px]"
-                        title="Product variants"
-                      >
-                        <Link
-                          href={`/admin/catalog/products/${product.id}/variants`}
-                        >
-                          Var
-                        </Link>
-                      </Button>
+                     <Button
+  asChild
+  type="button"
+  variant="outline"
+  size="sm"
+  className="h-7 shrink-0 rounded-full px-2 text-[11px]"
+  title="Product variants"
+>
+  <Link href={`/admin/catalog/${product.id}/variants`}>Var</Link>
+</Button>
                     </div>
                   </TableCell>
                 </TableRow>
