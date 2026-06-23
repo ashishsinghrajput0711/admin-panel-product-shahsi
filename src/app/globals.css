@@ -128,3 +128,22 @@
     @apply font-sans;
   }
 }
+
+.shahsi-media-cropper-container {
+  background: transparent !important;
+}
+
+.shahsi-media-cropper-area {
+  border: 2px solid #ffffff !important;
+  color: rgba(0, 0, 0, 0.52) !important;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.58) !important;
+}
+
+.shahsi-media-cropper-area::before,
+.shahsi-media-cropper-area::after {
+  border-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.reactEasyCrop_CropArea {
+  border-radius: 0 !important;
+}

@@ -11,6 +11,7 @@ import {
   Database,
   FolderTree,
   ImageIcon,
+  Layers,
   Layers3,
   LayoutDashboard,
   Package,
@@ -26,6 +27,11 @@ const productSubTabs = [
     label: "Categories",
     href: "/admin/catalog/categories",
     icon: FolderTree,
+  },
+  {
+    label: "Collections",
+    href: "/admin/catalog/collections",
+    icon: Layers,
   },
   {
     label: "Variants",
@@ -170,17 +176,33 @@ export default function CatalogLayout({
                 ) : null}
               </nav>
 
-              <div className="border-t border-neutral-200 p-4">
-                <div className="rounded-2xl bg-[#f7f2ea] p-4">
-                  <p className="text-sm font-medium text-neutral-950">
-                    Build Order
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-neutral-600">
-                    Product → Categories → Variants → Attributes → Pricing →
-                    Inventory → Media
-                  </p>
-                </div>
-              </div>
+             <div className="border-t border-neutral-200 p-4">
+  <div className="rounded-2xl bg-[#f7f2ea] p-4">
+    <p className="text-sm font-medium text-neutral-950">
+      Build Order
+    </p>
+
+    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] leading-5 text-neutral-600">
+      {[
+        "Product",
+        "Categories",
+        "Collections",
+        "Variants",
+        "Attributes",
+        "Pricing",
+        "Inventory",
+        "Media",
+      ].map((item, index, list) => (
+        <span key={item} className="inline-flex items-center gap-1">
+          <span>{item}</span>
+          {index < list.length - 1 ? (
+            <span className="text-neutral-400">→</span>
+          ) : null}
+        </span>
+      ))}
+    </div>
+  </div>
+</div>
             </div>
           </aside>
 

@@ -89,6 +89,19 @@ function getApiError(data: unknown) {
   return "";
 }
 
+function normalizeCategoryNode(category: CategoryNode): CategoryNode {
+  const isActive =
+    typeof category.isActive === "boolean" ? category.isActive : true;
+
+  return {
+    ...category,
+    isActive,
+    children: Array.isArray(category.children)
+      ? category.children.map(normalizeCategoryNode)
+      : [],
+  };
+}
+
 export async function fetchCategoryTree() {
   const apiRootUrl = getAdminApiRootUrl();
 
@@ -98,7 +111,7 @@ export async function fetchCategoryTree() {
       method: "GET",
       headers: getAuthHeaders(),
       cache: "no-store",
-    }
+    },
   );
 
   const data = await readJson<CategoryTreeResponse>(response);
@@ -106,11 +119,13 @@ export async function fetchCategoryTree() {
   if (!response.ok) {
     throw new Error(
       getApiError(data) ||
-        `Category tree load failed: ${response.status} ${response.statusText}`
+        `Category tree load failed: ${response.status} ${response.statusText}`,
     );
   }
 
-  return data?.data?.data || data?.data?.categories || [];
+  const categories = data?.data?.data || data?.data?.categories || [];
+
+  return categories.map(normalizeCategoryNode);
 }
 
 export async function fetchCategoryBySlug(slug: string) {
@@ -122,7 +137,7 @@ export async function fetchCategoryBySlug(slug: string) {
       method: "GET",
       headers: getAuthHeaders(),
       cache: "no-store",
-    }
+    },
   );
 
   const data = await readJson<CategoryDetailResponse>(response);
@@ -130,7 +145,7 @@ export async function fetchCategoryBySlug(slug: string) {
   if (!response.ok) {
     throw new Error(
       getApiError(data) ||
-        `Category detail load failed: ${response.status} ${response.statusText}`
+        `Category detail load failed: ${response.status} ${response.statusText}`,
     );
   }
 
@@ -138,22 +153,26 @@ export async function fetchCategoryBySlug(slug: string) {
     throw new Error("Category detail response me data missing hai.");
   }
 
-  return data.data;
+  return normalizeCategoryNode(data.data);
 }
 
 export function buildCategoryPayload(values: CategoryFormValues) {
+  const isActive = values.isActive === true;
+
   return {
     name: values.name.trim(),
     slug: values.slug.trim(),
     parentId: values.parentId.trim() || null,
     description: values.description.trim() || null,
     imageUrl: values.imageUrl.trim() || null,
-    imageName: values.imageName.trim() || null,
-    imageAltText: values.imageAltText.trim() || null,
-    themeTemplate: values.themeTemplate.trim() || "default",
+    isActive,
+    sortOrder: Number(values.sortOrder || 1),
     seoTitle: values.seoTitle.trim() || null,
     seoDescription: values.seoDescription.trim() || null,
     seoSlug: values.seoSlug.trim() || values.slug.trim(),
+    imageName: values.imageName.trim() || null,
+    imageAltText: values.imageAltText.trim() || null,
+    themeTemplate: values.themeTemplate.trim() || "default",
     metafields: {
       topMenu: values.metafields.topMenu?.trim() || "",
       fromBlog: values.metafields.fromBlog?.trim() || "",
@@ -167,26 +186,29 @@ export function buildCategoryPayload(values: CategoryFormValues) {
         answer: faq.answer.trim(),
       }))
       .filter((faq) => faq.question || faq.answer),
-    isActive: values.isActive,
-    sortOrder: Number(values.sortOrder || 1),
   };
 }
 
 export async function upsertCategory(values: CategoryFormValues) {
   const apiRootUrl = getAdminApiRootUrl();
+  const payload = buildCategoryPayload(values);
+
+  console.log("CATEGORY_SAVE_PAYLOAD:", payload);
 
   const response = await fetch(`${apiRootUrl}/admin/catalog/categories`, {
     method: "POST",
     headers: getJsonHeaders(),
-    body: JSON.stringify(buildCategoryPayload(values)),
+    body: JSON.stringify(payload),
   });
 
   const data = await readJson<CategoryUpsertResponse>(response);
 
+  console.log("CATEGORY_SAVE_RESPONSE:", data);
+
   if (!response.ok) {
     throw new Error(
       getApiError(data) ||
-        `Category save failed: ${response.status} ${response.statusText}`
+        `Category save failed: ${response.status} ${response.statusText}`,
     );
   }
 
@@ -194,7 +216,7 @@ export async function upsertCategory(values: CategoryFormValues) {
     throw new Error("Category save ho gayi but response me category data nahi mila.");
   }
 
-  return data.data;
+  return normalizeCategoryNode(data.data);
 }
 
 export async function deleteCategory(slug: string) {
@@ -205,17 +227,19 @@ export async function deleteCategory(slug: string) {
     {
       method: "DELETE",
       headers: getAuthHeaders(),
-    }
+    },
   );
 
-  const data = await readJson<{ success?: boolean; message?: string; error?: unknown }>(
-    response
-  );
+  const data = await readJson<{
+    success?: boolean;
+    message?: string;
+    error?: unknown;
+  }>(response);
 
   if (!response.ok) {
     throw new Error(
       getApiError(data) ||
-        `Category delete failed: ${response.status} ${response.statusText}`
+        `Category delete failed: ${response.status} ${response.statusText}`,
     );
   }
 
@@ -232,8 +256,6 @@ export async function uploadCategoryImage({
   const apiRootUrl = getAdminApiRootUrl();
 
   const formData = new FormData();
-
-  // Backend field name confirm nahi hai. Commonly "image" hota hai.
   formData.append("image", file);
 
   const response = await fetch(
@@ -242,7 +264,7 @@ export async function uploadCategoryImage({
       method: "POST",
       headers: getAuthHeaders(),
       body: formData,
-    }
+    },
   );
 
   const data = await readJson<{
@@ -255,11 +277,11 @@ export async function uploadCategoryImage({
   if (!response.ok) {
     throw new Error(
       getApiError(data) ||
-        `Category image upload failed: ${response.status} ${response.statusText}`
+        `Category image upload failed: ${response.status} ${response.statusText}`,
     );
   }
 
-  return data?.data || null;
+  return data?.data ? normalizeCategoryNode(data.data) : null;
 }
 
 export function flattenCategoryTree(
@@ -267,7 +289,7 @@ export function flattenCategoryTree(
   options: {
     excludeId?: string;
     excludeSlug?: string;
-  } = {}
+  } = {},
 ) {
   const rows: Array<CategoryNode & { depth: number; label: string }> = [];
 
@@ -295,7 +317,9 @@ export function flattenCategoryTree(
   return rows;
 }
 
-export function categoryToFormValues(category?: CategoryNode | null): CategoryFormValues {
+export function categoryToFormValues(
+  category?: CategoryNode | null,
+): CategoryFormValues {
   return {
     id: category?.id || "",
     name: category?.name || "",
@@ -317,7 +341,83 @@ export function categoryToFormValues(category?: CategoryNode | null): CategoryFo
       secondaryCollection: category?.metafields?.secondaryCollection || "",
     },
     faqs: category?.faqs?.length ? category.faqs : [],
-    isActive: category?.isActive ?? true,
+    isActive:
+      typeof category?.isActive === "boolean" ? category.isActive : true,
     sortOrder: category?.sortOrder ?? 1,
   };
+}
+
+function unwrapCategoryProductsResponse(data: any) {
+  const items =
+    data?.data?.items ||
+    data?.data?.products ||
+    data?.data?.data ||
+    data?.items ||
+    data?.products ||
+    data?.data ||
+    [];
+
+  return Array.isArray(items) ? items : [];
+}
+
+export function getCategoryProductId(item: any) {
+  return String(
+    item?.productId ||
+      item?.catalogProductId ||
+      item?.id ||
+      item?.product?.id ||
+      item?.catalogProduct?.id ||
+      "",
+  ).trim();
+}
+
+export async function fetchCategoryProducts(slug: string) {
+  const apiRootUrl = getAdminApiRootUrl();
+
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/categories/${encodeURIComponent(
+      slug,
+    )}/products?page=1&limit=500`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const data = await readJson<any>(response);
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data) ||
+        `Category products load failed: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return unwrapCategoryProductsResponse(data);
+}
+
+export async function removeProductFromCategory(slug: string, productId: string) {
+  const apiRootUrl = getAdminApiRootUrl();
+
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/categories/${encodeURIComponent(
+      slug,
+    )}/products/${encodeURIComponent(productId)}`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
+
+  const data = await readJson<any>(response);
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data) ||
+        `Category product remove failed: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return data;
 }

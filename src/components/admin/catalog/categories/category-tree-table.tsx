@@ -1,8 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Edit, FolderTree, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  Edit,
+  FolderTree,
+  PackageSearch,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import type { CategoryNode } from "@/components/admin/catalog/categories/category-types";
+
+function getCategoryIsActive(category: CategoryNode) {
+  return category.isActive !== false;
+}
 
 function CategoryRow({
   category,
@@ -15,6 +26,8 @@ function CategoryRow({
   onDelete: (category: CategoryNode) => void;
   isDeleting?: boolean;
 }) {
+  const active = getCategoryIsActive(category);
+
   return (
     <>
       <tr className="border-b border-neutral-100 hover:bg-neutral-50">
@@ -35,13 +48,13 @@ function CategoryRow({
                   {category.name}
                 </span>
 
-                {!category.isActive ? (
-                  <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-semibold text-neutral-600">
-                    Inactive
-                  </span>
-                ) : (
+                {active ? (
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                     Active
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-semibold text-neutral-600">
+                    Inactive
                   </span>
                 )}
               </div>
@@ -77,7 +90,17 @@ function CategoryRow({
           <div className="flex items-center justify-end gap-2">
             <Link
               href={`/admin/catalog/categories/${encodeURIComponent(
-                category.slug
+                category.slug,
+              )}/products`}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-700 hover:bg-neutral-100"
+              title="Manage category products"
+            >
+              <PackageSearch className="h-4 w-4" />
+            </Link>
+
+            <Link
+              href={`/admin/catalog/categories/${encodeURIComponent(
+                category.slug,
               )}/edit`}
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-700 hover:bg-neutral-100"
               title="Edit category"

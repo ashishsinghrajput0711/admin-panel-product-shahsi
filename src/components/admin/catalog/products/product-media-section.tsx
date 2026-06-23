@@ -1,6 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
+
+
+import {
+  Crop,
+  Info,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  
+} from "lucide-react";
 import {
   Check,
   ChevronDown,
@@ -15,7 +26,17 @@ import {
   Upload,
   X,
 } from "lucide-react";
+
+
+import Cropper from "react-easy-crop";
+import type { Area, Point } from "react-easy-crop";
 import { Button } from "@/components/ui/button";
+
+
+import {
+  transformProductMedia,
+  type ProductMediaTransformMode,
+} from "@/lib/admin/product-media-upload";
 import type {
   MediaLibraryFilterType,
   ProductMediaItem,
@@ -333,9 +354,67 @@ const [isLibraryLoadingMore, setIsLibraryLoadingMore] = useState(false);
   const [editingMedia, setEditingMedia] = useState<ProductMediaItem | null>(null);
 const [mediaName, setMediaName] = useState("");
 const [mediaAltText, setMediaAltText] = useState("");
-const [mediaCaption, setMediaCaption] = useState("");
-const [mediaViewType, setMediaViewType] = useState("");
-const [mediaColorName, setMediaColorName] = useState("");
+
+
+
+const [mediaToolMode, setMediaToolMode] = useState<
+  "information" | "crop" | "resize"
+>("information");
+
+const [cropperCrop, setCropperCrop] = useState<Point>({ x: 0, y: 0 });
+const [cropperZoom, setCropperZoom] = useState(1);
+const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+
+const [mediaAspectRatio, setMediaAspectRatio] = useState("4:5");
+
+const [mediaCropX, setMediaCropX] = useState(0);
+const [mediaCropY, setMediaCropY] = useState(0);
+const [mediaCropWidth, setMediaCropWidth] = useState(1000);
+const [mediaCropHeight, setMediaCropHeight] = useState(1250);
+
+const [mediaResizeWidth, setMediaResizeWidth] = useState(1000);
+const [mediaResizeHeight, setMediaResizeHeight] = useState(1250);
+
+const [mediaSaveAsNew, setMediaSaveAsNew] = useState(true);
+const [isTransformingMedia, setIsTransformingMedia] = useState(false);
+const [mediaTransformError, setMediaTransformError] = useState<string | null>(
+  null
+);
+
+
+const aspectRatioMap: Record<string, number | undefined> = {
+  original: undefined,
+  freeform: undefined,
+  "1:1": 1,
+  "3:2": 3 / 2,
+  "4:5": 4 / 5,
+  "5:4": 5 / 4,
+  "5:9": 5 / 9,
+  "7:5": 7 / 5,
+  "16:9": 16 / 9,
+  "9:16": 9 / 16,
+};
+
+const currentCropAspect = aspectRatioMap[mediaAspectRatio];
+
+const mediaAspectRatioOptions = [
+  { label: "Original", value: "original" },
+  { label: "Square", value: "1:1" },
+  { label: "3:2", value: "3:2" },
+  { label: "5:4", value: "5:4" },
+  { label: "7:5", value: "7:5" },
+  { label: "16:9", value: "16:9" },
+  { label: "5:9", value: "5:9" },
+  { label: "Freeform", value: "freeform" },
+];
+
+function handleCropComplete(_: Area, croppedPixels: Area) {
+  setCroppedAreaPixels(croppedPixels);
+  setMediaCropX(Math.round(croppedPixels.x));
+  setMediaCropY(Math.round(croppedPixels.y));
+  setMediaCropWidth(Math.round(croppedPixels.width));
+  setMediaCropHeight(Math.round(croppedPixels.height));
+}
 
   const hasProductId = Boolean(productId);
 
@@ -799,12 +878,30 @@ await loadMediaLibrary({ page: 1, append: false });
 
 
 function openEditMediaDetails(item: ProductMediaItem) {
+  const initialWidth = Number(item.width || 1000);
+  const initialHeight = Number(item.height || 1250);
+
   setEditingMedia(item);
   setMediaName(item.name || item.title || "");
   setMediaAltText(item.altText || "");
-  setMediaCaption(item.caption || "");
-  setMediaViewType(item.viewType || "");
-  setMediaColorName(item.colorName || "");
+
+  setMediaToolMode("information");
+  setMediaTransformError(null);
+
+  setCropperCrop({ x: 0, y: 0 });
+setCropperZoom(1);
+setCroppedAreaPixels(null);
+
+setMediaAspectRatio("original");
+  setMediaCropX(0);
+  setMediaCropY(0);
+  setMediaCropWidth(initialWidth);
+  setMediaCropHeight(initialHeight);
+
+  setMediaResizeWidth(initialWidth);
+  setMediaResizeHeight(initialHeight);
+
+  setMediaSaveAsNew(true);
 }
 
 async function handleSaveMediaDetails() {
@@ -822,9 +919,7 @@ async function handleSaveMediaDetails() {
         name: mediaName || null,
         title: mediaName || editingMedia.title || editingMedia.name || null,
         altText: mediaAltText || null,
-        caption: mediaCaption || null,
-        viewType: mediaViewType || null,
-        colorName: mediaColorName || null,
+       
         position: editingMedia.position ?? editingMedia.sortOrder ?? 0,
         sortOrder: editingMedia.sortOrder ?? editingMedia.position ?? 0,
         isPrimary: Boolean(editingMedia.isPrimary),
@@ -841,9 +936,7 @@ async function handleSaveMediaDetails() {
         name: updatedMedia?.name ?? mediaName,
         title: updatedMedia?.title ?? mediaName,
         altText: updatedMedia?.altText ?? mediaAltText,
-        caption: updatedMedia?.caption ?? mediaCaption,
-        viewType: updatedMedia?.viewType ?? mediaViewType,
-        colorName: updatedMedia?.colorName ?? mediaColorName,
+       
       };
     });
 
@@ -856,6 +949,89 @@ async function handleSaveMediaDetails() {
     );
   } finally {
     setIsUploading(false);
+  }
+}
+
+async function handleTransformMedia(mode: ProductMediaTransformMode) {
+  if (!editingMedia?.id) return;
+
+  try {
+    setIsTransformingMedia(true);
+    setMediaTransformError(null);
+    setMediaError(null);
+
+    const apiRootUrl = getApiRootUrl();
+    const token = getToken();
+
+    const payload =
+      mode === "crop"
+        ? {
+            mode: "crop" as const,
+            aspectRatio:
+  mediaAspectRatio === "original" || mediaAspectRatio === "freeform"
+    ? null
+    : mediaAspectRatio,
+         crop: {
+  x: Math.round(croppedAreaPixels?.x ?? mediaCropX ?? 0),
+  y: Math.round(croppedAreaPixels?.y ?? mediaCropY ?? 0),
+  width: Math.round(croppedAreaPixels?.width ?? mediaCropWidth ?? 1000),
+  height: Math.round(croppedAreaPixels?.height ?? mediaCropHeight ?? 1250),
+},
+resize: {
+  width: Math.round(croppedAreaPixels?.width ?? mediaCropWidth ?? 1000),
+  height: Math.round(croppedAreaPixels?.height ?? mediaCropHeight ?? 1250),
+},
+            gravity: "auto",
+            format: "jpg",
+            quality: "auto",
+            saveAsNew: mediaSaveAsNew,
+            name: mediaName || editingMedia.name || editingMedia.title || null,
+            title: mediaName || editingMedia.title || editingMedia.name || null,
+            altText: mediaAltText || editingMedia.altText || null,
+            position: editingMedia.position ?? editingMedia.sortOrder ?? 0,
+            sortOrder: editingMedia.sortOrder ?? editingMedia.position ?? 0,
+            isPrimary: Boolean(editingMedia.isPrimary),
+            status: editingMedia.status || "ACTIVE",
+          }
+        : {
+            mode: "resize" as const,
+            aspectRatio: null,
+            crop: null,
+            resize: {
+              width: Number(mediaResizeWidth || 1000),
+              height: Number(mediaResizeHeight || 1250),
+            },
+            gravity: "auto",
+            format: "jpg",
+            quality: "auto",
+            saveAsNew: mediaSaveAsNew,
+            name: mediaName || editingMedia.name || editingMedia.title || null,
+            title: mediaName || editingMedia.title || editingMedia.name || null,
+            altText: mediaAltText || editingMedia.altText || null,
+            position: editingMedia.position ?? editingMedia.sortOrder ?? 0,
+            sortOrder: editingMedia.sortOrder ?? editingMedia.position ?? 0,
+            isPrimary: Boolean(editingMedia.isPrimary),
+            status: editingMedia.status || "ACTIVE",
+          };
+
+    const result = await transformProductMedia({
+      apiRootUrl,
+      mediaId: editingMedia.id,
+      payload,
+      token,
+    });
+
+    if (result.media) {
+      setEditingMedia(result.media);
+    }
+
+    await onMediaChanged?.();
+  } catch (error) {
+    setMediaTransformError(
+      error instanceof Error ? error.message : "Media transform failed."
+    );
+  } finally {
+    setIsTransformingMedia(false);
   }
 }
 
@@ -1434,161 +1610,357 @@ async function handleSaveMediaDetails() {
         </ModalShell>
       ) : null}
 {editingMedia ? (
-  <ModalShell
-    title="Edit media details"
-    onClose={() => setEditingMedia(null)}
-  >
-    <div className="min-h-0 flex-1 overflow-y-auto p-5">
-      <div className="space-y-4">
-        <div className="grid gap-5 md:grid-cols-[220px_1fr]">
-          <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
-            <MediaPreview
-              item={editingMedia}
-              className="h-full max-h-[420px] w-full object-contain"
-            />
-          </div>
+  <div className="fixed inset-0 z-[9999] h-screen w-screen overflow-hidden bg-[#050505] text-white">
+ <div className="grid h-screen w-screen grid-cols-[minmax(0,1fr)_430px] overflow-hidden">
+   <div className="relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-[#050505]">
+        <div
+          className="absolute inset-0 opacity-40"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, rgba(255,255,255,0.16) 1px, transparent 1px)",
+            backgroundSize: "34px 34px",
+          }}
+        />
 
-          <div className="space-y-4">
-            <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-              <div className="grid gap-3 lg:grid-cols-2">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                    Media ID
+        <button
+          type="button"
+          onClick={() => {
+            setEditingMedia(null);
+            setMediaTransformError(null);
+          }}
+       className="absolute left-5 top-5 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900/90 text-neutral-200 ring-1 ring-white/10 backdrop-blur hover:bg-neutral-800 hover:text-white"
+          title="Close"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        
+
+
+      <div className="relative z-10 h-[min(78vh,760px)] w-[min(64vw,820px)]">
+          {mediaToolMode === "crop" && !isVideoMedia(editingMedia) ? (
+            <Cropper
+              image={getMediaSrc(editingMedia)}
+              crop={cropperCrop}
+              zoom={cropperZoom}
+              aspect={currentCropAspect}
+              onCropChange={setCropperCrop}
+              onZoomChange={setCropperZoom}
+              onCropComplete={handleCropComplete}
+              showGrid={false}
+              objectFit="contain"
+              classes={{
+                containerClassName: "shahsi-media-cropper-container",
+                cropAreaClassName: "shahsi-media-cropper-area",
+              }}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <MediaPreview
+                item={editingMedia}
+                className="max-h-full max-w-full object-contain"
+              />
+            </div>
+          )}
+        </div>
+
+        {mediaToolMode === "crop" ? (
+       <div className="absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 items-center gap-4 rounded-[18px] bg-[#1f1f1f]/95 px-5 py-3 shadow-2xl ring-1 ring-white/10 backdrop-blur">
+            <span className="text-sm font-semibold text-white">%</span>
+
+            <input
+              type="range"
+              min={1}
+              max={3}
+              step={0.1}
+              value={cropperZoom}
+              onChange={(event) => setCropperZoom(Number(event.target.value))}
+              className="w-56"
+            />
+
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white/40"
+            >
+              <Maximize2 className="h-4 w-4" />
+              Expand
+            </button>
+          </div>
+        ) : (
+          <div className="absolute bottom-8 left-1/2 z-30 -translate-x-1/2 rounded-2xl bg-neutral-900/95 px-5 py-4 shadow-2xl ring-1 ring-white/10">
+            <label className="flex items-center gap-3 text-sm font-semibold text-white">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-white" />
+              Click image to set focal point
+            </label>
+          </div>
+        )}
+      </div>
+
+     <aside className="relative z-20 h-screen min-h-0 overflow-y-auto border-l border-white/10 bg-[#0b0b0b] px-5 py-6">
+        <div className="space-y-4 pb-10">
+          <section className="rounded-[22px] bg-[#1b1b1b] p-5 ring-1 ring-white/10 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+            <button
+              type="button"
+              onClick={() => setMediaToolMode("information")}
+              className="flex w-full items-center gap-3 text-left text-lg font-semibold text-white"
+            >
+              <Info className="h-5 w-5" />
+              Information
+            </button>
+
+            {mediaToolMode === "information" ? (
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="text-sm font-semibold text-white">
+                    Name
+                  </label>
+
+                  <input
+                    value={mediaName}
+                    onChange={(event) => setMediaName(event.target.value)}
+                    className="mt-2 h-11 w-full rounded-xl border border-white/15 bg-neutral-950 px-4 text-sm text-white outline-none focus:border-white/40"
+                    placeholder="Media name"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-white">
+                    Alt text
+                  </label>
+
+                  <textarea
+                    value={mediaAltText}
+                    onChange={(event) => setMediaAltText(event.target.value)}
+                    className="mt-2 min-h-[110px] w-full rounded-xl border border-white/15 bg-neutral-950 px-4 py-3 text-sm text-white outline-none focus:border-white/40"
+                    placeholder="Alt text"
+                  />
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-white">Details</p>
+
+                  <p className="mt-2 text-sm text-neutral-300">
+                    {editingMedia.format ||
+                      editingMedia.mimeType ||
+                      editingMedia.resourceType ||
+                      "Image"}{" "}
+                    · {editingMedia.width || "—"} ×{" "}
+                    {editingMedia.height || "—"} ·{" "}
+                    {editingMedia.bytes
+                      ? `${(Number(editingMedia.bytes) / 1024).toFixed(2)} kB`
+                      : "—"}
                   </p>
 
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <code
-                      title={editingMedia.id}
-                      className="min-w-0 flex-1 truncate rounded-lg bg-white px-3 py-2 text-xs text-neutral-700 ring-1 ring-neutral-200"
+                  <p className="mt-2 text-sm text-neutral-300">
+                    Added{" "}
+                    {editingMedia.createdAt
+                      ? new Date(editingMedia.createdAt).toLocaleDateString(
+                          "en-GB",
+                          {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          }
+                        )
+                      : "—"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-white">Used in</p>
+                  <p className="mt-2 text-sm text-neutral-300">Products (1)</p>
+                </div>
+
+                {mediaTransformError ? (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                    {mediaTransformError}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={handleSaveMediaDetails}
+                  disabled={isUploading}
+                  className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-60"
+                >
+                  {isUploading ? "Saving..." : "Save information"}
+                </button>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-[22px] bg-[#1b1b1b] p-5 ring-1 ring-white/10 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+            <button
+              type="button"
+              onClick={() => setMediaToolMode("crop")}
+              className="flex w-full items-center gap-3 text-left text-lg font-semibold text-white"
+            >
+              <Crop className="h-5 w-5" />
+              Crop and transform
+            </button>
+
+            {mediaToolMode === "crop" ? (
+              <div className="mt-5 space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    Orientation
+                  </p>
+
+                  <div className="mt-3 grid grid-cols-2 rounded-xl bg-neutral-800 p-1">
+                    <button
+                      type="button"
+                      className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-600 text-white"
                     >
-                      {editingMedia.id}
-                    </code>
+                      <Minimize2 className="h-4 w-4 rotate-90" />
+                    </button>
 
                     <button
                       type="button"
-                      onClick={() =>
-                        navigator.clipboard.writeText(editingMedia.id)
-                      }
-                      className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                      className="inline-flex h-10 items-center justify-center rounded-lg text-neutral-300"
                     >
-                      Copy
+                      <Minimize2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
 
-                {editingMedia.productId ? (
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                      Product ID
-                    </p>
+                <div className="space-y-2">
+                  {mediaAspectRatioOptions.map((option) => {
+                    const selected = mediaAspectRatio === option.value;
 
-                    <code
-                      title={editingMedia.productId}
-                      className="mt-1.5 block truncate rounded-lg bg-white px-3 py-2 text-xs text-neutral-700 ring-1 ring-neutral-200"
-                    >
-                      {editingMedia.productId}
-                    </code>
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setMediaAspectRatio(option.value);
+                          setMediaToolMode("crop");
+                        }}
+                        className={[
+                        "flex h-11 w-full items-center justify-between rounded-xl px-3 text-left text-sm font-semibold transition",
+                          selected
+                   ? "bg-[#3a3a3a] text-white"
+: "text-neutral-300 hover:bg-[#2a2a2a]",
+                        ].join(" ")}
+                      >
+                        <span className="flex items-center gap-3">
+                          <span className="inline-flex h-5 w-5 rounded-md border border-neutral-400" />
+                          {option.label}
+                        </span>
+
+                        {selected ? <span>✓</span> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <label className="flex items-center gap-3 text-sm font-semibold text-neutral-200">
+                  <input
+                    type="checkbox"
+                    checked={mediaSaveAsNew}
+                    onChange={(event) =>
+                      setMediaSaveAsNew(event.target.checked)
+                    }
+                    className="h-4 w-4 accent-white"
+                  />
+                  Save as new media
+                </label>
+
+                {mediaTransformError ? (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                    {mediaTransformError}
                   </div>
                 ) : null}
-              </div>
-            </div>
 
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                Media name
-              </label>
-              <input
-                value={mediaName}
-                onChange={(event) => setMediaName(event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-neutral-200 px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-                placeholder="Media name"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                Alt description
-              </label>
-              <textarea
-                value={mediaAltText}
-                onChange={(event) => setMediaAltText(event.target.value)}
-                className="mt-2 min-h-28 w-full rounded-xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-                placeholder="Alt description"
-              />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                  Caption
-                </label>
-                <input
-                  value={mediaCaption}
-                  onChange={(event) => setMediaCaption(event.target.value)}
-                  className="mt-2 h-11 w-full rounded-xl border border-neutral-200 px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-                  placeholder="Caption"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                  View type
-                </label>
-                <select
-                  value={mediaViewType}
-                  onChange={(event) => setMediaViewType(event.target.value)}
-                  className="mt-2 h-11 w-full rounded-xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+                <button
+                  type="button"
+                  onClick={() => handleTransformMedia("crop")}
+                  disabled={isTransformingMedia}
+                  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-neutral-700 px-4 text-sm font-semibold text-white hover:bg-neutral-600 disabled:opacity-60"
                 >
-                  <option value="">Select view type</option>
-                  <option value="front">Front</option>
-                  <option value="back">Back</option>
-                  <option value="side">Side</option>
-                  <option value="detail">Detail</option>
-                  <option value="flatlay">Flatlay</option>
-                  <option value="video">Video</option>
-                </select>
+                  {isTransformingMedia ? "Applying..." : "Apply"}
+                </button>
               </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                Color name
-              </label>
-              <input
-                value={mediaColorName}
-                onChange={(event) => setMediaColorName(event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-neutral-200 px-4 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-                placeholder="Color name"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="sticky bottom-0 -mx-5 mt-4 flex justify-end gap-2 border-t border-neutral-200 bg-white px-5 pb-1 pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setEditingMedia(null)}
-            className="rounded-full"
-          >
-            Cancel
-          </Button>
-
-          <Button
-            type="button"
-            onClick={handleSaveMediaDetails}
-            disabled={isUploading}
-            className="rounded-full bg-neutral-950 text-white"
-          >
-            {isUploading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : null}
-            Save details
-          </Button>
+          </section>
+
+          <section className="rounded-[22px] bg-[#1b1b1b] p-5 ring-1 ring-white/10 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+            <button
+              type="button"
+              onClick={() => setMediaToolMode("resize")}
+              className="flex w-full items-center gap-3 text-left text-lg font-semibold text-white"
+            >
+              <Maximize2 className="h-5 w-5" />
+              Resize
+            </button>
+
+            {mediaToolMode === "resize" ? (
+              <div className="mt-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-semibold text-white">
+                      Width
+                    </label>
+
+                    <input
+                      type="number"
+                      value={mediaResizeWidth}
+                      onChange={(event) =>
+                        setMediaResizeWidth(Number(event.target.value))
+                      }
+                      className="mt-2 h-11 w-full rounded-xl border border-white/15 bg-neutral-950 px-4 text-sm text-white outline-none focus:border-white/40"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-white">
+                      Height
+                    </label>
+
+                    <input
+                      type="number"
+                      value={mediaResizeHeight}
+                      onChange={(event) =>
+                        setMediaResizeHeight(Number(event.target.value))
+                      }
+                      className="mt-2 h-11 w-full rounded-xl border border-white/15 bg-neutral-950 px-4 text-sm text-white outline-none focus:border-white/40"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 text-sm font-semibold text-neutral-200">
+                  <input
+                    type="checkbox"
+                    checked={mediaSaveAsNew}
+                    onChange={(event) =>
+                      setMediaSaveAsNew(event.target.checked)
+                    }
+                    className="h-4 w-4 accent-white"
+                  />
+                  Save as new media
+                </label>
+
+                {mediaTransformError ? (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                    {mediaTransformError}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => handleTransformMedia("resize")}
+                  disabled={isTransformingMedia}
+                  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-neutral-700 px-4 text-sm font-semibold text-white hover:bg-neutral-600 disabled:opacity-60"
+                >
+                  {isTransformingMedia ? "Applying..." : "Apply resize"}
+                </button>
+              </div>
+            ) : null}
+          </section>
         </div>
-      </div>
+      </aside>
     </div>
-  </ModalShell>
+  </div>
 ) : null}
     </section>
   );

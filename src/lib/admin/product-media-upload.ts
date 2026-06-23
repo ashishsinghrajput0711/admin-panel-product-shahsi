@@ -819,3 +819,165 @@ function getMediaDetailsApiError(data: unknown, fallback: string) {
 }
 
 
+export type ProductMediaTransformMode = "crop" | "resize";
+
+export type ProductMediaTransformPayload = {
+  mode: ProductMediaTransformMode;
+  aspectRatio?: string | null;
+  crop?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+  resize?: {
+    width: number;
+    height: number;
+  } | null;
+  gravity?: string | null;
+  format?: string | null;
+  quality?: string | null;
+  saveAsNew?: boolean;
+  name?: string | null;
+  title?: string | null;
+  altText?: string | null;
+  caption?: string | null;
+  viewType?: string | null;
+  colorName?: string | null;
+  position?: number | null;
+  sortOrder?: number | null;
+  isPrimary?: boolean;
+  status?: string | null;
+};
+
+type ProductMediaTransformResponse = {
+  success?: boolean;
+  data?: {
+    media?: ProductMediaItem;
+    item?: ProductMediaItem;
+    data?: ProductMediaItem;
+  } | ProductMediaItem;
+  media?: ProductMediaItem;
+  message?: string;
+  error?: unknown;
+};
+
+function getTransformApiError(data: unknown, fallback: string) {
+  if (!data || typeof data !== "object") return fallback;
+
+  const record = data as {
+    message?: unknown;
+    error?: unknown;
+  };
+
+  if (typeof record.message === "string" && record.message.trim()) {
+    return record.message;
+  }
+
+  if (typeof record.error === "string" && record.error.trim()) {
+    return record.error;
+  }
+
+  if (Array.isArray(record.error)) {
+    return record.error.join(", ");
+  }
+
+  if (record.error && typeof record.error === "object") {
+    return JSON.stringify(record.error, null, 2);
+  }
+
+  return fallback;
+}
+
+function extractTransformedMedia(
+  data: ProductMediaTransformResponse | null
+): ProductMediaItem | null {
+  if (!data) return null;
+
+  if (data.media) return data.media;
+
+  if (data.data && "id" in data.data) {
+    return data.data as ProductMediaItem;
+  }
+
+  if (
+    data.data &&
+    typeof data.data === "object" &&
+    "media" in data.data &&
+    data.data.media
+  ) {
+    return data.data.media as ProductMediaItem;
+  }
+
+  if (
+    data.data &&
+    typeof data.data === "object" &&
+    "item" in data.data &&
+    data.data.item
+  ) {
+    return data.data.item as ProductMediaItem;
+  }
+
+  if (
+    data.data &&
+    typeof data.data === "object" &&
+    "data" in data.data &&
+    data.data.data
+  ) {
+    return data.data.data as ProductMediaItem;
+  }
+
+  return null;
+}
+
+export async function transformProductMedia({
+  apiRootUrl,
+  mediaId,
+  payload,
+  token,
+}: {
+  apiRootUrl: string;
+  mediaId: string;
+  payload: ProductMediaTransformPayload;
+  token?: string | null;
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/media/${encodeURIComponent(
+      mediaId
+    )}/transform`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const text = await response.text();
+
+  let data: ProductMediaTransformResponse | null = null;
+
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text) as ProductMediaTransformResponse;
+    } catch {
+      throw new Error(`Media transform API JSON response nahi de rahi. Body: ${text}`);
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      getTransformApiError(
+        data,
+        `Media transform failed: ${response.status} ${response.statusText}`
+      )
+    );
+  }
+
+  return {
+    raw: data,
+    media: extractTransformedMedia(data),
+  };
+}
