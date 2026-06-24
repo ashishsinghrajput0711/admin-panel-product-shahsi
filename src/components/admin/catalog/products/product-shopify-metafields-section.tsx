@@ -37,7 +37,8 @@ type ProductFieldType =
   | "textarea"
   | "tags"
   | "select"
-  | "product_picker";
+  | "product_picker"
+  | "collection_picker";
 
 type ProductMetafieldField = {
   key: string;
@@ -80,6 +81,36 @@ type ProductPickerApiResponse = {
     | ProductPickerItem[];
   items?: ProductPickerItem[];
   products?: ProductPickerItem[];
+  message?: string;
+  error?: unknown;
+};
+
+type CollectionPickerItem = {
+  id?: string | null;
+  name?: string | null;
+  title?: string | null;
+  slug?: string | null;
+  status?: string | null;
+  type?: string | null;
+  collectionType?: string | null;
+  isActive?: boolean | null;
+  productsCount?: number | null;
+  productCount?: number | null;
+};
+
+type CollectionPickerApiResponse = {
+  success?: boolean;
+  data?:
+    | CollectionPickerItem[]
+    | {
+        items?: CollectionPickerItem[];
+        collections?: CollectionPickerItem[];
+        data?: CollectionPickerItem[];
+        meta?: unknown;
+        total?: number;
+      };
+  items?: CollectionPickerItem[];
+  collections?: CollectionPickerItem[];
   message?: string;
   error?: unknown;
 };
@@ -159,18 +190,18 @@ const productMetafieldFields: ProductMetafieldField[] = [
     type: "text",
     placeholder: "Shahida",
   },
-  {
-    key: "primaryCollection",
-    label: "Primary collection",
-    type: "text",
-    placeholder: "luxury",
-  },
-  {
-    key: "secondaryCollection",
-    label: "Secondary collection",
-    type: "text",
-    placeholder: "designer-wear",
-  },
+{
+  key: "primaryCollection",
+  label: "Primary collection",
+  type: "collection_picker",
+  placeholder: "Select primary collection",
+},
+{
+  key: "secondaryCollection",
+  label: "Secondary collection",
+  type: "collection_picker",
+  placeholder: "Select secondary collection",
+},
   {
     key: "similarColorProducts",
     label: "Similar Color Products",
@@ -495,6 +526,87 @@ function extractPickerItems(data: ProductPickerApiResponse | null) {
   }
 
   return [];
+}
+
+
+function extractCollectionItems(data: CollectionPickerApiResponse | null) {
+  if (!data) return [];
+
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.collections)) return data.collections;
+
+  if (data.data && typeof data.data === "object") {
+    if (Array.isArray(data.data.items)) return data.data.items;
+    if (Array.isArray(data.data.collections)) return data.data.collections;
+    if (Array.isArray(data.data.data)) return data.data.data;
+  }
+
+  return [];
+}
+
+function getCollectionValue(collection: CollectionPickerItem) {
+  return String(collection.slug || collection.id || "").trim();
+}
+
+function getCollectionLabel(collection: CollectionPickerItem) {
+  return String(
+    collection.name ||
+      collection.title ||
+      collection.slug ||
+      collection.id ||
+      "Untitled collection"
+  ).trim();
+}
+
+function getCollectionTypeLabel(collection: CollectionPickerItem) {
+  return String(
+    collection.type || collection.collectionType || "MANUAL"
+  ).toUpperCase();
+}
+
+function getCollectionStatusLabel(collection: CollectionPickerItem) {
+  if (typeof collection.isActive === "boolean") {
+    return collection.isActive ? "ACTIVE" : "DRAFT";
+  }
+
+  return String(collection.status || "ACTIVE").toUpperCase();
+}
+
+function getCollectionProductsCount(collection: CollectionPickerItem) {
+  return Number(collection.productsCount ?? collection.productCount ?? 0);
+}
+
+async function fetchCollectionPickerItems() {
+  const params = new URLSearchParams();
+
+  params.set("page", "1");
+  params.set("limit", "100");
+  params.set("status", "ACTIVE");
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/collections?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const text = await response.text();
+  const data = text.trim()
+    ? (JSON.parse(text) as CollectionPickerApiResponse)
+    : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Collections picker failed: ${response.status}`)
+    );
+  }
+
+  return extractCollectionItems(data).filter((collection) =>
+    Boolean(getCollectionValue(collection))
+  );
 }
 
 
@@ -1337,6 +1449,188 @@ function handleDragEnd() {
   );
 }
 
+
+function CollectionPickerInput({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: MetafieldValue;
+  placeholder?: string | null;
+  onChange: (value: MetafieldValue) => void;
+}) {
+  const [collections, setCollections] = useState<CollectionPickerItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+
+  const textValue = stringifyValue(value);
+
+  const selectedCollection = collections.find(
+    (collection) => getCollectionValue(collection) === textValue
+  );
+
+  const currentValueMissing =
+    Boolean(textValue) &&
+    !collections.some(
+      (collection) => getCollectionValue(collection) === textValue
+    );
+
+  async function loadCollections() {
+    try {
+      setIsLoading(true);
+      setPickerError(null);
+
+      const items = await fetchCollectionPickerItems();
+
+      setCollections(items);
+    } catch (error) {
+      setCollections([]);
+      setPickerError(
+        error instanceof Error
+          ? error.message
+          : "Collections load failed."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadInitialCollections() {
+      try {
+        setIsLoading(true);
+        setPickerError(null);
+
+        const items = await fetchCollectionPickerItems();
+
+        if (ignore) return;
+
+        setCollections(items);
+      } catch (error) {
+        if (!ignore) {
+          setCollections([]);
+          setPickerError(
+            error instanceof Error
+              ? error.message
+              : "Collections load failed."
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadInitialCollections();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-neutral-950">{label}</p>
+          <p className="mt-0.5 text-xs text-neutral-500">
+            Collection slug backend me save hoga.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={loadCollections}
+          disabled={isLoading}
+          className="w-fit rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isLoading ? "Loading..." : "Refresh"}
+        </button>
+      </div>
+
+      <select
+        value={textValue}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={isLoading}
+        className="mt-3 h-11 w-full cursor-pointer rounded-xl border border-neutral-200 bg-[#fbfaf6] px-3 text-sm font-medium text-neutral-950 outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
+      >
+        <option value="">
+          {isLoading ? "Loading collections..." : placeholder || "Select collection"}
+        </option>
+
+        {currentValueMissing ? (
+          <option value={textValue}>Current saved: {textValue}</option>
+        ) : null}
+
+        {collections.map((collection) => {
+          const optionValue = getCollectionValue(collection);
+          const optionLabel = getCollectionLabel(collection);
+          const typeLabel = getCollectionTypeLabel(collection);
+          const statusLabel = getCollectionStatusLabel(collection);
+          const count = getCollectionProductsCount(collection);
+
+          return (
+            <option key={collection.id || optionValue} value={optionValue}>
+              {optionLabel} — {typeLabel} / {statusLabel}
+              {count ? ` / ${count} products` : ""}
+            </option>
+          );
+        })}
+      </select>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {selectedCollection ? (
+          <>
+            <span className="rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
+              {getCollectionLabel(selectedCollection)}
+            </span>
+
+            <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-700 ring-1 ring-sky-100">
+              {getCollectionTypeLabel(selectedCollection)}
+            </span>
+
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-100">
+              {getCollectionStatusLabel(selectedCollection)}
+            </span>
+          </>
+        ) : textValue ? (
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 ring-1 ring-amber-100">
+            Saved old value: {textValue}
+          </span>
+        ) : (
+          <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-semibold text-neutral-500">
+            No collection selected
+          </span>
+        )}
+
+        <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-500">
+          {collections.length} collections loaded
+        </span>
+      </div>
+
+      {textValue ? (
+        <p className="mt-2 text-xs text-neutral-400">
+          Saved slug:{" "}
+          <span className="font-mono font-semibold text-neutral-700">
+            {textValue}
+          </span>
+        </p>
+      ) : null}
+
+      {pickerError ? (
+        <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {pickerError}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ProductMetafieldInput({
   field,
   value,
@@ -1347,6 +1641,17 @@ function ProductMetafieldInput({
   onChange: (value: MetafieldValue) => void;
 }) {
   const textValue = stringifyValue(value);
+
+  if (field.type === "collection_picker") {
+  return (
+    <CollectionPickerInput
+      label={field.label}
+      value={value}
+      placeholder={field.placeholder}
+      onChange={onChange}
+    />
+  );
+}
 
   if (field.type === "product_picker") {
     return (

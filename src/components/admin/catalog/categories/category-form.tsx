@@ -1,14 +1,26 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Plus, Trash2, Upload } from "lucide-react";
+
 import type {
   CategoryFaq,
   CategoryFormValues,
   CategoryNode,
 } from "@/components/admin/catalog/categories/category-types";
 import { flattenCategoryTree } from "@/lib/admin/category-api";
+
+type CollectionPickerItem = {
+  id?: string | null;
+  name?: string | null;
+  title?: string | null;
+  slug?: string | null;
+  status?: string | null;
+  type?: string | null;
+  collectionType?: string | null;
+  isActive?: boolean | null;
+};
 
 function slugify(value: string) {
   return value
@@ -17,6 +29,127 @@ function slugify(value: string) {
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function getToken() {
+  if (typeof window === "undefined") return null;
+
+  const token =
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("access_token");
+
+  return token?.replace(/^Bearer\s+/i, "").trim() || null;
+}
+
+function getHeaders(): HeadersInit {
+  const token = getToken();
+
+  return {
+    "Content-Type": "application/json",
+    Accept: "*/*",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+function extractCollections(data: unknown): CollectionPickerItem[] {
+  if (!data || typeof data !== "object") return [];
+
+  const root = data as Record<string, unknown>;
+
+  if (Array.isArray(root.data)) {
+    return root.data as CollectionPickerItem[];
+  }
+
+  if (Array.isArray(root.items)) {
+    return root.items as CollectionPickerItem[];
+  }
+
+  if (Array.isArray(root.collections)) {
+    return root.collections as CollectionPickerItem[];
+  }
+
+  if (root.data && typeof root.data === "object") {
+    const payload = root.data as Record<string, unknown>;
+
+    if (Array.isArray(payload.items)) {
+      return payload.items as CollectionPickerItem[];
+    }
+
+    if (Array.isArray(payload.collections)) {
+      return payload.collections as CollectionPickerItem[];
+    }
+
+    if (Array.isArray(payload.data)) {
+      return payload.data as CollectionPickerItem[];
+    }
+  }
+
+  return [];
+}
+
+function getCollectionValue(collection: CollectionPickerItem) {
+  return String(collection.slug || collection.id || "").trim();
+}
+
+function getCollectionLabel(collection: CollectionPickerItem) {
+  return String(
+    collection.name ||
+      collection.title ||
+      collection.slug ||
+      collection.id ||
+      "Untitled collection",
+  ).trim();
+}
+
+function getCollectionBadge(collection: CollectionPickerItem) {
+  const type = String(
+    collection.type || collection.collectionType || "MANUAL",
+  ).toUpperCase();
+
+  const status =
+    typeof collection.isActive === "boolean"
+      ? collection.isActive
+        ? "ACTIVE"
+        : "DRAFT"
+      : String(collection.status || "ACTIVE").toUpperCase();
+
+  return `${type} / ${status}`;
+}
+
+async function fetchCollectionPickerItems() {
+  const params = new URLSearchParams();
+  params.set("page", "1");
+  params.set("limit", "100");
+  params.set("status", "ACTIVE");
+
+  const response = await fetch(
+    `/api/proxy/admin/catalog/collections?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const text = await response.text();
+  const data = text.trim() ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    const message =
+      typeof data?.message === "string"
+        ? data.message
+        : typeof data?.error === "string"
+          ? data.error
+          : `Collections load failed: ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return extractCollections(data).filter((collection) =>
+    Boolean(getCollectionValue(collection)),
+  );
 }
 
 function InputLabel({ children }: { children: React.ReactNode }) {
@@ -71,6 +204,100 @@ function TextArea({
   );
 }
 
+function CollectionSelect({
+  value,
+  label,
+  placeholder,
+  collections,
+  isLoading,
+  onChange,
+}: {
+  value: string;
+  label: string;
+  placeholder: string;
+  collections: CollectionPickerItem[];
+  isLoading: boolean;
+  onChange: (value: string) => void;
+}) {
+  const selectedCollection = collections.find(
+    (collection) => getCollectionValue(collection) === value,
+  );
+
+  const hasCurrentValue = Boolean(value);
+  const currentValueMissing =
+    hasCurrentValue &&
+    !collections.some((collection) => getCollectionValue(collection) === value);
+
+  return (
+    <div>
+      <InputLabel>{label}</InputLabel>
+
+      <div className="mt-2 rounded-2xl border border-neutral-200 bg-white p-3 transition focus-within:border-neutral-950">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={isLoading}
+          className="h-11 w-full cursor-pointer rounded-xl border border-neutral-200 bg-[#fbfaf6] px-3 text-sm font-medium text-neutral-950 outline-none disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
+        >
+          <option value="">
+            {isLoading ? "Loading collections..." : placeholder}
+          </option>
+
+          {currentValueMissing ? (
+            <option value={value}>Current saved: {value}</option>
+          ) : null}
+
+          {collections.map((collection) => {
+            const optionValue = getCollectionValue(collection);
+            const optionLabel = getCollectionLabel(collection);
+
+            return (
+              <option key={collection.id || optionValue} value={optionValue}>
+                {optionLabel} — {getCollectionBadge(collection)}
+              </option>
+            );
+          })}
+        </select>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {selectedCollection ? (
+            <>
+              <span className="rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
+                {getCollectionLabel(selectedCollection)}
+              </span>
+
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-100">
+                {getCollectionBadge(selectedCollection)}
+              </span>
+            </>
+          ) : value ? (
+            <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 ring-1 ring-amber-100">
+              Saved old value: {value}
+            </span>
+          ) : (
+            <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-semibold text-neutral-500">
+              No collection selected
+            </span>
+          )}
+
+          <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-500">
+            {collections.length} collections loaded
+          </span>
+        </div>
+
+        {value ? (
+          <p className="mt-2 text-xs text-neutral-400">
+            Saved slug:{" "}
+            <span className="font-mono font-semibold text-neutral-700">
+              {value}
+            </span>
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function CategoryForm({
   mode,
   initialValues,
@@ -94,6 +321,10 @@ export function CategoryForm({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [autoSlug, setAutoSlug] = useState(mode === "create");
 
+  const [collections, setCollections] = useState<CollectionPickerItem[]>([]);
+  const [isCollectionsLoading, setIsCollectionsLoading] = useState(false);
+  const [collectionsError, setCollectionsError] = useState("");
+
   const parentOptions = useMemo(() => {
     return flattenCategoryTree(categoryTree, {
       excludeId: currentCategoryId,
@@ -101,9 +332,45 @@ export function CategoryForm({
     });
   }, [categoryTree, currentCategoryId, currentCategorySlug]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadCollections() {
+      try {
+        setIsCollectionsLoading(true);
+        setCollectionsError("");
+
+        const items = await fetchCollectionPickerItems();
+
+        if (!mounted) return;
+
+        setCollections(items);
+      } catch (loadError) {
+        if (!mounted) return;
+
+        setCollections([]);
+        setCollectionsError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Collections load nahi ho paayi.",
+        );
+      } finally {
+        if (mounted) {
+          setIsCollectionsLoading(false);
+        }
+      }
+    }
+
+    loadCollections();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   function updateValue<K extends keyof CategoryFormValues>(
     key: K,
-    value: CategoryFormValues[K]
+    value: CategoryFormValues[K],
   ) {
     setValues((current) => ({
       ...current,
@@ -130,7 +397,7 @@ export function CategoryForm({
               ...faq,
               [key]: value,
             }
-          : faq
+          : faq,
       ),
     }));
   }
@@ -177,7 +444,7 @@ export function CategoryForm({
         slug: slugify(values.slug),
         seoSlug: values.seoSlug.trim() || slugify(values.slug),
       },
-      imageFile
+      imageFile,
     );
   }
 
@@ -256,7 +523,9 @@ export function CategoryForm({
                 <InputLabel>Parent category</InputLabel>
                 <select
                   value={values.parentId}
-                  onChange={(event) => updateValue("parentId", event.target.value)}
+                  onChange={(event) =>
+                    updateValue("parentId", event.target.value)
+                  }
                   className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
                 >
                   <option value="">Top-level category</option>
@@ -325,9 +594,46 @@ export function CategoryForm({
           </section>
 
           <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
-            <h2 className="text-base font-semibold text-neutral-950">
-              Metafields
-            </h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-neutral-950">
+                  Metafields
+                </h2>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Primary/secondary collection backend collection picker se
+                  select karo.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCollectionsLoading(true);
+                  setCollectionsError("");
+
+                  fetchCollectionPickerItems()
+                    .then((items) => setCollections(items))
+                    .catch((refreshError) =>
+                      setCollectionsError(
+                        refreshError instanceof Error
+                          ? refreshError.message
+                          : "Collections refresh failed.",
+                      ),
+                    )
+                    .finally(() => setIsCollectionsLoading(false));
+                }}
+                className="w-fit rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isCollectionsLoading}
+              >
+                {isCollectionsLoading ? "Loading..." : "Refresh collections"}
+              </button>
+            </div>
+
+            {collectionsError ? (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                {collectionsError}
+              </div>
+            ) : null}
 
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div>
@@ -354,32 +660,32 @@ export function CategoryForm({
                 />
               </div>
 
-              <div>
-                <InputLabel>Primary collection</InputLabel>
-                <TextInput
-                  value={values.metafields.primaryCollection || ""}
-                  onChange={(value) =>
-                    updateMetafield("primaryCollection", value)
-                  }
-                />
-              </div>
+          <CollectionSelect
+  label="Primary collection"
+  placeholder="Select primary collection"
+  value={values.metafields.primaryCollection || ""}
+  collections={collections}
+  isLoading={isCollectionsLoading}
+  onChange={(value) => updateMetafield("primaryCollection", value)}
+/>
 
-              <div>
-                <InputLabel>Secondary collection</InputLabel>
-                <TextInput
-                  value={values.metafields.secondaryCollection || ""}
-                  onChange={(value) =>
-                    updateMetafield("secondaryCollection", value)
-                  }
-                />
-              </div>
+             <CollectionSelect
+  label="Secondary collection"
+  placeholder="Select secondary collection"
+  value={values.metafields.secondaryCollection || ""}
+  collections={collections}
+  isLoading={isCollectionsLoading}
+  onChange={(value) => updateMetafield("secondaryCollection", value)}
+/>
             </div>
           </section>
 
           <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-neutral-950">FAQs</h2>
+                <h2 className="text-base font-semibold text-neutral-950">
+                  FAQs
+                </h2>
                 <p className="mt-1 text-xs text-neutral-500">
                   Category page ke questions/answers.
                 </p>

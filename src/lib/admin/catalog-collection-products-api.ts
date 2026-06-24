@@ -373,6 +373,30 @@ export type AutomatedPreviewCondition = {
   value?: string | number | boolean | null;
 };
 
+function normalizeAutomatedPreviewConditions(conditions: unknown[]) {
+  return conditions
+    .map((item) => {
+      const condition = item as {
+        field?: unknown;
+        operator?: unknown;
+        value?: unknown;
+      };
+
+      const field = String(condition.field || "").trim();
+      const operator = String(condition.operator || "").trim().toUpperCase();
+
+      return {
+        field,
+        operator,
+        value:
+          operator === "IS_EMPTY" || operator === "IS_NOT_EMPTY"
+            ? ""
+            : condition.value ?? "",
+      };
+    })
+    .filter((condition) => condition.field && condition.operator);
+}
+
 export async function previewAutomatedCollectionProducts({
   apiRootUrl,
   token,
@@ -384,24 +408,35 @@ export async function previewAutomatedCollectionProducts({
   apiRootUrl: string;
   token?: string | null;
   matchType: "ALL" | "ANY";
-  conditions: AutomatedPreviewCondition[];
+  conditions: unknown[];
   page?: number;
   limit?: number;
 }) {
+  const cleanToken = token?.replace(/^Bearer\s+/i, "").trim() || "";
+
+  if (!cleanToken) {
+    throw new Error(
+      "Admin token missing hai. Logout/login karke dobara preview try karo."
+    );
+  }
+
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+  params.set("_t", String(Date.now()));
+
   const response = await fetch(
-    `${apiRootUrl}/admin/catalog/collections/conditions/preview`,
+    `${apiRootUrl}/admin/catalog/collections/conditions/preview?${params.toString()}`,
     {
       method: "POST",
-      headers: getHeaders(token),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cleanToken}`,
+      },
+      cache: "no-store",
       body: JSON.stringify({
         matchType,
-        conditions: conditions
-          .map((condition) => ({
-            field: String(condition.field || "").trim(),
-            operator: String(condition.operator || "").trim(),
-            value: condition.value ?? "",
-          }))
-          .filter((condition) => condition.field && condition.operator),
+        conditions: normalizeAutomatedPreviewConditions(conditions),
         page,
         limit,
       }),
@@ -410,12 +445,12 @@ export async function previewAutomatedCollectionProducts({
 
   const data = await readJson<ApiResponse<unknown>>(
     response,
-    "Automated collection preview API JSON response nahi de rahi"
+    "Automated preview API JSON response nahi de rahi"
   );
 
   if (!response.ok) {
     throw new Error(
-      getApiError(data, `Automated collection preview failed: ${response.status}`)
+      getApiError(data, `Automated preview failed: ${response.status}`)
     );
   }
 

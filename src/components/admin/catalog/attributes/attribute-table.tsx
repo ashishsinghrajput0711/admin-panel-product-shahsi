@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Archive, Edit3, ListPlus } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Attribute, AttributeOption } from "./attribute-types";
@@ -117,10 +118,62 @@ function getUsageFlags(attribute: Attribute) {
   if (attribute.isSeoField) flags.push("SEO");
   if (attribute.isFitEngineField) flags.push("Fit");
   if (attribute.isStyleEngineField) flags.push("Style");
-  if (attribute.isBulkUploadField) flags.push("Bulk Upload");
+  if (attribute.isBulkUploadField) flags.push("Bulk");
 
   return flags;
 }
+
+function formatUpdatedAt(value?: string | null) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+  });
+}
+
+function formatUpdatedTime(value?: string | null) {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function OptionPill({ label }: { label: string }) {
+  return (
+    <span
+      title={label}
+      className="inline-flex max-w-[86px] truncate rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-medium text-neutral-700"
+    >
+      {label}
+    </span>
+  );
+}
+
+function UsagePill({ label }: { label: string }) {
+  return (
+    <span
+      title={label}
+      className="inline-flex rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[10px] font-medium text-neutral-700"
+    >
+      {label}
+    </span>
+  );
+}
+
+const gridClass =
+  "grid grid-cols-[1.25fr_0.9fr_0.75fr_1.7fr_1.15fr_0.9fr_0.85fr_118px]";
 
 export function AttributeTable({
   attributes,
@@ -135,19 +188,20 @@ export function AttributeTable({
 }) {
   if (isLoading) {
     return (
-      <div className="p-8 text-sm text-neutral-500">Loading attributes...</div>
+      <div className="rounded-[1.5rem] border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
+        Loading attributes...
+      </div>
     );
   }
 
   if (!attributes.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-neutral-300 bg-[#fbfaf6] p-10 text-center">
+      <div className="rounded-[1.5rem] border border-dashed border-neutral-300 bg-[#fbfaf6] p-10 text-center">
         <h3 className="text-lg font-semibold text-neutral-950">
           No attributes found
         </h3>
         <p className="mt-2 text-sm text-neutral-500">
-          Backend se current page par attributes nahi mile. Global Library se
-          default attributes seed kar sakte ho.
+          Backend se current page par attributes nahi mile.
         </p>
 
         <Button asChild className="mt-4 rounded-full">
@@ -160,161 +214,185 @@ export function AttributeTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-neutral-200">
-      <table className="w-full min-w-[1200px] text-sm">
-        <thead className="bg-[#f7f2ea] text-left">
-          <tr>
-            <th className="p-4 font-medium">Attribute</th>
-            <th className="p-4 font-medium">Code</th>
-            <th className="p-4 font-medium">Type</th>
-            <th className="p-4 font-medium">Options</th>
-            <th className="p-4 font-medium">Usage</th>
-            <th className="p-4 font-medium">Status</th>
-            <th className="p-4 font-medium">Updated</th>
-            <th className="p-4 text-right font-medium">Actions</th>
-          </tr>
-        </thead>
+   <div className="overflow-hidden bg-white">
+      <div
+        className={`${gridClass} border-b border-neutral-200 bg-[#f4efe7] px-6 py-4 text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500`}
+      >
+        <div className="min-w-0 pr-3">Attribute</div>
+        <div className="min-w-0 pr-3">Code</div>
+        <div className="min-w-0 pr-3">Type</div>
+        <div className="min-w-0 pr-3">Options</div>
+        <div className="min-w-0 pr-3">Usage</div>
+        <div className="min-w-0 pr-3">Status</div>
+        <div className="min-w-0 pr-3">Updated</div>
+        <div className="min-w-0 text-right">Actions</div>
+      </div>
 
-        <tbody>
-          {attributes.map((attribute) => {
-            const status = normalizeStatus(attribute);
-            const flags = getUsageFlags(attribute);
-            const options = attribute.options ?? [];
+      <div className="divide-y divide-neutral-100">
+        {attributes.map((attribute) => {
+          const status = normalizeStatus(attribute);
+          const flags = getUsageFlags(attribute);
+          const options = attribute.options ?? [];
+          const attributeName = getAttributeName(attribute);
+          const attributeSlug = getAttributeSlug(attribute);
+          const attributeCode = getAttributeCode(attribute);
+          const visibleOptions = options.slice(0, 5);
+          const hiddenOptionsCount = Math.max(0, options.length - 5);
+          const visibleFlags = flags.slice(0, 3);
+          const hiddenFlagsCount = Math.max(0, flags.length - 3);
 
-            return (
-              <tr key={attribute.id} className="border-t border-neutral-200">
-                <td className="p-4 align-top">
-                  <p className="font-medium text-neutral-950">
-                    {getAttributeName(attribute)}
-                  </p>
+          return (
+            <div
+              key={attribute.id}
+            className={`${gridClass} items-center px-6 py-4 transition hover:bg-[#fbfaf6]`}
+            >
+              <div className="min-w-0 pr-3">
+                <p
+                  className="truncate text-sm font-semibold text-neutral-950"
+                  title={attributeName}
+                >
+                  {attributeName}
+                </p>
 
-                  {getAttributeSlug(attribute) ? (
-                    <p className="text-xs text-neutral-500">
-                      /{getAttributeSlug(attribute)}
-                    </p>
-                  ) : null}
-
-                  {attribute.description ? (
-                    <p className="mt-1 max-w-sm text-xs text-neutral-500">
-                      {attribute.description}
-                    </p>
-                  ) : null}
-                </td>
-
-                <td className="p-4 align-top">
-                  <code className="rounded-md bg-neutral-100 px-2 py-1 text-xs">
-                    {getAttributeCode(attribute)}
-                  </code>
-                </td>
-
-                <td className="p-4 align-top">
-                  <Badge variant="outline" className="rounded-full">
-                    {getTypeLabel(attribute)}
-                  </Badge>
-                </td>
-
-                <td className="p-4 align-top">
-                  <p className="font-medium text-neutral-950">
-                    {getOptionsCount(attribute)} options
-                  </p>
-
-                  {options.length ? (
-                    <div className="mt-2 flex max-w-[260px] flex-wrap gap-1">
-                      {options.slice(0, 4).map((option) => (
-                        <Badge
-                          key={option.id ?? `${option.value}-${option.label}`}
-                          variant="outline"
-                          className="rounded-full text-[11px]"
-                        >
-                          {getOptionLabel(option)}
-                        </Badge>
-                      ))}
-
-                      {options.length > 4 ? (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          +{options.length - 4}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </td>
-
-                <td className="p-4 align-top">
-                  <div className="flex max-w-[360px] flex-wrap gap-1">
-                    {flags.length ? (
-                      flags.map((flag) => (
-                        <Badge
-                          key={`${attribute.id}-${flag}`}
-                          variant="outline"
-                          className="rounded-full"
-                        >
-                          {flag}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-neutral-400">—</span>
-                    )}
-                  </div>
-                </td>
-
-                <td className="p-4 align-top">
-                  <Badge
-                    variant="outline"
-                    className={`rounded-full ${getStatusBadgeClass(status)}`}
+                {attributeSlug ? (
+                  <p
+                    className="mt-1 truncate text-xs text-neutral-500"
+                    title={`/${attributeSlug}`}
                   >
-                    {status}
-                  </Badge>
-                </td>
+                    /{attributeSlug}
+                  </p>
+                ) : null}
+              </div>
 
-                <td className="p-4 align-top text-xs text-neutral-500">
-                  {attribute.updatedAt
-                    ? new Date(attribute.updatedAt).toLocaleString()
-                    : "—"}
-                </td>
+              <div className="min-w-0 pr-3">
+                <code
+                  title={attributeCode}
+                  className="inline-flex max-w-full truncate rounded-lg bg-neutral-100 px-2.5 py-1 font-mono text-[11px] font-semibold text-neutral-700"
+                >
+                  {attributeCode}
+                </code>
+              </div>
 
-                <td className="p-4 align-top text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      asChild
-                      size="sm"
-                      variant="outline"
-                      className="rounded-full"
-                    >
-                      <Link href={`/admin/catalog/attributes/${attribute.id}/edit`}>
-                        <Edit3 className="mr-2 h-4 w-4" />
-                        Edit
-                      </Link>
-                    </Button>
+              <div className="min-w-0 pr-3">
+                <Badge
+                  variant="outline"
+                  className="max-w-full truncate rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-neutral-700"
+                  title={getTypeLabel(attribute)}
+                >
+                  {getTypeLabel(attribute)}
+                </Badge>
+              </div>
 
-                    <Button
-                      asChild
-                      size="sm"
-                      variant="outline"
-                      className="rounded-full"
-                    >
-                      <Link href={`/admin/catalog/attributes/${attribute.id}/edit#options`}>
-                        <ListPlus className="mr-2 h-4 w-4" />
-                        Options
-                      </Link>
-                    </Button>
+              <div className="min-w-0 pr-3">
+                <p className="mb-2 text-xs font-semibold text-neutral-950">
+                  {getOptionsCount(attribute)} options
+                </p>
 
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="rounded-full"
-                      disabled={isActionLoading || status === "ARCHIVED"}
-                      onClick={() => onArchive?.(attribute)}
-                    >
-                      <Archive className="mr-2 h-4 w-4" />
-                      Archive
-                    </Button>
+                {visibleOptions.length ? (
+                  <div className="flex max-w-full flex-wrap gap-1.5">
+                    {visibleOptions.map((option) => {
+                      const optionLabel = getOptionLabel(option);
+
+                      return (
+                        <OptionPill
+                          key={option.id ?? `${option.value}-${option.label}`}
+                          label={optionLabel}
+                        />
+                      );
+                    })}
+
+                    {hiddenOptionsCount ? (
+                      <OptionPill label={`+${hiddenOptionsCount}`} />
+                    ) : null}
                   </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                ) : (
+                  <span className="text-xs text-neutral-400">—</span>
+                )}
+              </div>
+
+              <div className="min-w-0 pr-3">
+                <div className="flex max-w-full flex-wrap gap-1.5">
+                  {visibleFlags.length ? (
+                    visibleFlags.map((flag) => (
+                      <UsagePill key={`${attribute.id}-${flag}`} label={flag} />
+                    ))
+                  ) : (
+                    <span className="text-xs text-neutral-400">—</span>
+                  )}
+
+                  {hiddenFlagsCount ? (
+                    <UsagePill label={`+${hiddenFlagsCount}`} />
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="min-w-0 pr-3">
+                <Badge
+                  variant="outline"
+                  className={`rounded-full px-3 py-1 text-[11px] font-bold ${getStatusBadgeClass(
+                    status,
+                  )}`}
+                >
+                  {status}
+                </Badge>
+              </div>
+
+              <div className="min-w-0 pr-3">
+                <div
+                  className="max-w-full text-xs leading-5 text-neutral-500"
+                  title={attribute.updatedAt || ""}
+                >
+                  <p className="truncate font-medium text-neutral-700">
+                    {formatUpdatedAt(attribute.updatedAt)}
+                  </p>
+                  <p className="truncate text-neutral-400">
+                    {formatUpdatedTime(attribute.updatedAt)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex min-w-0 justify-end gap-1.5">
+                <Button
+                  asChild
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8 shrink-0 rounded-full border-neutral-200 bg-white text-neutral-700 shadow-sm hover:bg-neutral-950 hover:text-white"
+                  title="Edit attribute"
+                >
+                  <Link href={`/admin/catalog/attributes/${attribute.id}/edit`}>
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+
+                <Button
+                  asChild
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8 shrink-0 rounded-full border-neutral-200 bg-white text-neutral-700 shadow-sm hover:bg-neutral-950 hover:text-white"
+                  title="Manage options"
+                >
+                  <Link
+                    href={`/admin/catalog/attributes/${attribute.id}/edit#options`}
+                  >
+                    <ListPlus className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8 shrink-0 rounded-full border-red-200 bg-white text-red-600 shadow-sm hover:bg-red-50 hover:text-red-700"
+                  disabled={isActionLoading || status === "ARCHIVED"}
+                  onClick={() => onArchive?.(attribute)}
+                  title="Archive attribute"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

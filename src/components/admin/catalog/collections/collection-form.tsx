@@ -21,9 +21,9 @@ type CollectionFormProps = {
 };
 
 const emptyCondition: CollectionCondition = {
-  field: "price",
-  operator: "LESS_THAN",
-  value: "",
+  field: "status",
+  operator: "EQUALS",
+  value: "ACTIVE",
 };
 
 const conditionFields = [
@@ -59,6 +59,39 @@ const operators = [
   { label: "Is empty", value: "IS_EMPTY" },
   { label: "Is not empty", value: "IS_NOT_EMPTY" },
 ];
+
+
+function conditionNeedsValue(operator?: string | null) {
+  const value = String(operator || "").toUpperCase();
+
+  return value !== "IS_EMPTY" && value !== "IS_NOT_EMPTY";
+}
+
+function getConditionPlaceholder(field?: string | null) {
+  const value = String(field || "").toLowerCase();
+
+  if (value === "price" || value === "saleprice" || value === "inventorystock") {
+    return "e.g. 500";
+  }
+
+  if (value === "status") {
+    return "ACTIVE";
+  }
+
+  if (value === "category" || value === "primarycategory") {
+    return "bridesmaid";
+  }
+
+  if (value === "tag") {
+    return "Recommended";
+  }
+
+  if (value === "title") {
+    return "Dress";
+  }
+
+  return "Value";
+}
 
 function slugify(value: string) {
   return value
@@ -129,6 +162,17 @@ export function CollectionForm({
     }));
   }
 
+  function updateCollectionType(type: CatalogCollectionFormValues["type"]) {
+  setValues((current) => ({
+    ...current,
+    type,
+    conditions:
+      type === "AUTOMATED" && !current.conditions.length
+        ? [{ ...emptyCondition }]
+        : current.conditions,
+  }));
+}
+
   function handleNameChange(nextName: string) {
     setValues((current) => {
       const shouldAutoSlug =
@@ -180,18 +224,32 @@ export function CollectionForm({
     }));
   }
 
-  function updateCondition(
-    index: number,
-    key: keyof CollectionCondition,
-    value: string
-  ) {
-    setValues((current) => ({
-      ...current,
-      conditions: current.conditions.map((condition, conditionIndex) =>
-        conditionIndex === index ? { ...condition, [key]: value } : condition
-      ),
-    }));
-  }
+ function updateCondition(
+  index: number,
+  key: keyof CollectionCondition,
+  value: string
+) {
+  setValues((current) => ({
+    ...current,
+    conditions: current.conditions.map((condition, conditionIndex) => {
+      if (conditionIndex !== index) return condition;
+
+      const nextCondition = {
+        ...condition,
+        [key]: value,
+      };
+
+      if (
+        key === "operator" &&
+        (value === "IS_EMPTY" || value === "IS_NOT_EMPTY")
+      ) {
+        nextCondition.value = "";
+      }
+
+      return nextCondition;
+    }),
+  }));
+}
 
   function removeCondition(index: number) {
     setValues((current) => ({
@@ -215,23 +273,33 @@ export function CollectionForm({
 >
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
-          <section className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.04)]">
-            <div className="space-y-5">
+
+                    <section className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.04)]">
+            <div>
+              <h2 className="text-lg font-semibold text-neutral-950">
+                Collection details
+              </h2>
+              <p className="mt-1 text-sm text-neutral-500">
+                Collection ka title aur description manage karo.
+              </p>
+            </div>
+
+            <div className="mt-5 space-y-4">
               <div>
-                <label className="text-sm font-medium text-neutral-800">
+                <label className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
                   Title
                 </label>
                 <input
                   value={values.name}
                   onChange={(event) => handleNameChange(event.target.value)}
-                  placeholder="Women's Clothing – Luxurious Fashion in Signature Prints & Styles"
-                  className="mt-2 h-12 w-full rounded-xl border border-neutral-300 bg-white px-4 text-sm text-neutral-950 outline-none transition placeholder:text-neutral-400 focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
+                  placeholder="New Arrivals"
+                  className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-950 outline-none transition placeholder:text-neutral-400 focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-sm font-medium text-neutral-800">
+                <label className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
                   Description
                 </label>
                 <textarea
@@ -240,145 +308,205 @@ export function CollectionForm({
                     updateValue("description", event.target.value)
                   }
                   placeholder="Explore this curated collection..."
-                  className="mt-2 min-h-[220px] w-full rounded-xl border border-neutral-300 bg-white px-4 py-3 text-sm leading-6 text-neutral-950 outline-none transition placeholder:text-neutral-400 focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
+                  className="mt-2 min-h-[170px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 outline-none transition placeholder:text-neutral-400 focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
                 />
               </div>
             </div>
           </section>
+          {values.type === "AUTOMATED" ? (
 
-          {values.type === "MANUAL" ? (
-            collectionId && apiRootUrl ? (
-              <CollectionProductsSection
-                collectionId={collectionId}
-                apiRootUrl={apiRootUrl}
-                token={token}
-              />
-            ) : (
-              <section className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.04)]">
-                <h2 className="text-lg font-semibold text-neutral-950">
-                  Products
-                </h2>
-                <p className="mt-2 text-sm text-neutral-500">
-                  Collection create hone ke baad edit page se products
-                  assign/reorder karenge.
-                </p>
-              </section>
+            
+         <section className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.04)]">
+
+          
+  <div className="rounded-[24px] border border-neutral-100 bg-[#fbfaf7] p-4">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight text-neutral-950">
+          Automated conditions
+        </h2>
+
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-neutral-500">
+          Products automatically add honge jab wo selected conditions match
+          karenge. Manual product assign/reorder automated collection me nahi
+          hota.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-neutral-700 ring-1 ring-neutral-200">
+            {totalConditions} condition
+            {totalConditions === 1 ? "" : "s"} added
+          </span>
+
+          <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-100">
+            Automated
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={values.matchType}
+          onChange={(event) =>
+            updateValue(
+              "matchType",
+              event.target.value as CatalogCollectionFormValues["matchType"]
             )
-          ) : (
-            <section className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.04)]">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-neutral-950">
-                    Conditions
-                  </h2>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    Automated collection ke products conditions ke basis par
-                    match honge.
-                  </p>
-                  <p className="mt-2 text-sm text-neutral-400">
-                    {totalConditions} condition
-                    {totalConditions === 1 ? "" : "s"} added
-                  </p>
-                </div>
+          }
+          className="h-10 rounded-full border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-700 outline-none transition focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
+        >
+          <option value="ALL">Match all conditions</option>
+          <option value="ANY">Match any condition</option>
+        </select>
 
-                <div className="flex gap-2">
-                  <select
-                    value={values.matchType}
-                    onChange={(event) =>
-                      updateValue(
-                        "matchType",
-                        event.target
-                          .value as CatalogCollectionFormValues["matchType"]
-                      )
-                    }
-                    className="h-10 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none"
-                  >
-                    <option value="ALL">Match all</option>
-                    <option value="ANY">Match any</option>
-                  </select>
+        <button
+          type="button"
+          onClick={addCondition}
+          className="inline-flex h-10 items-center gap-2 rounded-full bg-neutral-950 px-4 text-sm font-semibold text-white hover:bg-neutral-800"
+        >
+          <Plus className="h-4 w-4" />
+          Add condition
+        </button>
+      </div>
+    </div>
+  </div>
 
-                  <button
-                    type="button"
-                    onClick={addCondition}
-                    className="inline-flex h-10 items-center gap-2 rounded-xl bg-neutral-950 px-3 text-sm font-semibold text-white hover:bg-neutral-800"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add condition
-                  </button>
-                </div>
+  <div className="mt-5 space-y-3">
+    {values.conditions.length ? (
+      values.conditions.map((condition, index) => {
+        const needsValue = conditionNeedsValue(condition.operator);
+
+        return (
+          <div
+            key={`${condition.field}-${condition.operator}-${index}`}
+            className="rounded-[22px] border border-neutral-200 bg-white p-4 shadow-sm"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-neutral-950">
+                Condition {index + 1}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => removeCondition(index)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                title="Remove condition"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr]">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">
+                  Field
+                </label>
+
+                <select
+                  value={String(condition.field || "")}
+                  onChange={(event) =>
+                    updateCondition(index, "field", event.target.value)
+                  }
+                  className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none transition focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
+                >
+                  {conditionFields.map((field) => (
+                    <option key={field.value} value={field.value}>
+                      {field.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="mt-5 space-y-3">
-                {values.conditions.length ? (
-                  values.conditions.map((condition, index) => (
-                    <div
-                      key={`${condition.field}-${condition.operator}-${index}`}
-                      className="grid gap-3 rounded-2xl bg-[#fbfaf7] p-3 ring-1 ring-neutral-200 md:grid-cols-[1fr_1fr_1fr_auto]"
-                    >
-                      <select
-                        value={String(condition.field || "")}
-                        onChange={(event) =>
-                          updateCondition(index, "field", event.target.value)
-                        }
-                        className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none"
-                      >
-                        {conditionFields.map((field) => (
-                          <option key={field.value} value={field.value}>
-                            {field.label}
-                          </option>
-                        ))}
-                      </select>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">
+                  Operator
+                </label>
 
-                      <select
-                        value={String(condition.operator || "")}
-                        onChange={(event) =>
-                          updateCondition(index, "operator", event.target.value)
-                        }
-                        className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none"
-                      >
-                        {operators.map((operator) => (
-                          <option key={operator.value} value={operator.value}>
-                            {operator.label}
-                          </option>
-                        ))}
-                      </select>
-
-                      <input
-                        value={String(condition.value ?? "")}
-                        onChange={(event) =>
-                          updateCondition(index, "value", event.target.value)
-                        }
-                        placeholder="Value"
-                        className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-950 outline-none"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => removeCondition(index)}
-                        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-white text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl bg-[#fbfaf7] p-5 text-sm text-neutral-500 ring-1 ring-neutral-200">
-                    No conditions added yet.
-                  </div>
-                )}
+                <select
+                  value={String(condition.operator || "")}
+                  onChange={(event) =>
+                    updateCondition(index, "operator", event.target.value)
+                  }
+                  className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none transition focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
+                >
+                  {operators.map((operator) => (
+                    <option key={operator.value} value={operator.value}>
+                      {operator.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">
+                  Value
+                </label>
 
-              {apiRootUrl ? (
-  <AutomatedCollectionPreview
-    apiRootUrl={apiRootUrl}
-    token={token}
-    matchType={values.matchType}
-    conditions={values.conditions}
-  />
+                <input
+                  value={needsValue ? String(condition.value ?? "") : ""}
+                  onChange={(event) =>
+                    updateCondition(index, "value", event.target.value)
+                  }
+                  placeholder={getConditionPlaceholder(condition.field)}
+                  disabled={!needsValue}
+                  className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm text-neutral-950 outline-none transition placeholder:text-neutral-400 focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400"
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })
+    ) : (
+      <div className="rounded-[22px] border border-dashed border-neutral-300 bg-[#fbfaf7] p-6 text-center">
+        <p className="text-sm font-semibold text-neutral-900">
+          No conditions added yet
+        </p>
+        <p className="mt-1 text-sm text-neutral-500">
+          Add condition click karke automated product matching start karo.
+        </p>
+
+        <button
+          type="button"
+          onClick={addCondition}
+          className="mt-4 inline-flex h-10 items-center gap-2 rounded-full bg-neutral-950 px-4 text-sm font-semibold text-white hover:bg-neutral-800"
+        >
+          <Plus className="h-4 w-4" />
+          Add first condition
+        </button>
+      </div>
+    )}
+  </div>
+
+  {apiRootUrl ? (
+    <AutomatedCollectionPreview
+      apiRootUrl={apiRootUrl}
+      token={token}
+      matchType={values.matchType}
+      conditions={values.conditions}
+    />
+  ) : null}
+</section>
 ) : null}
-            </section>
-          )}
+
+        {values.type === "MANUAL" ? (
+  collectionId && apiRootUrl ? (
+    <CollectionProductsSection
+      collectionId={collectionId}
+      apiRootUrl={apiRootUrl}
+      token={token}
+    />
+  ) : (
+    <section className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.04)]">
+      <h2 className="text-lg font-semibold text-neutral-950">
+        Products
+      </h2>
+      <p className="mt-2 text-sm text-neutral-500">
+        Collection create hone ke baad edit page se products
+        assign/reorder karenge.
+      </p>
+    </section>
+  )
+) : null}
 
           <section className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.04)]">
             <div className="flex items-center justify-between gap-4">
@@ -669,12 +797,10 @@ export function CollectionForm({
                 <select
                   value={values.type}
                   onChange={(event) =>
-                    updateValue(
-                      "type",
-                      event.target
-                        .value as CatalogCollectionFormValues["type"]
-                    )
-                  }
+  updateCollectionType(
+    event.target.value as CatalogCollectionFormValues["type"]
+  )
+}
                   className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-700 outline-none transition focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10"
                 >
                   <option value="MANUAL">Manual</option>

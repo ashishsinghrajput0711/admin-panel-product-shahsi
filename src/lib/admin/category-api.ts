@@ -123,9 +123,11 @@ export async function fetchCategoryTree() {
     );
   }
 
-  const categories = data?.data?.data || data?.data?.categories || [];
+const categories = data?.data?.data || data?.data?.categories || [];
 
-  return categories.map(normalizeCategoryNode);
+return categories
+  .filter((item) => item.nodeType !== "collection" && item.type !== "collection")
+  .map(normalizeCategoryNode);
 }
 
 export async function fetchCategoryBySlug(slug: string) {

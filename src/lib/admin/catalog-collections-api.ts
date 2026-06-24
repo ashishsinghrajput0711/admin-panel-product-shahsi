@@ -274,7 +274,28 @@ export type CatalogCollectionFormValues = {
   conditions: CollectionCondition[];
 };
 
+function normalizeConditionValue(condition: CollectionCondition) {
+  const operator = String(condition.operator || "").toUpperCase();
+
+  if (operator === "IS_EMPTY" || operator === "IS_NOT_EMPTY") {
+    return "";
+  }
+
+  const field = String(condition.field || "").toLowerCase();
+  const value = condition.value;
+
+  if (field === "price" || field === "saleprice" || field === "inventorystock") {
+    const numericValue = Number(value);
+
+    return Number.isNaN(numericValue) ? value ?? "" : numericValue;
+  }
+
+  return value ?? "";
+}
+
 function cleanCollectionPayload(values: CatalogCollectionFormValues) {
+  const type = values.type === "AUTOMATED" ? "AUTOMATED" : "MANUAL";
+
   return {
     name: values.name.trim(),
     slug: values.slug.trim(),
@@ -284,8 +305,9 @@ function cleanCollectionPayload(values: CatalogCollectionFormValues) {
     status: values.status,
     isActive: values.isActive,
     sortOrder: Number(values.sortOrder || 0),
-    type: values.type,
-    matchType: values.matchType,
+    type,
+    // collectionType: type,
+    matchType: values.matchType === "ANY" ? "ANY" : "ALL",
     seoTitle: values.seoTitle.trim(),
     seoDescription: values.seoDescription.trim(),
     seoSlug: values.seoSlug.trim(),
@@ -302,12 +324,12 @@ function cleanCollectionPayload(values: CatalogCollectionFormValues) {
           .filter((faq) => faq.question || faq.answer)
       : [],
     conditions:
-      values.type === "AUTOMATED" && Array.isArray(values.conditions)
+      type === "AUTOMATED" && Array.isArray(values.conditions)
         ? values.conditions
             .map((condition) => ({
               field: String(condition.field || "").trim(),
               operator: String(condition.operator || "").trim(),
-              value: condition.value ?? "",
+              value: normalizeConditionValue(condition),
             }))
             .filter((condition) => condition.field && condition.operator)
         : [],

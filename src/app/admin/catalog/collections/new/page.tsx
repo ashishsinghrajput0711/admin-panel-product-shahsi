@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2, Save } from "lucide-react";
 
 import { CollectionForm } from "@/components/admin/catalog/collections/collection-form";
 import {
@@ -66,9 +66,7 @@ export default function NewCatalogCollectionPage() {
       }, 600);
     } catch (error) {
       setPageError(
-        error instanceof Error
-          ? error.message
-          : "Collection create failed."
+        error instanceof Error ? error.message : "Collection create failed.",
       );
     } finally {
       setIsSubmitting(false);
@@ -96,6 +94,20 @@ export default function NewCatalogCollectionPage() {
               Manual ya automated catalog collection create karo.
             </p>
           </div>
+
+          <button
+            type="submit"
+            form="catalog-collection-form"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-neutral-950 px-5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {isSubmitting ? "Creating..." : "Create collection"}
+          </button>
         </div>
 
         {pageError ? (
@@ -116,6 +128,24 @@ export default function NewCatalogCollectionPage() {
           submitLabel="Create collection"
           onSubmit={handleSubmit}
         />
+
+        <div className="sticky bottom-4 z-20 mt-6 flex justify-end">
+          <div className="rounded-full bg-white/90 p-2 shadow-lg ring-1 ring-neutral-200 backdrop-blur">
+            <button
+              type="submit"
+              form="catalog-collection-form"
+              disabled={isSubmitting}
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-neutral-950 px-6 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {isSubmitting ? "Creating..." : "Create collection"}
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   );

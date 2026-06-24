@@ -13,6 +13,11 @@ import {
   RefreshCcw,
   Upload,
 } from "lucide-react";
+
+import {
+  archiveCatalogAttribute,
+  fetchCatalogAttributes,
+} from "@/lib/admin/catalog-attributes-api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AttributeFilters } from "@/components/admin/catalog/attributes/attribute-filters";
@@ -22,61 +27,6 @@ import type {
   AttributeFiltersState,
 } from "@/components/admin/catalog/attributes/attribute-types";
 
-type PaginationShape = {
-  total?: number;
-  count?: number;
-  totalItems?: number;
-  totalCount?: number;
-  page?: number;
-  currentPage?: number;
-  limit?: number;
-  pageSize?: number;
-  perPage?: number;
-  totalPages?: number;
-  pages?: number;
-};
-
-type AttributesResponse = {
-  success?: boolean;
-  data?:
-    | Attribute[]
-    | {
-        data?: Attribute[];
-        attributes?: Attribute[];
-        items?: Attribute[];
-        total?: number;
-        count?: number;
-        totalItems?: number;
-        totalCount?: number;
-        page?: number;
-        currentPage?: number;
-        limit?: number;
-        pageSize?: number;
-        perPage?: number;
-        totalPages?: number;
-        pages?: number;
-        meta?: PaginationShape;
-        pagination?: PaginationShape;
-      };
-  attributes?: Attribute[];
-  items?: Attribute[];
-  total?: number;
-  count?: number;
-  totalItems?: number;
-  totalCount?: number;
-  page?: number;
-  currentPage?: number;
-  limit?: number;
-  pageSize?: number;
-  perPage?: number;
-  totalPages?: number;
-  pages?: number;
-  meta?: PaginationShape;
-  pagination?: PaginationShape;
-  message?: string | string[];
-  error?: unknown;
-};
-
 const initialFilters: AttributeFiltersState = {
   search: "",
   status: "ALL",
@@ -84,288 +34,11 @@ const initialFilters: AttributeFiltersState = {
   flag: "ALL",
 };
 
-function getApiRootUrl() {
-  return "/api/proxy";
-}
-
-function getToken() {
-  if (typeof window === "undefined") return null;
-
-  const token =
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("access_token");
-
-  return token?.replace(/^Bearer\s+/i, "").trim() || null;
-}
-
-function getAuthHeaders() {
-  const token = getToken();
-
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    Accept: "*/*",
-  };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  return headers;
-}
-
-async function parseApiResponse<T>(
-  response: Response,
-  fallbackMessage: string
-): Promise<T> {
-  const text = await response.text();
-
-  if (!text) {
-    return {} as T;
-  }
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    const shortText = text
-      .replace(/<[^>]*>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 300);
-
-    throw new Error(
-      `${fallbackMessage}. Server ne JSON ke jagah HTML/text return kiya. Status: ${response.status}. Response: ${shortText}`
-    );
-  }
-}
-
-function getApiErrorMessage(data: AttributesResponse, fallback: string) {
-  if (Array.isArray(data.message)) return data.message.join(", ");
-  if (typeof data.message === "string") return data.message;
-
-  if (typeof data.error === "string") return data.error;
-
-  if (data.error && typeof data.error === "object") {
-    const record = data.error as Record<string, unknown>;
-
-    if (Array.isArray(record.message)) {
-      return record.message.join(", ");
-    }
-
-    if (typeof record.message === "string") {
-      return record.message;
-    }
-  }
-
-  return fallback;
-}
-
-function toNumberOrNull(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
-function getPaginationFromSource(
-  response: AttributesResponse,
-  nested?: AttributesResponse["data"]
-) {
-  const nestedObject =
-    nested && !Array.isArray(nested) && typeof nested === "object"
-      ? nested
-      : undefined;
-
-  const totalValue =
-    nestedObject?.total ??
-    nestedObject?.count ??
-    nestedObject?.totalItems ??
-    nestedObject?.totalCount ??
-    nestedObject?.meta?.total ??
-    nestedObject?.meta?.count ??
-    nestedObject?.meta?.totalItems ??
-    nestedObject?.meta?.totalCount ??
-    nestedObject?.pagination?.total ??
-    nestedObject?.pagination?.count ??
-    nestedObject?.pagination?.totalItems ??
-    nestedObject?.pagination?.totalCount ??
-    response.total ??
-    response.count ??
-    response.totalItems ??
-    response.totalCount ??
-    response.meta?.total ??
-    response.meta?.count ??
-    response.meta?.totalItems ??
-    response.meta?.totalCount ??
-    response.pagination?.total ??
-    response.pagination?.count ??
-    response.pagination?.totalItems ??
-    response.pagination?.totalCount ??
-    0;
-
-  const pageValue =
-    nestedObject?.page ??
-    nestedObject?.currentPage ??
-    nestedObject?.meta?.page ??
-    nestedObject?.meta?.currentPage ??
-    nestedObject?.pagination?.page ??
-    nestedObject?.pagination?.currentPage ??
-    response.page ??
-    response.currentPage ??
-    response.meta?.page ??
-    response.meta?.currentPage ??
-    response.pagination?.page ??
-    response.pagination?.currentPage ??
-    1;
-
-  const limitValue =
-    nestedObject?.limit ??
-    nestedObject?.pageSize ??
-    nestedObject?.perPage ??
-    nestedObject?.meta?.limit ??
-    nestedObject?.meta?.pageSize ??
-    nestedObject?.meta?.perPage ??
-    nestedObject?.pagination?.limit ??
-    nestedObject?.pagination?.pageSize ??
-    nestedObject?.pagination?.perPage ??
-    response.limit ??
-    response.pageSize ??
-    response.perPage ??
-    response.meta?.limit ??
-    response.meta?.pageSize ??
-    response.meta?.perPage ??
-    response.pagination?.limit ??
-    response.pagination?.pageSize ??
-    response.pagination?.perPage ??
-    null;
-
-  const safeTotal = toNumberOrNull(totalValue) ?? 0;
-  const safePage = toNumberOrNull(pageValue) ?? 1;
-  const safeLimit = toNumberOrNull(limitValue);
-
-  const totalPagesValue =
-    nestedObject?.totalPages ??
-    nestedObject?.pages ??
-    nestedObject?.meta?.totalPages ??
-    nestedObject?.meta?.pages ??
-    nestedObject?.pagination?.totalPages ??
-    nestedObject?.pagination?.pages ??
-    response.totalPages ??
-    response.pages ??
-    response.meta?.totalPages ??
-    response.meta?.pages ??
-    response.pagination?.totalPages ??
-    response.pagination?.pages ??
-    null;
-
-  const safeTotalPages =
-    toNumberOrNull(totalPagesValue) ??
-    (safeLimit ? Math.max(1, Math.ceil(safeTotal / safeLimit)) : 1);
-
-  return {
-    total: safeTotal,
-    page: safePage,
-    limit: safeLimit,
-    totalPages: safeTotalPages,
-  };
-}
-
-function extractAttributes(response: AttributesResponse) {
-  if (Array.isArray(response.data)) {
-    return {
-      attributes: response.data,
-      pagination: getPaginationFromSource(response),
-    };
-  }
-
-  if (response.data && !Array.isArray(response.data)) {
-    if (Array.isArray(response.data.data)) {
-      return {
-        attributes: response.data.data,
-        pagination: getPaginationFromSource(response, response.data),
-      };
-    }
-
-    if (Array.isArray(response.data.attributes)) {
-      return {
-        attributes: response.data.attributes,
-        pagination: getPaginationFromSource(response, response.data),
-      };
-    }
-
-    if (Array.isArray(response.data.items)) {
-      return {
-        attributes: response.data.items,
-        pagination: getPaginationFromSource(response, response.data),
-      };
-    }
-  }
-
-  if (Array.isArray(response.attributes)) {
-    return {
-      attributes: response.attributes,
-      pagination: getPaginationFromSource(response),
-    };
-  }
-
-  if (Array.isArray(response.items)) {
-    return {
-      attributes: response.items,
-      pagination: getPaginationFromSource(response),
-    };
-  }
-
-  return {
-    attributes: [],
-    pagination: getPaginationFromSource(response),
-  };
-}
-
-function normalizeText(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
-}
-
 function getAttributeStatus(attribute: Attribute) {
   if (attribute.status) return String(attribute.status).toUpperCase();
   if (attribute.isActive === false) return "INACTIVE";
   if (attribute.isActive === true) return "ACTIVE";
   return "ACTIVE";
-}
-
-function getAttributeType(attribute: Attribute) {
-  const raw = String(attribute.type || attribute.fieldType || "").toLowerCase();
-
-  if (raw === "text") return "TEXT";
-  if (raw === "number") return "NUMBER";
-  if (raw === "boolean") return "BOOLEAN";
-  if (raw === "dropdown") return "SELECT";
-  if (raw === "multi_select") return "MULTI_SELECT";
-  if (raw === "swatch") return "COLOR";
-
-  return String(attribute.type || attribute.fieldType || "").toUpperCase();
-}
-
-function getAttributeSearchText(attribute: Attribute) {
-  return [
-    attribute.id,
-    attribute.name,
-    attribute.label,
-    attribute.code,
-    attribute.slug,
-    attribute.key,
-    attribute.description,
-    attribute.type,
-    attribute.fieldType,
-    attribute.status,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
 }
 
 function matchesFlag(attribute: Attribute, flag: AttributeFiltersState["flag"]) {
@@ -378,7 +51,7 @@ function matchesFlag(attribute: Attribute, flag: AttributeFiltersState["flag"]) 
     return Boolean(
       attribute.isVariantLevel ||
         attribute.isVariantOption ||
-        attribute.isVariantDefining
+        attribute.isVariantDefining,
     );
   }
 
@@ -404,53 +77,27 @@ export default function AttributesPage() {
   const [filters, setFilters] =
     useState<AttributeFiltersState>(initialFilters);
 
-  async function loadAttributes(page = currentPage) {
+  async function loadAttributes(page = currentPage, nextFilters = filters) {
     try {
       setIsLoading(true);
       setApiError(null);
 
-      const response = await fetch(
-        `${getApiRootUrl()}/admin/catalog/attributes?page=${page}`,
-        {
-          method: "GET",
-          headers: getAuthHeaders(),
-          cache: "no-store",
-        }
-      );
+      const result = await fetchCatalogAttributes({
+        page,
+        filters: nextFilters,
+      });
 
-      const json = await parseApiResponse<AttributesResponse>(
-        response,
-        "Attributes API JSON response nahi de rahi"
-      );
-
-      if (!response.ok) {
-        setAttributes([]);
-        setTotalAttributes(0);
-        setCurrentPage(1);
-        setPageSize(null);
-        setTotalPages(1);
-
-        throw new Error(
-          getApiErrorMessage(
-            json,
-            `Attributes load failed: ${response.status} ${response.statusText}`
-          )
-        );
-      }
-
-      const extracted = extractAttributes(json);
-      const backendTotal =
-        extracted.pagination.total || extracted.attributes.length;
-      const backendLimit = extracted.pagination.limit;
+      const backendTotal = result.pagination.total || result.attributes.length;
+      const backendLimit = result.pagination.limit;
       const backendTotalPages =
-        extracted.pagination.totalPages ||
+        result.pagination.totalPages ||
         (backendLimit
           ? Math.max(1, Math.ceil(backendTotal / backendLimit))
           : 1);
 
-      setAttributes(extracted.attributes);
+      setAttributes(result.attributes);
       setTotalAttributes(backendTotal);
-      setCurrentPage(extracted.pagination.page || page);
+      setCurrentPage(result.pagination.page || page);
       setPageSize(backendLimit);
       setTotalPages(backendTotalPages);
     } catch (error) {
@@ -462,7 +109,7 @@ export default function AttributesPage() {
       setApiError(
         error instanceof Error
           ? error.message
-          : "Backend se attributes load nahi ho paaye."
+          : "Backend se attributes load nahi ho paaye.",
       );
     } finally {
       setIsLoading(false);
@@ -471,7 +118,9 @@ export default function AttributesPage() {
 
   async function handleArchive(attribute: Attribute) {
     const confirmed = window.confirm(
-      `Archive attribute "${attribute.name || attribute.label || attribute.code}"?`
+      `Archive attribute "${
+        attribute.name || attribute.label || attribute.code
+      }"?`,
     );
 
     if (!confirmed) return;
@@ -480,32 +129,11 @@ export default function AttributesPage() {
       setIsActionLoading(true);
       setApiError(null);
 
-      const response = await fetch(
-        `${getApiRootUrl()}/admin/catalog/attributes/${attribute.id}`,
-        {
-          method: "DELETE",
-          headers: getAuthHeaders(),
-        }
-      );
-
-      const json = await parseApiResponse<AttributesResponse>(
-        response,
-        "Attribute archive API JSON response nahi de rahi"
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          getApiErrorMessage(
-            json,
-            `Attribute archive failed: ${response.status} ${response.statusText}`
-          )
-        );
-      }
-
+      await archiveCatalogAttribute(attribute.id);
       await loadAttributes(currentPage);
     } catch (error) {
       setApiError(
-        error instanceof Error ? error.message : "Attribute archive failed."
+        error instanceof Error ? error.message : "Attribute archive failed.",
       );
     } finally {
       setIsActionLoading(false);
@@ -517,50 +145,23 @@ export default function AttributesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filteredAttributes = useMemo(() => {
-    const query = normalizeText(filters.search);
-
-    return attributes.filter((attribute) => {
-      const matchesSearch = query
-        ? getAttributeSearchText(attribute).includes(query)
-        : true;
-
-      const matchesStatus =
-        filters.status === "ALL"
-          ? true
-          : getAttributeStatus(attribute) === filters.status;
-
-      const matchesType =
-        filters.type === "ALL"
-          ? true
-          : getAttributeType(attribute) === filters.type;
-
-      return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesType &&
-        matchesFlag(attribute, filters.flag)
-      );
-    });
-  }, [attributes, filters]);
-
   const activeOnPage = useMemo(
     () =>
       attributes.filter((attribute) => getAttributeStatus(attribute) === "ACTIVE")
         .length,
-    [attributes]
+    [attributes],
   );
 
   const variantOnPage = useMemo(
     () =>
       attributes.filter((attribute) => matchesFlag(attribute, "VARIANT")).length,
-    [attributes]
+    [attributes],
   );
 
   const filterableOnPage = useMemo(
     () =>
       attributes.filter((attribute) => Boolean(attribute.isFilterable)).length,
-    [attributes]
+    [attributes],
   );
 
   const canGoPrevious = currentPage > 1;
@@ -672,23 +273,33 @@ export default function AttributesPage() {
       <section className="space-y-6">
         <AttributeFilters
           filters={filters}
-          onChange={setFilters}
-          onClear={() => setFilters(initialFilters)}
+          onChange={(nextFilters) => {
+            setFilters(nextFilters);
+            loadAttributes(1, nextFilters);
+          }}
+          onClear={() => {
+            setFilters(initialFilters);
+            loadAttributes(1, initialFilters);
+          }}
         />
 
-        <Card className="rounded-[1.5rem] border-neutral-200 bg-white p-4">
-          <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="text-sm text-neutral-600">
+       <Card className="overflow-hidden rounded-[1.5rem] border-neutral-200 bg-white p-0">
+  <div className="flex flex-col gap-4 border-b border-neutral-100 px-6 py-4 xl:flex-row xl:items-center xl:justify-between">
+            <p className="text-sm text-neutral-600">
               Showing{" "}
               <span className="font-semibold text-neutral-950">
-                {filteredAttributes.length}
+                {attributes.length}
               </span>{" "}
-              of {totalAttributes} backend attributes
+              of{" "}
+              <span className="font-semibold text-neutral-950">
+                {totalAttributes}
+              </span>{" "}
+              backend attributes
               <span className="ml-2 text-neutral-500">
                 Page {currentPage} of {totalPages}
                 {pageSize ? ` · ${pageSize} per page` : ""}
               </span>
-            </div>
+            </p>
 
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -731,7 +342,7 @@ export default function AttributesPage() {
           </div>
 
           <AttributeTable
-            attributes={filteredAttributes}
+            attributes={attributes}
             isLoading={isLoading}
             isActionLoading={isActionLoading}
             onArchive={handleArchive}
