@@ -1,37 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { useCreate } from "@refinedev/core";
-import { ArrowLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, AlertCircle } from "lucide-react";
+import { useState } from "react";
+
 import { AttributeForm } from "@/components/admin/catalog/attributes/attribute-form";
 import type { AttributeFormValues } from "@/components/admin/catalog/attributes/attribute-schema";
+import { createCatalogAttribute } from "@/lib/admin/catalog-attributes-api";
 
 export default function NewAttributePage() {
-  const createMutation = useCreate();
-  const { mutate } = createMutation;
+  const router = useRouter();
 
-  const isSubmitting =
-    "isLoading" in createMutation
-      ? Boolean(createMutation.isLoading)
-      : "isPending" in createMutation
-        ? Boolean(createMutation.isPending)
-        : false;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  function handleSubmit(values: AttributeFormValues) {
-    mutate({
-      resource: "attributes",
-      values,
-      successNotification: {
-        message: "Attribute created successfully",
-        description: "The attribute has been saved in catalog.",
-        type: "success",
-      },
-      errorNotification: {
-        message: "Attribute create failed",
-        description: "Please check backend API and submitted fields.",
-        type: "error",
-      },
-    });
+  async function handleSubmit(values: AttributeFormValues) {
+    try {
+      setIsSubmitting(true);
+      setApiError(null);
+
+      await createCatalogAttribute(values);
+
+      router.push("/admin/catalog/attributes");
+      router.refresh();
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "Attribute create failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -58,6 +59,20 @@ export default function NewAttributePage() {
           variant-defining options.
         </p>
       </div>
+
+      {apiError ? (
+        <section className="mb-6 rounded-[1.5rem] border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold">Attribute create failed</p>
+              <p className="mt-2 rounded-xl bg-white/70 p-3 text-xs">
+                {apiError}
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <AttributeForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
     </main>

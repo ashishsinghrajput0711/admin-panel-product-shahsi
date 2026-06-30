@@ -1,7 +1,9 @@
 import type {
+  CategoryCondition,
   CategoryDetailResponse,
   CategoryFormValues,
   CategoryNode,
+  CategoryProductSourceType,
   CategoryTreeResponse,
   CategoryUpsertResponse,
 } from "@/components/admin/catalog/categories/category-types";
@@ -89,6 +91,39 @@ function getApiError(data: unknown) {
   return "";
 }
 
+function normalizeProductSourceType(
+  value?: string | null,
+): CategoryProductSourceType {
+  const type = String(value || "MANUAL").toUpperCase();
+
+  return type === "AUTOMATED" ? "AUTOMATED" : "MANUAL";
+}
+
+function normalizeMatchType(value?: string | null) {
+  const type = String(value || "ALL").toUpperCase();
+
+  return type === "ANY" ? "ANY" : "ALL";
+}
+
+function normalizeConditions(value: unknown): CategoryCondition[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((condition) => {
+      const record = condition as Record<string, unknown>;
+
+      return {
+        field: String(record.field || "").trim(),
+        operator: String(record.operator || "").trim(),
+        value:
+          typeof record.value === "boolean" || typeof record.value === "number"
+            ? record.value
+            : String(record.value ?? "").trim(),
+      };
+    })
+    .filter((condition) => condition.field && condition.operator);
+}
+
 function normalizeCategoryNode(category: CategoryNode): CategoryNode {
   const isActive =
     typeof category.isActive === "boolean" ? category.isActive : true;
@@ -96,6 +131,11 @@ function normalizeCategoryNode(category: CategoryNode): CategoryNode {
   return {
     ...category,
     isActive,
+    productSourceType: normalizeProductSourceType(
+      category.productSourceType as string | null | undefined,
+    ),
+    matchType: normalizeMatchType(category.matchType as string | null | undefined),
+    conditions: normalizeConditions(category.conditions),
     children: Array.isArray(category.children)
       ? category.children.map(normalizeCategoryNode)
       : [],
@@ -123,11 +163,13 @@ export async function fetchCategoryTree() {
     );
   }
 
-const categories = data?.data?.data || data?.data?.categories || [];
+  const categories = data?.data?.data || data?.data?.categories || [];
 
-return categories
-  .filter((item) => item.nodeType !== "collection" && item.type !== "collection")
-  .map(normalizeCategoryNode);
+  // Important:
+  // Pehle yahan collection nodes filter ho rahe the.
+  // Ab senior ke according collection = category hai,
+  // isliye koi collection/category node remove nahi karna.
+  return categories.map(normalizeCategoryNode);
 }
 
 export async function fetchCategoryBySlug(slug: string) {
@@ -161,20 +203,37 @@ export async function fetchCategoryBySlug(slug: string) {
 export function buildCategoryPayload(values: CategoryFormValues) {
   const isActive = values.isActive === true;
 
+  const productSourceType = normalizeProductSourceType(values.productSourceType);
+  const matchType = normalizeMatchType(values.matchType);
+
+  const conditions =
+    productSourceType === "AUTOMATED"
+      ? normalizeConditions(values.conditions)
+      : [];
+
   return {
     name: values.name.trim(),
     slug: values.slug.trim(),
     parentId: values.parentId.trim() || null,
+    parentSlug: "",
+    collectionSlug: "",
     description: values.description.trim() || null,
     imageUrl: values.imageUrl.trim() || null,
     isActive,
     sortOrder: Number(values.sortOrder || 1),
+
+    productSourceType,
+    matchType,
+    conditions,
+
     seoTitle: values.seoTitle.trim() || null,
     seoDescription: values.seoDescription.trim() || null,
     seoSlug: values.seoSlug.trim() || values.slug.trim(),
+
     imageName: values.imageName.trim() || null,
     imageAltText: values.imageAltText.trim() || null,
     themeTemplate: values.themeTemplate.trim() || "default",
+
     metafields: {
       topMenu: values.metafields.topMenu?.trim() || "",
       fromBlog: values.metafields.fromBlog?.trim() || "",
@@ -182,6 +241,7 @@ export function buildCategoryPayload(values: CategoryFormValues) {
       primaryCollection: values.metafields.primaryCollection?.trim() || "",
       secondaryCollection: values.metafields.secondaryCollection?.trim() || "",
     },
+
     faqs: values.faqs
       .map((faq) => ({
         question: faq.question.trim(),
@@ -215,7 +275,9 @@ export async function upsertCategory(values: CategoryFormValues) {
   }
 
   if (!data?.data) {
-    throw new Error("Category save ho gayi but response me category data nahi mila.");
+    throw new Error(
+      "Category save ho gayi but response me category data nahi mila.",
+    );
   }
 
   return normalizeCategoryNode(data.data);
@@ -332,9 +394,11 @@ export function categoryToFormValues(
     imageName: category?.imageName || "",
     imageAltText: category?.imageAltText || "",
     themeTemplate: category?.themeTemplate || "default",
+
     seoTitle: category?.seoTitle || "",
     seoDescription: category?.seoDescription || "",
     seoSlug: category?.seoSlug || category?.slug || "",
+
     metafields: {
       topMenu: category?.metafields?.topMenu || "",
       fromBlog: category?.metafields?.fromBlog || "",
@@ -342,10 +406,19 @@ export function categoryToFormValues(
       primaryCollection: category?.metafields?.primaryCollection || "",
       secondaryCollection: category?.metafields?.secondaryCollection || "",
     },
+
     faqs: category?.faqs?.length ? category.faqs : [],
+
     isActive:
       typeof category?.isActive === "boolean" ? category.isActive : true,
+
     sortOrder: category?.sortOrder ?? 1,
+
+    productSourceType: normalizeProductSourceType(
+      category?.productSourceType as string | null | undefined,
+    ),
+    matchType: normalizeMatchType(category?.matchType as string | null | undefined),
+    conditions: normalizeConditions(category?.conditions),
   };
 }
 

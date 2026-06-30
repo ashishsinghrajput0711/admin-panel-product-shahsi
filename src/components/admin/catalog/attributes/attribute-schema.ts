@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+export const attributeOptionSchema = z.object({
+  id: z.string().optional(),
+  label: z.string().optional(),
+  value: z.string().optional(),
+  colorHex: z.string().optional(),
+  imageUrl: z.string().optional(),
+ sortOrder: z.coerce.number().optional(),
+position: z.coerce.number().optional(),
+  isActive: z.boolean().optional(),
+});
+
 export const attributeSchema = z.object({
   name: z.string().min(2, "Attribute name required"),
   slug: z.string().min(2, "Slug required"),
@@ -16,6 +27,8 @@ export const attributeSchema = z.object({
     "COLOR",
     "SIZE",
   ]),
+
+  fieldType: z.string().optional(),
 
   scope: z.enum(["PRODUCT", "VARIANT", "PRODUCT_AND_VARIANT"]),
 
@@ -41,6 +54,7 @@ export const attributeSchema = z.object({
   isFilterable: z.boolean().optional(),
   isSearchable: z.boolean().optional(),
 
+  isVariantLevel: z.boolean().optional(),
   isVariantDefining: z.boolean().optional(),
   isVariantOption: z.boolean().optional(),
   isSeoField: z.boolean().optional(),
@@ -49,6 +63,11 @@ export const attributeSchema = z.object({
   isBulkUploadField: z.boolean().optional(),
 
   status: z.enum(["ACTIVE", "INACTIVE", "ARCHIVED"]),
+  isActive: z.boolean().optional(),
+ sortOrder: z.coerce.number().optional(),
+
+  options: z.array(attributeOptionSchema).optional(),
 });
 
 export type AttributeFormValues = z.infer<typeof attributeSchema>;
+export type AttributeOptionFormValues = z.infer<typeof attributeOptionSchema>;

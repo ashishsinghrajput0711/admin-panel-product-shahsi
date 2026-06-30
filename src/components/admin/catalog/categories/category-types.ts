@@ -3,6 +3,16 @@ export type CategoryFaq = {
   answer: string;
 };
 
+export type CategoryProductSourceType = "MANUAL" | "AUTOMATED";
+
+export type CategoryConditionMatchType = "ALL" | "ANY";
+
+export type CategoryCondition = {
+  field: string;
+  operator: string;
+  value: string | number | boolean;
+};
+
 export type CategoryMetafields = {
   topMenu?: string;
   fromBlog?: string;
@@ -14,6 +24,7 @@ export type CategoryMetafields = {
 
 export type CategoryNode = {
   id: string;
+
   nodeType?: string;
   type?: string;
   deleteId?: string;
@@ -38,6 +49,11 @@ export type CategoryNode = {
 
   metafields?: CategoryMetafields | null;
   faqs?: CategoryFaq[] | null;
+
+  productSourceType?: CategoryProductSourceType | string | null;
+  matchType?: CategoryConditionMatchType | string | null;
+  conditions?: CategoryCondition[] | null;
+  conditionsCount?: number | null;
 
   productSortOrder?: unknown;
   isActive?: boolean;
@@ -74,6 +90,10 @@ export type CategoryFormValues = {
   faqs: CategoryFaq[];
   isActive: boolean;
   sortOrder: number;
+
+  productSourceType: CategoryProductSourceType;
+  matchType: CategoryConditionMatchType;
+  conditions: CategoryCondition[];
 };
 
 export type CategoryTreeResponse = {

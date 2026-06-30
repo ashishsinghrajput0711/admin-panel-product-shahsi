@@ -49,7 +49,7 @@ export function AttributeFilters({
         <div>
           <h2 className="font-medium text-neutral-950">Filters</h2>
           <p className="mt-1 text-xs text-neutral-500">
-            Current loaded backend page par client-side filtering ho rahi hai.
+           Backend attributes ko search, status, type aur usage flags ke basis par filter karo.
           </p>
         </div>
 
@@ -117,8 +117,7 @@ export function AttributeFilters({
       </div>
 
       <div className="mt-4 rounded-2xl bg-[#fbfaf6] p-3 text-xs text-neutral-500">
-        Backend search/filter params mil jaayein to baad me isi ko server-side
-        filter me convert kar denge.
+       Filters backend request ke saath apply hote hain. Result pagination ke according update hota hai.
       </div>
     </Card>
   );

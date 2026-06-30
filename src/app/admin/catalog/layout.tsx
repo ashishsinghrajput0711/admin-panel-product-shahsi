@@ -28,11 +28,7 @@ const productSubTabs = [
     href: "/admin/catalog/categories",
     icon: FolderTree,
   },
-  {
-    label: "Collections",
-    href: "/admin/catalog/collections",
-    icon: Layers,
-  },
+ 
   {
     label: "Variants",
     href: "/admin/catalog/variants",
@@ -186,7 +182,7 @@ export default function CatalogLayout({
       {[
         "Product",
         "Categories",
-        "Collections",
+       
         "Variants",
         "Attributes",
         "Pricing",

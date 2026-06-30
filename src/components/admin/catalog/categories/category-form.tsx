@@ -1,26 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, Plus, Trash2, Upload } from "lucide-react";
 
+import { RichTextEditor } from "@/components/admin/catalog/products/rich-text-editor";
+
+import { AutomatedCategoryPreview } from "@/components/admin/catalog/categories/automated-category-preview";
+
+import { CategoryProductsSection } from "@/components/admin/catalog/categories/category-products-section";
+
 import type {
+  CategoryCondition,
   CategoryFaq,
   CategoryFormValues,
   CategoryNode,
 } from "@/components/admin/catalog/categories/category-types";
 import { flattenCategoryTree } from "@/lib/admin/category-api";
-
-type CollectionPickerItem = {
-  id?: string | null;
-  name?: string | null;
-  title?: string | null;
-  slug?: string | null;
-  status?: string | null;
-  type?: string | null;
-  collectionType?: string | null;
-  isActive?: boolean | null;
-};
 
 function slugify(value: string) {
   return value
@@ -31,128 +27,7 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-function getToken() {
-  if (typeof window === "undefined") return null;
-
-  const token =
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("access_token");
-
-  return token?.replace(/^Bearer\s+/i, "").trim() || null;
-}
-
-function getHeaders(): HeadersInit {
-  const token = getToken();
-
-  return {
-    "Content-Type": "application/json",
-    Accept: "*/*",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-function extractCollections(data: unknown): CollectionPickerItem[] {
-  if (!data || typeof data !== "object") return [];
-
-  const root = data as Record<string, unknown>;
-
-  if (Array.isArray(root.data)) {
-    return root.data as CollectionPickerItem[];
-  }
-
-  if (Array.isArray(root.items)) {
-    return root.items as CollectionPickerItem[];
-  }
-
-  if (Array.isArray(root.collections)) {
-    return root.collections as CollectionPickerItem[];
-  }
-
-  if (root.data && typeof root.data === "object") {
-    const payload = root.data as Record<string, unknown>;
-
-    if (Array.isArray(payload.items)) {
-      return payload.items as CollectionPickerItem[];
-    }
-
-    if (Array.isArray(payload.collections)) {
-      return payload.collections as CollectionPickerItem[];
-    }
-
-    if (Array.isArray(payload.data)) {
-      return payload.data as CollectionPickerItem[];
-    }
-  }
-
-  return [];
-}
-
-function getCollectionValue(collection: CollectionPickerItem) {
-  return String(collection.slug || collection.id || "").trim();
-}
-
-function getCollectionLabel(collection: CollectionPickerItem) {
-  return String(
-    collection.name ||
-      collection.title ||
-      collection.slug ||
-      collection.id ||
-      "Untitled collection",
-  ).trim();
-}
-
-function getCollectionBadge(collection: CollectionPickerItem) {
-  const type = String(
-    collection.type || collection.collectionType || "MANUAL",
-  ).toUpperCase();
-
-  const status =
-    typeof collection.isActive === "boolean"
-      ? collection.isActive
-        ? "ACTIVE"
-        : "DRAFT"
-      : String(collection.status || "ACTIVE").toUpperCase();
-
-  return `${type} / ${status}`;
-}
-
-async function fetchCollectionPickerItems() {
-  const params = new URLSearchParams();
-  params.set("page", "1");
-  params.set("limit", "100");
-  params.set("status", "ACTIVE");
-
-  const response = await fetch(
-    `/api/proxy/admin/catalog/collections?${params.toString()}`,
-    {
-      method: "GET",
-      headers: getHeaders(),
-      cache: "no-store",
-    },
-  );
-
-  const text = await response.text();
-  const data = text.trim() ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    const message =
-      typeof data?.message === "string"
-        ? data.message
-        : typeof data?.error === "string"
-          ? data.error
-          : `Collections load failed: ${response.status}`;
-
-    throw new Error(message);
-  }
-
-  return extractCollections(data).filter((collection) =>
-    Boolean(getCollectionValue(collection)),
-  );
-}
-
-function InputLabel({ children }: { children: React.ReactNode }) {
+function InputLabel({ children }: { children: ReactNode }) {
   return (
     <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
       {children}
@@ -204,29 +79,78 @@ function TextArea({
   );
 }
 
-function CollectionSelect({
+type CategoryPickerItem = CategoryNode & {
+  depth: number;
+  label: string;
+};
+
+function getCategoryReferenceValue(category: CategoryNode) {
+  return String(category.path || category.slug || "").trim();
+}
+
+function getCategoryReferenceBadge(category: CategoryNode) {
+  const productSourceType = String(
+    category.productSourceType || "MANUAL",
+  ).toUpperCase();
+
+  const status = category.isActive === false ? "DRAFT" : "ACTIVE";
+
+  const count =
+    typeof category.productCount === "number"
+      ? `${category.productCount} products`
+      : "products";
+
+  return `${productSourceType} / ${status} / ${count}`;
+}
+
+function normalizeConditionValue(value: string) {
+  const cleanValue = value.trim();
+
+  if (cleanValue.toLowerCase() === "true") return true;
+  if (cleanValue.toLowerCase() === "false") return false;
+
+  const numericValue = Number(cleanValue);
+
+  if (cleanValue && Number.isFinite(numericValue)) {
+    return numericValue;
+  }
+
+  return cleanValue;
+}
+
+function getDefaultCondition(): CategoryCondition {
+  return {
+    field: "status",
+    operator: "EQUALS",
+    value: "ACTIVE",
+  };
+}
+
+function CategoryReferenceSelect({
   value,
   label,
   placeholder,
-  collections,
+  categories,
   isLoading,
   onChange,
 }: {
   value: string;
   label: string;
   placeholder: string;
-  collections: CollectionPickerItem[];
+  categories: CategoryPickerItem[];
   isLoading: boolean;
   onChange: (value: string) => void;
 }) {
-  const selectedCollection = collections.find(
-    (collection) => getCollectionValue(collection) === value,
+  const selectedCategory = categories.find(
+    (category) => getCategoryReferenceValue(category) === value,
   );
 
   const hasCurrentValue = Boolean(value);
   const currentValueMissing =
     hasCurrentValue &&
-    !collections.some((collection) => getCollectionValue(collection) === value);
+    !categories.some(
+      (category) => getCategoryReferenceValue(category) === value,
+    );
 
   return (
     <div>
@@ -240,34 +164,34 @@ function CollectionSelect({
           className="h-11 w-full cursor-pointer rounded-xl border border-neutral-200 bg-[#fbfaf6] px-3 text-sm font-medium text-neutral-950 outline-none disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
         >
           <option value="">
-            {isLoading ? "Loading collections..." : placeholder}
+            {isLoading ? "Loading categories..." : placeholder}
           </option>
 
           {currentValueMissing ? (
             <option value={value}>Current saved: {value}</option>
           ) : null}
 
-          {collections.map((collection) => {
-            const optionValue = getCollectionValue(collection);
-            const optionLabel = getCollectionLabel(collection);
+          {categories.map((category) => {
+            const optionValue = getCategoryReferenceValue(category);
+            const optionLabel = category.label || category.name;
 
             return (
-              <option key={collection.id || optionValue} value={optionValue}>
-                {optionLabel} — {getCollectionBadge(collection)}
+              <option key={category.id || optionValue} value={optionValue}>
+                {optionLabel} — {getCategoryReferenceBadge(category)}
               </option>
             );
           })}
         </select>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {selectedCollection ? (
+          {selectedCategory ? (
             <>
               <span className="rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
-                {getCollectionLabel(selectedCollection)}
+                {selectedCategory.label || selectedCategory.name}
               </span>
 
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-100">
-                {getCollectionBadge(selectedCollection)}
+                {getCategoryReferenceBadge(selectedCategory)}
               </span>
             </>
           ) : value ? (
@@ -276,18 +200,18 @@ function CollectionSelect({
             </span>
           ) : (
             <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-semibold text-neutral-500">
-              No collection selected
+              No category selected
             </span>
           )}
 
           <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-500">
-            {collections.length} collections loaded
+            {categories.length} categories loaded
           </span>
         </div>
 
         {value ? (
           <p className="mt-2 text-xs text-neutral-400">
-            Saved slug:{" "}
+            Saved path/slug:{" "}
             <span className="font-mono font-semibold text-neutral-700">
               {value}
             </span>
@@ -321,10 +245,6 @@ export function CategoryForm({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [autoSlug, setAutoSlug] = useState(mode === "create");
 
-  const [collections, setCollections] = useState<CollectionPickerItem[]>([]);
-  const [isCollectionsLoading, setIsCollectionsLoading] = useState(false);
-  const [collectionsError, setCollectionsError] = useState("");
-
   const parentOptions = useMemo(() => {
     return flattenCategoryTree(categoryTree, {
       excludeId: currentCategoryId,
@@ -332,41 +252,12 @@ export function CategoryForm({
     });
   }, [categoryTree, currentCategoryId, currentCategorySlug]);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadCollections() {
-      try {
-        setIsCollectionsLoading(true);
-        setCollectionsError("");
-
-        const items = await fetchCollectionPickerItems();
-
-        if (!mounted) return;
-
-        setCollections(items);
-      } catch (loadError) {
-        if (!mounted) return;
-
-        setCollections([]);
-        setCollectionsError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Collections load nahi ho paayi.",
-        );
-      } finally {
-        if (mounted) {
-          setIsCollectionsLoading(false);
-        }
-      }
-    }
-
-    loadCollections();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const categoryReferenceOptions = useMemo<CategoryPickerItem[]>(() => {
+    return flattenCategoryTree(categoryTree, {
+      excludeId: currentCategoryId,
+      excludeSlug: currentCategorySlug,
+    });
+  }, [categoryTree, currentCategoryId, currentCategorySlug]);
 
   function updateValue<K extends keyof CategoryFormValues>(
     key: K,
@@ -416,6 +307,54 @@ export function CategoryForm({
     }));
   }
 
+  function updateCondition(
+    index: number,
+    key: keyof CategoryCondition,
+    value: string,
+  ) {
+    setValues((current) => ({
+      ...current,
+      conditions: current.conditions.map((condition, conditionIndex) => {
+        if (conditionIndex !== index) return condition;
+
+        if (key === "value") {
+          return {
+            ...condition,
+            value: normalizeConditionValue(value),
+          };
+        }
+
+        if (key === "operator") {
+          return {
+            ...condition,
+            operator: value.toUpperCase(),
+          };
+        }
+
+        return {
+          ...condition,
+          field: value,
+        };
+      }),
+    }));
+  }
+
+  function addCondition() {
+    setValues((current) => ({
+      ...current,
+      conditions: [...current.conditions, getDefaultCondition()],
+    }));
+  }
+
+  function removeCondition(index: number) {
+    setValues((current) => ({
+      ...current,
+      conditions: current.conditions.filter(
+        (_, conditionIndex) => conditionIndex !== index,
+      ),
+    }));
+  }
+
   function handleNameChange(name: string) {
     const nextSlug = slugify(name);
 
@@ -443,13 +382,17 @@ export function CategoryForm({
         ...values,
         slug: slugify(values.slug),
         seoSlug: values.seoSlug.trim() || slugify(values.slug),
+        conditions:
+          values.productSourceType === "AUTOMATED"
+            ? values.conditions
+            : [],
       },
       imageFile,
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="w-full max-w-full overflow-x-hidden space-y-5">
       <div className="flex flex-col gap-3 border-b border-neutral-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Link
@@ -493,8 +436,8 @@ export function CategoryForm({
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-5">
+  <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="min-w-0 space-y-5">
           <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
             <h2 className="text-base font-semibold text-neutral-950">
               Basic information
@@ -550,14 +493,221 @@ export function CategoryForm({
 
             <div className="mt-4">
               <InputLabel>Description</InputLabel>
-              <TextArea
-                value={values.description}
-                onChange={(value) => updateValue("description", value)}
-                placeholder="Category description"
-                rows={5}
-              />
+    <RichTextEditor
+  value={values.description}
+  onChange={(value) => updateValue("description", value)}
+  productId={values.id}
+  minHeightClass="min-h-[260px]"
+  maxHeightClass="max-h-[420px]"
+/>
             </div>
           </section>
+
+          <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-neutral-950">
+                  Product source
+                </h2>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Category manual products se chalegi ya automated conditions
+                  se, yahan select karo.
+                </p>
+              </div>
+
+              <span className="w-fit rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-700">
+                {values.productSourceType}
+              </span>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setValues((current) => ({
+                    ...current,
+                    productSourceType: "MANUAL",
+                    conditions: [],
+                  }))
+                }
+                className={[
+                  "rounded-2xl border p-4 text-left transition",
+                  values.productSourceType === "MANUAL"
+                    ? "border-neutral-950 bg-neutral-950 text-white"
+                    : "border-neutral-200 bg-white text-neutral-950 hover:border-neutral-400",
+                ].join(" ")}
+              >
+                <p className="text-sm font-semibold">Manual category</p>
+                <p
+                  className={[
+                    "mt-1 text-xs leading-5",
+                    values.productSourceType === "MANUAL"
+                      ? "text-white/70"
+                      : "text-neutral-500",
+                  ].join(" ")}
+                >
+                  Admin manually products assign/reorder karega. Storefront
+                  saved order me products show karega.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setValues((current) => ({
+                    ...current,
+                    productSourceType: "AUTOMATED",
+                    conditions: current.conditions.length
+                      ? current.conditions
+                      : [getDefaultCondition()],
+                  }))
+                }
+                className={[
+                  "rounded-2xl border p-4 text-left transition",
+                  values.productSourceType === "AUTOMATED"
+                    ? "border-neutral-950 bg-neutral-950 text-white"
+                    : "border-neutral-200 bg-white text-neutral-950 hover:border-neutral-400",
+                ].join(" ")}
+              >
+                <p className="text-sm font-semibold">Automated category</p>
+                <p
+                  className={[
+                    "mt-1 text-xs leading-5",
+                    values.productSourceType === "AUTOMATED"
+                      ? "text-white/70"
+                      : "text-neutral-500",
+                  ].join(" ")}
+                >
+                  Products saved conditions ke basis par automatically match
+                  honge.
+                </p>
+              </button>
+            </div>
+
+            {values.productSourceType === "AUTOMATED" ? (
+              <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-950">
+                      Automated conditions
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      Conditions save hone ke baad storefront products
+                      automatically matching logic se aayenge.
+                    </p>
+                  </div>
+
+                  <select
+                    value={values.matchType}
+                    onChange={(event) =>
+                      updateValue(
+                        "matchType",
+                        event.target.value === "ANY" ? "ANY" : "ALL",
+                      )
+                    }
+                    className="w-fit rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 outline-none"
+                  >
+                    <option value="ALL">Match all conditions</option>
+                    <option value="ANY">Match any condition</option>
+                  </select>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {values.conditions.map((condition, index) => (
+                    <div
+                      key={index}
+                      className="grid gap-3 rounded-2xl border border-neutral-200 bg-white p-4 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                    >
+                      <div>
+                        <InputLabel>Field</InputLabel>
+                        <select
+                          value={condition.field}
+                          onChange={(event) =>
+                            updateCondition(index, "field", event.target.value)
+                          }
+                          className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
+                        >
+                          <option value="status">Status</option>
+                          <option value="price">Price</option>
+                          <option value="title">Title</option>
+                          <option value="tag">Tag</option>
+                          <option value="category">Category</option>
+                          <option value="color">Color</option>
+                          <option value="fabric">Fabric</option>
+                          <option value="size">Size</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <InputLabel>Operator</InputLabel>
+                        <select
+                          value={condition.operator}
+                          onChange={(event) =>
+                            updateCondition(
+                              index,
+                              "operator",
+                              event.target.value,
+                            )
+                          }
+                          className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
+                        >
+                          <option value="EQUALS">Equals</option>
+                          <option value="NOT_EQUALS">Not equals</option>
+                          <option value="CONTAINS">Contains</option>
+                          <option value="GREATER_THAN">Greater than</option>
+                          <option value="LESS_THAN">Less than</option>
+                          <option value="IS_EMPTY">Is empty</option>
+                          <option value="IS_NOT_EMPTY">Is not empty</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <InputLabel>Value</InputLabel>
+                        <TextInput
+                          value={String(condition.value ?? "")}
+                          onChange={(value) =>
+                            updateCondition(index, "value", value)
+                          }
+                          placeholder="ACTIVE"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeCondition(index)}
+                        className="mt-6 flex h-10 w-10 items-center justify-center rounded-full border border-red-200 text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={addCondition}
+                    className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add condition
+                  </button>
+                </div>
+                <AutomatedCategoryPreview
+  matchType={values.matchType}
+  conditions={values.conditions}
+/>
+              </div>
+              
+            ) : (
+            <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">
+  Manual category selected hai. Products section neeche show hoga.
+</div>
+            )}
+          </section>
+
+          <CategoryProductsSection
+  categorySlug={values.slug}
+  enabled={values.productSourceType === "MANUAL" && Boolean(values.slug)}
+/>
 
           <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
             <h2 className="text-base font-semibold text-neutral-950">SEO</h2>
@@ -600,42 +750,13 @@ export function CategoryForm({
                   Metafields
                 </h2>
                 <p className="mt-1 text-xs text-neutral-500">
-                  Primary/secondary collection backend collection picker se
-                  select karo.
+                  Primary/secondary category reference category tree se select
+                  karo.
                 </p>
               </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCollectionsLoading(true);
-                  setCollectionsError("");
-
-                  fetchCollectionPickerItems()
-                    .then((items) => setCollections(items))
-                    .catch((refreshError) =>
-                      setCollectionsError(
-                        refreshError instanceof Error
-                          ? refreshError.message
-                          : "Collections refresh failed.",
-                      ),
-                    )
-                    .finally(() => setIsCollectionsLoading(false));
-                }}
-                className="w-fit rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isCollectionsLoading}
-              >
-                {isCollectionsLoading ? "Loading..." : "Refresh collections"}
-              </button>
             </div>
 
-            {collectionsError ? (
-              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-                {collectionsError}
-              </div>
-            ) : null}
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-2">
               <div>
                 <InputLabel>Top menu</InputLabel>
                 <TextInput
@@ -660,23 +781,25 @@ export function CategoryForm({
                 />
               </div>
 
-          <CollectionSelect
-  label="Primary collection"
-  placeholder="Select primary collection"
-  value={values.metafields.primaryCollection || ""}
-  collections={collections}
-  isLoading={isCollectionsLoading}
-  onChange={(value) => updateMetafield("primaryCollection", value)}
-/>
+              <CategoryReferenceSelect
+                label="Primary category reference"
+                placeholder="Select primary category"
+                value={values.metafields.primaryCollection || ""}
+                categories={categoryReferenceOptions}
+                isLoading={false}
+                onChange={(value) => updateMetafield("primaryCollection", value)}
+              />
 
-             <CollectionSelect
-  label="Secondary collection"
-  placeholder="Select secondary collection"
-  value={values.metafields.secondaryCollection || ""}
-  collections={collections}
-  isLoading={isCollectionsLoading}
-  onChange={(value) => updateMetafield("secondaryCollection", value)}
-/>
+              <CategoryReferenceSelect
+                label="Secondary category reference"
+                placeholder="Select secondary category"
+                value={values.metafields.secondaryCollection || ""}
+                categories={categoryReferenceOptions}
+                isLoading={false}
+                onChange={(value) =>
+                  updateMetafield("secondaryCollection", value)
+                }
+              />
             </div>
           </section>
 
@@ -755,7 +878,7 @@ export function CategoryForm({
           </section>
         </div>
 
-        <aside className="space-y-5">
+       <aside className="min-w-0 space-y-5">
           <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
             <h2 className="text-base font-semibold text-neutral-950">Status</h2>
 

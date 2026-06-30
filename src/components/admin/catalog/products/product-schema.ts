@@ -9,6 +9,28 @@ const metafieldValueSchema = z.union([
   z.undefined(),
 ]);
 
+
+const googleMerchantValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.string()),
+  z.array(z.number()),
+  z.null(),
+  z.undefined(),
+]);
+
+
+const dynamicAttributeValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.string()),
+  z.array(z.number()),
+  z.null(),
+  z.undefined(),
+]);
+
 const taxonomySchema = z
   .object({
     id: z.string().optional().nullable(),
@@ -89,6 +111,16 @@ metaKeywords: z.array(z.string()).optional(),
   productMetafields: z.record(z.string(), metafieldValueSchema).optional(),
 
   categoryMetafields: z.record(z.string(), metafieldValueSchema).optional(),
+
+  dynamicAttributes: z
+  .record(z.string(), dynamicAttributeValueSchema)
+  .optional()
+  .default({}),
+
+  googleMerchantData: z
+    .record(z.string(), googleMerchantValueSchema)
+    .optional()
+    .default({}),
 });
 
 export type ProductFormValues = z.infer<typeof productSchema>;

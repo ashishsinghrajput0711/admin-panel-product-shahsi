@@ -1,12 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  Archive,
+  ArrowLeft,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  RotateCcw,
+  Search,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { ProductForm } from "@/components/admin/catalog/products/product-form";
 import type { ProductFormValues } from "@/components/admin/catalog/products/product-schema";
-import { syncProductCategories } from "@/lib/admin/category-product-sync";
+
 import type { ProductMediaItem } from "@/lib/admin/product-media-upload";
 import { saveProductMetafields } from "@/lib/admin/product-metafields-api";
 
@@ -22,6 +32,96 @@ import {
   getSelectedProductCategorySlugs,
 } from "@/lib/admin/product-payload";
 
+type ProductFormRecordValue =
+  | string
+  | number
+  | boolean
+  | string[]
+  | null
+  | undefined;
+
+function normalizeProductFormRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const cleaned: Record<string, ProductFormRecordValue> = {};
+
+  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+    if (!key) return;
+
+    if (
+      item === undefined ||
+      item === null ||
+      typeof item === "string" ||
+      typeof item === "number" ||
+      typeof item === "boolean"
+    ) {
+      cleaned[key] = item as ProductFormRecordValue;
+      return;
+    }
+
+    if (Array.isArray(item)) {
+      const list = item
+        .map((entry) => {
+          if (
+            typeof entry === "string" ||
+            typeof entry === "number"
+          ) {
+            return entry;
+          }
+
+          if (entry && typeof entry === "object") {
+            const option = entry as Record<string, unknown>;
+            const value =
+              option.value ??
+              option.label ??
+              option.name ??
+              option.slug ??
+              option.code ??
+              option.id ??
+              "";
+
+            if (typeof value === "string" || typeof value === "number") {
+              return value;
+            }
+          }
+
+          return "";
+        })
+        .filter((entry): entry is string | number => entry !== "");
+
+     if (list.length) {
+  cleaned[key] = list.map(String);
+}
+
+      return;
+    }
+
+    if (item && typeof item === "object") {
+      const option = item as Record<string, unknown>;
+      const value =
+        option.value ??
+        option.label ??
+        option.name ??
+        option.slug ??
+        option.code ??
+        option.id ??
+        "";
+
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        cleaned[key] = value;
+      }
+    }
+  });
+
+  return cleaned;
+}
+
 type CommerceType = "RENTAL" | "RESALE" | "RETAIL" | "MADE_TO_ORDER";
 
 type MetafieldValue =
@@ -36,6 +136,8 @@ type MetafieldRecord = Record<string, MetafieldValue>;
 
 type BackendProduct = {
   taxonomyId?: string | null;
+  googleMerchantData?: Record<string, unknown> | null;
+  dynamicAttributes?: Record<string, unknown> | null;
 taxonomyCategoryId?: string | null;
 taxonomyName?: string | null;
 taxonomyPath?: string | null;
@@ -77,6 +179,18 @@ categoryMetafields?: MetafieldRecord | null;
   salePrice?: number | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+  ogImage?: string | null;
+  pinterestTitle?: string | null;
+  pinterestDescription?: string | null;
+  pinterestImage?: string | null;
+  socialTitle?: string | null;
+  socialCaption?: string | null;
+  socialImage?: string | null;
+  image?: string | null;
 
 
 
@@ -438,13 +552,17 @@ seoDescription: product.seoDescription || "",
 tags: Array.isArray(product.tags) ? product.tags : [],
 occasionTags: [],
 metaKeywords: [],
-productMetafields: getProductMetafields(product),
-categoryMetafields: getCategoryMetafields(product),
+productMetafields: normalizeProductFormRecord(getProductMetafields(product)),
+categoryMetafields: normalizeProductFormRecord(getCategoryMetafields(product)),
+dynamicAttributes: normalizeProductFormRecord(product.dynamicAttributes),
+
+googleMerchantData: normalizeProductFormRecord(product.googleMerchantData),
   };
 }
 
 export default function EditProductPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const productId = String(params?.id ?? "");
 
   const [product, setProduct] = useState<BackendProduct | null>(null);
@@ -497,6 +615,7 @@ const mappedValues = mapProductToFormValues(nextProduct);
 const nextCategorySlugs = getProductCategorySlugs(nextProduct);
 
 let seoData: Awaited<ReturnType<typeof getProductSeo>> | null = null;
+let seoRecord: any = null;
 
 try {
   seoData = await getProductSeo({
@@ -504,6 +623,7 @@ try {
     productId,
     token: getToken(),
   });
+  seoRecord = seoData as any;
 } catch (seoError) {
   console.warn("PRODUCT_SEO_LOAD_FAILED:", seoError);
 }
@@ -522,7 +642,35 @@ const nextDefaultValues: ProductFormValues = {
     "",
 };
 
-setProduct(nextProduct);
+setProduct({
+  ...nextProduct,
+  seoTitle: nextDefaultValues.seoTitle,
+  seoDescription: nextDefaultValues.seoDescription,
+  metaTitle: seoData?.metaTitle || nextDefaultValues.seoTitle || nextProduct.seoTitle || null,
+  metaDescription:
+    seoData?.metaDescription ||
+    nextDefaultValues.seoDescription ||
+    nextProduct.seoDescription ||
+    null,
+  ogTitle: seoRecord?.ogTitle || nextDefaultValues.seoTitle || nextProduct.seoTitle || null,
+  ogDescription:
+    seoRecord?.ogDescription ||
+    nextDefaultValues.seoDescription ||
+    nextProduct.seoDescription ||
+    null,
+  ogImage: seoRecord?.ogImage || null,
+  pinterestTitle:
+    seoRecord?.pinterestTitle || nextDefaultValues.seoTitle || nextProduct.seoTitle || null,
+  pinterestDescription:
+    seoRecord?.pinterestDescription ||
+    nextDefaultValues.seoDescription ||
+    nextProduct.seoDescription ||
+    null,
+  pinterestImage: seoRecord?.pinterestImage || null,
+  socialTitle: seoRecord?.socialTitle || nextDefaultValues.seoTitle || null,
+  socialCaption: seoRecord?.socialCaption || nextDefaultValues.seoDescription || null,
+  socialImage: seoRecord?.socialImage || null,
+});
 setDefaultValues(nextDefaultValues);
 setPreviousCategorySlugs(nextCategorySlugs);
       } catch (error) {
@@ -653,28 +801,11 @@ try {
 }
 
 const selectedCategorySlugs = getSelectedProductCategorySlugs(values);
+setPreviousCategorySlugs(selectedCategorySlugs);
 
-      try {
-        await syncProductCategories({
-          apiRootUrl,
-          productId,
-          selectedCategorySlugs,
-          previousCategorySlugs,
-          token,
-        });
-
-        setPreviousCategorySlugs(selectedCategorySlugs);
-      setSuccessMessage(
-  "Product update ho gaya, SEO, tags, metafields save ho gaye aur category assignment sync ho gayi."
+setSuccessMessage(
+  "Product update ho gaya. SEO, tags, product metafields, category metafields aur Google Merchant data save ho gaye."
 );
-      } catch (categorySyncError) {
-        console.warn("CATEGORY_SYNC_FAILED:", categorySyncError);
-
-        setPreviousCategorySlugs(selectedCategorySlugs);
-      setSuccessMessage(
-  "Product update, SEO, tags aur metafields save ho gaye, but category assignment sync me backend error aaya. Category-products API backend se check karni hogi."
-);
-      }
     } catch (error) {
       setPageError(
         error instanceof Error ? error.message : "Product update failed."
@@ -720,6 +851,29 @@ const selectedCategorySlugs = getSelectedProductCategorySlugs(values);
               and SEO data.
             </p>
           </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+  {product ? (
+    <ProductMoreActions
+      product={product}
+      productId={productId}
+      onDuplicated={(newProductId) => {
+        if (newProductId) {
+          router.push(`/admin/catalog/products/${newProductId}/edit`);
+          return;
+        }
+
+        loadProduct({ silent: true });
+      }}
+      onArchived={() => {
+        loadProduct({ silent: true });
+      }}
+      onDeleted={() => {
+        router.push("/admin/catalog/products");
+      }}
+    />
+  ) : null}
+</div>
         </div>
 
         {pageError ? (
@@ -754,3 +908,558 @@ const selectedCategorySlugs = getSelectedProductCategorySlugs(values);
     </main>
   );
 }
+
+
+function getNestedId(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+
+  const directId = record.id || record.productId;
+  if (typeof directId === "string" && directId.trim()) {
+    return directId;
+  }
+
+  for (const key of ["data", "product", "result"]) {
+    const found = getNestedId(record[key]);
+
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function getFrontendProductUrl(product: BackendProduct, productId: string) {
+  const siteUrl = "https://frontend-shahsi-2-0.vercel.app";
+  const cleanSiteUrl = siteUrl.replace(/\/$/, "");
+  const slug = String(product.slug || productId).trim();
+
+  return `${cleanSiteUrl}/products/${encodeURIComponent(slug)}`;
+}
+
+function ProductMoreActions({
+  product,
+  productId,
+  onDuplicated,
+  onArchived,
+  onDeleted,
+}: {
+  product: BackendProduct;
+  productId: string;
+  onDuplicated: (newProductId?: string | null) => void;
+  onArchived: () => void;
+  onDeleted: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isWorking, setIsWorking] = useState(false);
+
+  const productTitle = product.name || product.title || "Shahsi product";
+  const productUrl = getFrontendProductUrl(product, productId);
+
+  function firstText(...values: Array<string | null | undefined>) {
+    return (
+      values.find((value) => typeof value === "string" && value.trim())?.trim() ||
+      ""
+    );
+  }
+
+  function stripHtml(value?: string | null) {
+    return (value || "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function withUtm(url: string, source: string) {
+    const nextUrl = new URL(url);
+
+    nextUrl.searchParams.set("utm_source", source);
+    nextUrl.searchParams.set("utm_medium", "product-links");
+    nextUrl.searchParams.set("utm_content", "web");
+
+    return nextUrl.toString();
+  }
+
+  function getShareTitle() {
+    const productRecord = product as any;
+
+    return firstText(
+      productRecord.seoTitle,
+      productRecord.metaTitle,
+      productRecord.ogTitle,
+      productRecord.pinterestTitle,
+      productRecord.socialTitle,
+      productRecord.title,
+      productRecord.name,
+      productTitle,
+    );
+  }
+
+  function getShareDescription() {
+    const productRecord = product as any;
+
+    return stripHtml(
+      firstText(
+        productRecord.seoDescription,
+        productRecord.metaDescription,
+        productRecord.ogDescription,
+        productRecord.pinterestDescription,
+        productRecord.socialCaption,
+        productRecord.shortDescription,
+        productRecord.description,
+      ),
+    );
+  }
+
+  function getPrimaryCatalogImage(currentProduct: BackendProduct) {
+    const productRecord = currentProduct as any;
+
+    const items = [
+      ...(Array.isArray(productRecord.images) ? productRecord.images : []),
+      ...(Array.isArray(productRecord.media) ? productRecord.media : []),
+    ];
+
+    const imageItems = items.filter((item: any) => {
+      const type = `${item?.type || item?.resourceType || ""}`.toLowerCase();
+      return !type || type.includes("image");
+    });
+
+    const sorted = [...imageItems].sort((a: any, b: any) => {
+      if (a?.isPrimary && !b?.isPrimary) return -1;
+      if (!a?.isPrimary && b?.isPrimary) return 1;
+
+      const aPosition = a?.position ?? a?.sortOrder ?? 999;
+      const bPosition = b?.position ?? b?.sortOrder ?? 999;
+
+      return aPosition - bPosition;
+    });
+
+    const first = sorted[0] || imageItems[0];
+
+    return (
+      productRecord.ogImage?.trim?.() ||
+      productRecord.pinterestImage?.trim?.() ||
+      productRecord.socialImage?.trim?.() ||
+      first?.secureUrl?.trim?.() ||
+      first?.url?.trim?.() ||
+      first?.thumbnailUrl?.trim?.() ||
+      first?.thumbnail?.trim?.() ||
+      productRecord.image?.trim?.() ||
+      ""
+    );
+  }
+
+  function getShareTags() {
+    const productTags = Array.isArray(product.tags) ? product.tags : [];
+
+    return Array.from(
+      new Set(
+        productTags
+          .map((tag) => String(tag).replace(/^#/, "").trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  function getHashtagText() {
+    return getShareTags()
+      .map((tag) => `#${tag.replace(/\s+/g, "")}`)
+      .join(" ");
+  }
+
+  function buildFacebookShareUrl() {
+    const params = new URLSearchParams();
+    params.set("u", withUtm(productUrl, "Facebook"));
+
+    return `https://www.facebook.com/sharer/sharer.php?${params.toString()}`;
+  }
+
+  function buildRedditShareUrl() {
+    const params = new URLSearchParams();
+    params.set("url", withUtm(productUrl, "Reddit"));
+
+    const title = getShareTitle();
+    if (title) {
+      params.set("title", title);
+    }
+
+    return `https://www.reddit.com/submit?${params.toString()}`;
+  }
+
+  function buildLinkedInShareUrl() {
+    const params = new URLSearchParams();
+    params.set("url", withUtm(productUrl, "LinkedIn"));
+
+    return `https://www.linkedin.com/sharing/share-offsite/?${params.toString()}`;
+  }
+
+  function buildPinterestShareUrl() {
+    const params = new URLSearchParams();
+
+    const title = getShareTitle() || productTitle;
+    const description = getShareDescription();
+    const image = getPrimaryCatalogImage(product);
+    const hashtagText = getHashtagText();
+
+    const pinterestDescription = [title, description, hashtagText]
+      .filter(Boolean)
+      .join("\n\n");
+
+    params.set("url", withUtm(productUrl, "Pinterest"));
+
+    if (image) {
+      params.set("media", image);
+    }
+
+    if (title) {
+      params.set("title", title);
+    }
+
+    if (pinterestDescription) {
+      params.set("description", pinterestDescription);
+    }
+
+    return `https://in.pinterest.com/pin-builder/?${params.toString()}`;
+  }
+
+  function buildTwitterShareUrl() {
+    const params = new URLSearchParams();
+    const title = getShareTitle();
+
+    params.set("url", withUtm(productUrl, "X"));
+
+    if (title) {
+      params.set("text", title);
+    }
+
+    return `https://x.com/intent/post?${params.toString()}`;
+  }
+
+  function closeMenu() {
+    setOpen(false);
+    setSearchTerm("");
+  }
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(withUtm(productUrl, "CopyLink"));
+    closeMenu();
+  }
+
+  function openUrl(url: string) {
+    window.open(url, "_blank", "noopener,noreferrer,width=900,height=700");
+    closeMenu();
+  }
+
+  async function duplicateProduct() {
+    try {
+      setIsWorking(true);
+
+      const response = await fetch(
+        `${getApiRootUrl()}/admin/catalog/${productId}/duplicate`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+        },
+      );
+
+      const data = await readJson<ProductUpdateApiResponse>(
+        response,
+        "Duplicate product API JSON response nahi de rahi",
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+            `Duplicate product failed: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      const newProductId = getNestedId(data);
+
+      closeMenu();
+      onDuplicated(newProductId);
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "Duplicate product failed.",
+      );
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function archiveProduct() {
+    const confirmed = window.confirm(
+      "Kya tum is product ko archive karna chahte ho?",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsWorking(true);
+
+      const response = await fetch(
+        `${getApiRootUrl()}/admin/catalog/${productId}/status`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            status: "ARCHIVED",
+          }),
+        },
+      );
+
+      const data = await readJson<ProductUpdateApiResponse>(
+        response,
+        "Archive product API JSON response nahi de rahi",
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+            `Archive product failed: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      closeMenu();
+      onArchived();
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "Archive product failed.",
+      );
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function deleteProduct() {
+    const confirmed = window.confirm(
+      "Delete product permanently? Ye action undo nahi hoga.",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsWorking(true);
+
+   const response = await fetch(`${getApiRootUrl()}/admin/catalog/${productId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+
+      const data = await readJson<ProductUpdateApiResponse>(
+        response,
+        "Delete product API JSON response nahi de rahi",
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+            `Delete product failed: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      closeMenu();
+      onDeleted();
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "Delete product failed.",
+      );
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  function isVisible(label: string) {
+    if (!normalizedSearch) return true;
+
+    return label.toLowerCase().includes(normalizedSearch);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        disabled={isWorking}
+        className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900 shadow-sm hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isWorking ? "Working..." : "More actions"}
+        <ChevronDown className="h-4 w-4" />
+      </button>
+
+      {open ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close actions menu"
+            className="fixed inset-0 z-40 cursor-default bg-transparent"
+            onClick={closeMenu}
+          />
+
+          <div className="absolute right-0 top-12 z-50 max-h-[78vh] w-[360px] overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl">
+            <div className="mb-2 flex h-11 items-center gap-2 rounded-xl border border-neutral-300 px-3">
+              <Search className="h-4 w-4 text-neutral-400" />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search actions"
+                className="h-full flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+
+            {isVisible("Duplicate") ? (
+              <button
+                type="button"
+                onClick={duplicateProduct}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+                <RotateCcw className="h-4 w-4 text-neutral-500" />
+                Duplicate
+              </button>
+            ) : null}
+
+            {isVisible("View") ? (
+              <button
+                type="button"
+                onClick={() => openUrl(productUrl)}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+                <ExternalLink className="h-4 w-4 text-neutral-500" />
+                View
+              </button>
+            ) : null}
+
+            <div className="my-2 border-t border-neutral-200" />
+
+            <p className="px-3 py-1.5 text-sm font-bold text-neutral-700">
+              Share
+            </p>
+
+            {isVisible("Copy link") ? (
+              <button
+                type="button"
+                onClick={copyLink}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+                <Copy className="h-4 w-4 text-neutral-500" />
+                Copy link
+              </button>
+            ) : null}
+
+            {isVisible("Facebook") ? (
+              <button
+                type="button"
+                onClick={() =>
+                openUrl(buildFacebookShareUrl())
+                }
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-neutral-700 text-[10px] font-bold text-white">
+                  f
+                </span>
+                Facebook
+              </button>
+            ) : null}
+
+            {isVisible("Reddit") ? (
+              <button
+                type="button"
+                onClick={() =>
+                  openUrl(buildRedditShareUrl())
+                }
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-neutral-700 text-[9px] font-bold text-white">
+                  r
+                </span>
+                Reddit
+              </button>
+            ) : null}
+
+            {isVisible("LinkedIn") ? (
+              <button
+                type="button"
+                onClick={() =>
+                openUrl(buildLinkedInShareUrl())
+                }
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+               <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-neutral-700 text-[9px] font-bold text-white">
+                  in
+                </span>
+                LinkedIn
+              </button>
+            ) : null}
+
+            {isVisible("Pinterest") ? (
+              <button
+                type="button"
+                onClick={() =>
+                openUrl(buildPinterestShareUrl())
+                }
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-neutral-700 text-[10px] font-bold text-white">
+                  p
+                </span>
+                Pinterest
+              </button>
+            ) : null}
+
+            {isVisible("X") ? (
+              <button
+                type="button"
+                onClick={() =>
+                openUrl(buildTwitterShareUrl())
+                }
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+                <span className="inline-flex h-4 w-4 items-center justify-center text-sm font-bold text-neutral-700">
+                  𝕏
+                </span>
+                X
+              </button>
+            ) : null}
+
+            <div className="my-2 border-t border-neutral-200" />
+
+            <p className="px-3 py-1.5 text-sm font-bold text-neutral-700">
+              More actions
+            </p>
+
+            {isVisible("Archive product") ? (
+              <button
+                type="button"
+                onClick={archiveProduct}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-100"
+              >
+                <Archive className="h-4 w-4 text-neutral-500" />
+                Archive product
+              </button>
+            ) : null}
+
+            {isVisible("Delete product") ? (
+              <button
+                type="button"
+                onClick={deleteProduct}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete product
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+
+

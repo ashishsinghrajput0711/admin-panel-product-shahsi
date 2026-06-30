@@ -41,6 +41,7 @@ import {
   Unlink,
   Upload,
   Video,
+   ShoppingBag,
 } from "lucide-react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -95,6 +96,92 @@ type CategoryOption = {
   isActive?: boolean;
 };
 
+
+type CatalogAttributeOption = {
+  id?: string;
+  label?: string | null;
+  value?: string | null;
+  colorHex?: string | null;
+  imageUrl?: string | null;
+  sortOrder?: number | null;
+  isActive?: boolean | null;
+};
+
+type CatalogAttribute = {
+  id: string;
+  name?: string | null;
+  slug?: string | null;
+  code?: string | null;
+  key?: string | null;
+  label?: string | null;
+  description?: string | null;
+  fieldType?: string | null;
+  type?: string | null;
+  isRequired?: boolean | null;
+  isFilterable?: boolean | null;
+  isSearchable?: boolean | null;
+  isVariantLevel?: boolean | null;
+  isActive?: boolean | null;
+  sortOrder?: number | null;
+  options?: CatalogAttributeOption[] | null;
+};
+
+type CatalogAttributesApiResponse = {
+  success?: boolean;
+  data?: CatalogAttribute[];
+  attributes?: CatalogAttribute[];
+  count?: number;
+  total?: number;
+};
+
+type GoogleMerchantRuleRequirement = "REQUIRED" | "RECOMMENDED" | "OPTIONAL";
+
+type GoogleMerchantRule = {
+  id?: string;
+  key?: string;
+  field?: string;
+  name?: string;
+  label?: string;
+  code?: string;
+  attributeKey?: string;
+  requirement?: GoogleMerchantRuleRequirement | string;
+  allowedValues?: string[];
+  enumValues?: string[];
+  values?: string[];
+  options?: string[];
+  type?: string;
+  dataType?: string;
+  description?: string | null;
+  isVariantLevel?: boolean;
+  variantLevel?: boolean;
+};
+
+type GoogleMerchantCategory = {
+  googleCategoryId?: string;
+  id?: string;
+  name?: string;
+  fullPath?: string;
+};
+
+type GoogleMerchantRulesPayload = {
+  shahsiCategoryId?: string;
+  mappedShahsiCategoryId?: string;
+  googleCategory?: GoogleMerchantCategory | null;
+  rules?: GoogleMerchantRule[];
+  attributes?: GoogleMerchantRule[];
+  requiredAttributes?: Array<GoogleMerchantRule | string>;
+  recommendedAttributes?: Array<GoogleMerchantRule | string>;
+  optionalAttributes?: Array<GoogleMerchantRule | string>;
+  googleMerchantAttributes?: GoogleMerchantRule[];
+};
+
+type GoogleMerchantRulesApiResponse = {
+  success?: boolean;
+  data?: GoogleMerchantRulesPayload;
+  message?: string;
+  error?: unknown;
+};
+
 function getApiRootUrl() {
   const rawUrl = process.env.NEXT_PUBLIC_ADMIN_API_URL;
   if (!rawUrl) throw new Error("NEXT_PUBLIC_ADMIN_API_URL missing hai.");
@@ -105,6 +192,352 @@ function getApiRootUrl() {
   }
 
   return cleanUrl;
+}
+
+function getAuthHeaders() {
+  const token = getToken();
+
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+function getApiError(data: any, fallback: string) {
+  return (
+    data?.message ||
+    data?.error?.message ||
+    data?.error ||
+    fallback
+  );
+}
+
+function normalizeGoogleMerchantRule(
+  item: GoogleMerchantRule | string,
+  requirement?: GoogleMerchantRuleRequirement,
+): GoogleMerchantRule {
+  if (typeof item === "string") {
+    return {
+      key: item,
+      label: item,
+      requirement: requirement || "OPTIONAL",
+    };
+  }
+
+  return {
+    ...item,
+    requirement: item.requirement || requirement || "OPTIONAL",
+  };
+}
+
+function getRuleKey(rule: GoogleMerchantRule) {
+  return String(
+    rule.key ||
+      rule.field ||
+      rule.attributeKey ||
+      rule.code ||
+      rule.name ||
+      "",
+  ).trim();
+}
+
+function getRuleLabel(rule: GoogleMerchantRule) {
+  const key = getRuleKey(rule);
+
+  return String(rule.label || rule.name || key)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getRuleAllowedValues(rule: GoogleMerchantRule) {
+  const values =
+    rule.allowedValues ||
+    rule.enumValues ||
+    rule.values ||
+    rule.options ||
+    [];
+
+  return Array.isArray(values)
+    ? values.map((item) => String(item)).filter(Boolean)
+    : [];
+}
+
+const GOOGLE_MERCHANT_SAVE_RULE_KEYS = new Set([
+  "google_category_id",
+  "google_product_category",
+  "google_product_category_id",
+  "age_group",
+  "gender",
+  "color",
+  "size",
+  "size_type",
+  "size_system",
+  "material",
+  "pattern",
+  "condition",
+  "availability",
+  "identifier_exists",
+  "gtin",
+  "mpn",
+]);
+
+function isSaveableGoogleMerchantRule(rule: GoogleMerchantRule) {
+  return GOOGLE_MERCHANT_SAVE_RULE_KEYS.has(getRuleKey(rule));
+}
+
+function getGoogleMerchantFieldValue(
+  value: Record<string, unknown>,
+  rule: GoogleMerchantRule,
+) {
+  const key = getRuleKey(rule);
+
+  const aliases: Record<string, string[]> = {
+    google_category_id: ["googleCategoryId", "google_category_id"],
+    google_product_category_id: [
+      "googleProductCategoryId",
+      "google_product_category_id",
+      "googleCategoryId",
+      "google_category_id",
+    ],
+    google_product_category: [
+      "googleProductCategory",
+      "google_product_category",
+    ],
+    age_group: ["ageGroup", "age_group"],
+    size_type: ["sizeType", "size_type"],
+    size_system: ["sizeSystem", "size_system"],
+    identifier_exists: ["identifierExists", "identifier_exists"],
+  };
+
+  const keys = [key, ...(aliases[key] || [])];
+
+  for (const item of keys) {
+    const found = value[item];
+
+    if (found !== null && found !== undefined && String(found).trim()) {
+      return String(found);
+    }
+  }
+
+  return "";
+}
+
+function extractGoogleMerchantRules(payload?: GoogleMerchantRulesPayload | null) {
+  if (!payload) {
+    return [];
+  }
+
+  const rules: GoogleMerchantRule[] = [];
+
+  if (Array.isArray(payload.rules)) {
+    rules.push(...payload.rules.map((item) => normalizeGoogleMerchantRule(item)));
+  }
+
+  if (Array.isArray(payload.attributes)) {
+    rules.push(...payload.attributes.map((item) => normalizeGoogleMerchantRule(item)));
+  }
+
+  if (Array.isArray(payload.googleMerchantAttributes)) {
+    rules.push(
+      ...payload.googleMerchantAttributes.map((item) =>
+        normalizeGoogleMerchantRule(item),
+      ),
+    );
+  }
+
+  if (Array.isArray(payload.requiredAttributes)) {
+    rules.push(
+      ...payload.requiredAttributes.map((item) =>
+        normalizeGoogleMerchantRule(item, "REQUIRED"),
+      ),
+    );
+  }
+
+  if (Array.isArray(payload.recommendedAttributes)) {
+    rules.push(
+      ...payload.recommendedAttributes.map((item) =>
+        normalizeGoogleMerchantRule(item, "RECOMMENDED"),
+      ),
+    );
+  }
+
+  if (Array.isArray(payload.optionalAttributes)) {
+    rules.push(
+      ...payload.optionalAttributes.map((item) =>
+        normalizeGoogleMerchantRule(item, "OPTIONAL"),
+      ),
+    );
+  }
+
+  const unique = new Map<string, GoogleMerchantRule>();
+
+  rules.forEach((rule) => {
+    const key = getRuleKey(rule);
+    if (!key) return;
+
+    const current = unique.get(key);
+
+    if (!current) {
+      unique.set(key, rule);
+      return;
+    }
+
+    const currentRequirement = String(current.requirement || "").toUpperCase();
+    const nextRequirement = String(rule.requirement || "").toUpperCase();
+
+    if (currentRequirement !== "REQUIRED" && nextRequirement === "REQUIRED") {
+      unique.set(key, rule);
+    }
+  });
+
+  return Array.from(unique.values());
+}
+
+async function fetchGoogleMerchantRules({
+  categoryId,
+  productId,
+  taxonomyId,
+}: {
+  categoryId?: string;
+  productId?: string;
+  taxonomyId?: string;
+}) {
+  const cleanProductId = String(productId || "").trim();
+  const cleanTaxonomyId = String(taxonomyId || "").trim();
+  const cleanCategoryId = String(categoryId || "").trim();
+
+  const endpoint = cleanProductId
+    ? `${getApiRootUrl()}/admin/catalog/${encodeURIComponent(
+        cleanProductId,
+      )}/google-category-rules`
+    : cleanTaxonomyId
+      ? `${getApiRootUrl()}/admin/catalog/google-category-rules/by-taxonomy/${encodeURIComponent(
+          cleanTaxonomyId,
+        )}`
+      : cleanCategoryId
+        ? `${getApiRootUrl()}/admin/catalog/google-category-rules/${encodeURIComponent(
+            cleanCategoryId,
+          )}`
+        : "";
+
+  if (!endpoint) {
+    return null;
+  }
+
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+  });
+
+  const text = await response.text();
+  const data = text.trim()
+    ? (JSON.parse(text) as GoogleMerchantRulesApiResponse)
+    : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Google Merchant rules failed: ${response.status}`),
+    );
+  }
+
+  return data?.data || null;
+}
+
+async function fetchProductCatalogAttributes() {
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes?page=1&limit=200&isActive=true`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const data = (await response.json().catch(() => null)) as
+    | CatalogAttributesApiResponse
+    | null;
+
+  if (!response.ok) {
+    throw new Error(getApiError(data, `Attributes API failed: ${response.status}`));
+  }
+
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.attributes)) return data.attributes;
+
+  return [];
+}
+
+function getAttributeKey(attribute: CatalogAttribute) {
+  return String(
+    attribute.slug ||
+      attribute.code ||
+      attribute.key ||
+      attribute.name ||
+      attribute.id ||
+      "",
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function getAttributeLabel(attribute: CatalogAttribute) {
+  return String(attribute.label || attribute.name || getAttributeKey(attribute))
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getAttributeType(attribute: CatalogAttribute) {
+  return String(attribute.fieldType || attribute.type || "").toLowerCase();
+}
+
+function isMultiSelectAttribute(attribute: CatalogAttribute) {
+  const type = getAttributeType(attribute);
+
+  return type.includes("multi");
+}
+
+function isOptionAttribute(attribute: CatalogAttribute) {
+  const type = getAttributeType(attribute);
+
+  return (
+    type.includes("dropdown") ||
+    type.includes("select") ||
+    type.includes("swatch") ||
+    type.includes("color") ||
+    type.includes("size") ||
+    Boolean(attribute.options?.length)
+  );
+}
+
+function cleanDynamicAttributes(data: Record<string, unknown>) {
+  const cleaned: Record<string, unknown> = {};
+
+  Object.entries(data || {}).forEach(([key, value]) => {
+    if (!key) return;
+
+    if (Array.isArray(value)) {
+      const nextValue = value
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean);
+
+      if (nextValue.length) {
+        cleaned[key] = nextValue;
+      }
+
+      return;
+    }
+
+    const nextValue = String(value ?? "").trim();
+
+    if (nextValue) {
+      cleaned[key] = nextValue;
+    }
+  });
+
+  return cleaned;
 }
 
 function getToken() {
@@ -145,6 +578,8 @@ occasionTags: [],
 metaKeywords: [],
 productMetafields: {},
 categoryMetafields: {},
+dynamicAttributes: {},
+googleMerchantData: {},
 ...defaultValues,
   };
 }
@@ -331,6 +766,10 @@ const [isCategoryLoading, setIsCategoryLoading] = useState(true);
 const [categoryError, setCategoryError] = useState<string | null>(null);
 const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
+const [catalogAttributes, setCatalogAttributes] = useState<CatalogAttribute[]>([]);
+const [isAttributesLoading, setIsAttributesLoading] = useState(true);
+const [attributesError, setAttributesError] = useState<string | null>(null);
+
 const form = useForm<ProductFormValues>({
   resolver: zodResolver(productSchema) as Resolver<ProductFormValues>,
   defaultValues: getDefaultFormValues(defaultValues),
@@ -339,16 +778,54 @@ const form = useForm<ProductFormValues>({
   const name = form.watch("name");
   const sku = form.watch("sku");
   const categoryId = form.watch("categoryId");
+  const selectedTaxonomyId = form.watch("taxonomyId") || "";
   const selectedCategorySlugs = form.watch("categories") ?? [];
   const commerceTypes = form.watch("commerceTypes") ?? [];
   const descriptionValue = form.watch("description") ?? "";
 
   const formValues = form.watch();
 
+const normalizedCategoryId = String(categoryId || "").trim();
+
+const primarySelectedSlug =
+  selectedCategorySlugs.find(Boolean) || normalizedCategoryId;
+
+const selectedCategoryOption =
+  categoryOptions.find((category) => {
+    const targets = [
+      category.id,
+      category.slug,
+      category.path,
+      category.name,
+      category.label,
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).trim());
+
+    return (
+      targets.includes(normalizedCategoryId) ||
+      targets.includes(primarySelectedSlug)
+    );
+  }) || null;
+
 const selectedCategoryLabel =
-  categoryOptions.find((category) => category.slug === categoryId)?.label ||
+  selectedCategoryOption?.label ||
+  selectedCategoryOption?.name ||
   categoryId ||
   "Selected category";
+
+const selectedShahsiCategoryId =
+  selectedCategoryOption?.id || "";
+
+
+
+const googleMerchantData =
+  ((form.watch("googleMerchantData" as any) || {}) as Record<string, unknown>);
+
+  const dynamicAttributes =
+  ((form.watch("dynamicAttributes" as any) || {}) as Record<string, unknown>);
+
+
 
   useEffect(() => {
     form.reset(getDefaultFormValues(defaultValues));
@@ -362,9 +839,14 @@ const selectedCategoryLabel =
         setIsCategoryLoading(true);
         setCategoryError(null);
 
-        const response = await fetch(
-          `${getApiRootUrl()}/catalog/categories/tree?includeInactive=true&showProductCount=true&showEmpty=true&maxDepth=50`
-        );
+       const response = await fetch(
+  `${getApiRootUrl()}/admin/catalog/categories/tree?includeInactive=true&showProductCount=true&showEmpty=true&maxDepth=50`,
+  {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+  },
+);
 
         const data = await response.json();
 
@@ -392,6 +874,44 @@ const selectedCategoryLabel =
       ignore = true;
     };
   }, []);
+
+
+  useEffect(() => {
+  let ignore = false;
+
+  async function loadAttributes() {
+    try {
+      setIsAttributesLoading(true);
+      setAttributesError(null);
+
+      const result = await fetchProductCatalogAttributes();
+
+      const activeAttributes = result
+        .filter((attribute) => attribute.isActive !== false)
+        .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+
+      if (!ignore) {
+        setCatalogAttributes(activeAttributes);
+      }
+    } catch (error) {
+      if (!ignore) {
+        setAttributesError(
+          error instanceof Error ? error.message : "Attributes load failed.",
+        );
+      }
+    } finally {
+      if (!ignore) {
+        setIsAttributesLoading(false);
+      }
+    }
+  }
+
+  loadAttributes();
+
+  return () => {
+    ignore = true;
+  };
+}, []);
 
   function toggleCommerceType(type: ProductFormValues["commerceTypes"][number]) {
     const exists = commerceTypes.includes(type);
@@ -456,8 +976,49 @@ function handleTagsChange(nextValues: ProductFormValues) {
     shouldValidate: true,
   });
 }
+
+function handleGoogleMerchantDataChange(nextValue: Record<string, unknown>) {
+  form.setValue("googleMerchantData" as any, nextValue as any, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+}
+
+
+function handleDynamicAttributesChange(nextValue: Record<string, unknown>) {
+  form.setValue("dynamicAttributes" as any, nextValue as any, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+}
+
+
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 pb-20">
+<form
+  onSubmit={form.handleSubmit((values) => {
+    const cleanedGoogleMerchantData = cleanGoogleMerchantData(
+      (values.googleMerchantData || {}) as Record<string, unknown>,
+    );
+
+    const cleanedDynamicAttributes = cleanDynamicAttributes(
+  (values.dynamicAttributes || {}) as Record<string, unknown>,
+);
+
+const payload: ProductFormValues = {
+  ...values,
+  dynamicAttributes: cleanedDynamicAttributes as any,
+};
+
+delete (payload as any).googleMerchantData;
+
+if (Object.keys(cleanedGoogleMerchantData).length) {
+  payload.googleMerchantData = cleanedGoogleMerchantData as any;
+}
+
+onSubmit(payload);
+  })}
+  className="space-y-3 pb-20"
+>
       <FormSection
         icon={<Sparkles className="h-4 w-4" />}
         title="Product identity"
@@ -596,9 +1157,7 @@ function handleTagsChange(nextValues: ProductFormValues) {
   <p className="mt-1 text-[11px] text-neutral-500">
     Primary category:{" "}
     <span className="font-medium text-neutral-800">
-      {categoryOptions.find((item) => item.slug === categoryId)?.label ||
-        categoryId ||
-        "Not selected"}
+      {selectedCategoryLabel || "Not selected"}
     </span>
   </p>
 </Field>
@@ -641,6 +1200,25 @@ function handleTagsChange(nextValues: ProductFormValues) {
         </div>
       </FormSection>
 
+      <ProductDynamicAttributesSection
+  attributes={catalogAttributes}
+  isLoading={isAttributesLoading}
+  error={attributesError}
+  value={dynamicAttributes}
+  onChange={handleDynamicAttributesChange}
+/>
+
+
+      <GoogleMerchantDataSection
+  productId={productId || ""}
+  categoryId={selectedShahsiCategoryId}
+  taxonomyId={selectedTaxonomyId}
+  categoryLabel={selectedCategoryLabel}
+  value={googleMerchantData}
+  onChange={handleGoogleMerchantDataChange}
+/>
+
+     
  <ProductShopifyMetafieldsSection
   values={formValues}
   onChange={handleMetafieldsChange}
@@ -710,35 +1288,102 @@ function handleTagsChange(nextValues: ProductFormValues) {
       </div>
     <ProductTagsSection values={formValues} onChange={handleTagsChange} />
 
-      <FormSection
-        icon={<Search className="h-4 w-4" />}
-        title="SEO"
-        description="Search title and meta description."
-      >
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field
-            label="SEO title"
-            error={form.formState.errors.seoTitle?.message}
-          >
-            <Input
-              {...form.register("seoTitle")}
-              placeholder="Plum Velvet Engagement Gown"
-              className="h-9 text-sm"
-            />
-          </Field>
+     <FormSection
+  icon={<Search className="h-4 w-4" />}
+  title="SEO"
+  description="Search title and meta description."
+>
+  {(() => {
+    const seoTitle = form.watch("seoTitle") || "";
+    const seoDescription = form.watch("seoDescription") || "";
 
-          <Field
-            label="SEO description"
-            error={form.formState.errors.seoDescription?.message}
-          >
-            <textarea
-              {...form.register("seoDescription")}
-              className="min-h-20 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-              placeholder="SEO description"
-            />
-          </Field>
-        </div>
-      </FormSection>
+    const titleLength = seoTitle.length;
+    const descriptionLength = seoDescription.length;
+
+    const titleStatus =
+      titleLength === 0
+        ? "empty"
+        : titleLength < 35
+          ? "short"
+          : titleLength <= 65
+            ? "good"
+            : "long";
+
+    const descriptionStatus =
+      descriptionLength === 0
+        ? "empty"
+        : descriptionLength < 120
+          ? "short"
+          : descriptionLength <= 170
+            ? "good"
+            : "long";
+
+    const statusClass = {
+      empty: "text-neutral-400",
+      short: "text-amber-600",
+      good: "text-emerald-700",
+      long: "text-red-600",
+    } as const;
+
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field
+          label="SEO title"
+          error={form.formState.errors.seoTitle?.message}
+        >
+          <Input
+            {...form.register("seoTitle")}
+            placeholder="Ivory Smocked Waist Cotton Midi Dress for Women"
+            className="h-9 text-sm"
+          />
+
+          <div className="mt-1 flex items-center justify-between text-[11px]">
+            <span className={statusClass[titleStatus]}>
+              {titleStatus === "empty"
+                ? "SEO title empty hai."
+                : titleStatus === "short"
+                  ? "Thoda short hai. 35-65 characters best."
+                  : titleStatus === "good"
+                    ? "Good length."
+                    : "Too long. Social/Google preview me cut ho sakta hai."}
+            </span>
+
+            <span className={statusClass[titleStatus]}>
+              {titleLength}/65
+            </span>
+          </div>
+        </Field>
+
+        <Field
+          label="SEO description"
+          error={form.formState.errors.seoDescription?.message}
+        >
+          <textarea
+            {...form.register("seoDescription")}
+            className="min-h-20 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+            placeholder="Shop an ivory cotton midi dress with a smocked waist and tiered silhouette. Perfect for summer weddings, vacations and daytime events."
+          />
+
+          <div className="mt-1 flex items-center justify-between text-[11px]">
+            <span className={statusClass[descriptionStatus]}>
+              {descriptionStatus === "empty"
+                ? "SEO description empty hai."
+                : descriptionStatus === "short"
+                  ? "Thoda short hai. 120-170 characters best."
+                  : descriptionStatus === "good"
+                    ? "Good length."
+                    : "Too long. Preview me cut ho sakta hai."}
+            </span>
+
+            <span className={statusClass[descriptionStatus]}>
+              {descriptionLength}/170
+            </span>
+          </div>
+        </Field>
+      </div>
+    );
+  })()}
+</FormSection>
 
       <div className="sticky bottom-3 z-20 rounded-lg border border-neutral-900 bg-neutral-950 px-3 py-2 shadow-lg">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -785,6 +1430,644 @@ function handleTagsChange(nextValues: ProductFormValues) {
   }}
 />
     </form>
+  );
+}
+
+function cleanGoogleMerchantData(data: Record<string, unknown>) {
+  const readValue = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = data?.[key];
+
+      if (value !== null && value !== undefined && String(value).trim()) {
+        return String(value).trim();
+      }
+    }
+
+    return "";
+  };
+
+  const readBoolean = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = data?.[key];
+
+      if (typeof value === "boolean") return value;
+
+      const normalized = String(value ?? "").trim().toLowerCase();
+
+      if (["true", "yes", "1"].includes(normalized)) return true;
+      if (["false", "no", "0"].includes(normalized)) return false;
+    }
+
+    return false;
+  };
+
+  const googleCategoryId = readValue(
+    "googleCategoryId",
+    "google_category_id",
+    "googleProductCategoryId",
+    "google_product_category_id",
+  );
+
+  const googleProductCategory = readValue(
+    "googleProductCategory",
+    "google_product_category",
+  );
+
+  const ageGroup = readValue("ageGroup", "age_group");
+  const gender = readValue("gender");
+  const color = readValue("color");
+  const size = readValue("size");
+  const condition = readValue("condition");
+  const availability = readValue("availability");
+
+  const requiredReady =
+    googleCategoryId &&
+    googleProductCategory &&
+    ageGroup &&
+    gender &&
+    color &&
+    size &&
+    condition &&
+    availability;
+
+  if (!requiredReady) {
+    return {};
+  }
+
+  const cleaned: Record<string, unknown> = {
+    googleCategoryId,
+    googleProductCategory,
+    ageGroup,
+    gender,
+    color,
+    size,
+    condition,
+    availability,
+    identifierExists: readBoolean("identifierExists", "identifier_exists"),
+  };
+
+  const sizeType = readValue("sizeType", "size_type");
+  const sizeSystem = readValue("sizeSystem", "size_system");
+  const material = readValue("material");
+  const pattern = readValue("pattern");
+  const gtin = readValue("gtin");
+  const mpn = readValue("mpn");
+
+  if (sizeType) cleaned.sizeType = sizeType;
+  if (sizeSystem) cleaned.sizeSystem = sizeSystem;
+  if (material) cleaned.material = material;
+  if (pattern) cleaned.pattern = pattern;
+  if (gtin) cleaned.gtin = gtin;
+  if (mpn) cleaned.mpn = mpn;
+
+  return cleaned;
+}
+
+function ProductDynamicAttributesSection({
+  attributes,
+  isLoading,
+  error,
+  value,
+  onChange,
+}: {
+  attributes: CatalogAttribute[];
+  isLoading: boolean;
+  error: string | null;
+  value: Record<string, unknown>;
+  onChange: (value: Record<string, unknown>) => void;
+}) {
+  function updateField(key: string, nextValue: unknown) {
+    onChange({
+      ...value,
+      [key]: nextValue,
+    });
+  }
+
+  const visibleAttributes = attributes.filter((attribute) => {
+    const key = getAttributeKey(attribute);
+
+    return key && attribute.isActive !== false;
+  });
+
+  return (
+    <FormSection
+      icon={<Settings2 className="h-4 w-4" />}
+      title="Product Attributes"
+      description="Backend-driven product attributes for filters, search and variants."
+    >
+      {isLoading ? (
+        <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-3 text-xs text-neutral-500">
+          Loading product attributes...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-3 text-xs text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {!isLoading && !error && !visibleAttributes.length ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+          Active attributes nahi mile. Attribute Management me attributes create
+          ya activate karo.
+        </div>
+      ) : null}
+
+      {visibleAttributes.length ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {visibleAttributes.map((attribute) => {
+            const key = getAttributeKey(attribute);
+
+            return (
+              <ProductDynamicAttributeField
+                key={attribute.id || key}
+                attribute={attribute}
+                value={value[key]}
+                onChange={(nextValue) => updateField(key, nextValue)}
+              />
+            );
+          })}
+        </div>
+      ) : null}
+    </FormSection>
+  );
+}
+
+function ProductDynamicAttributeField({
+  attribute,
+  value,
+  onChange,
+}: {
+  attribute: CatalogAttribute;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const key = getAttributeKey(attribute);
+  const label = getAttributeLabel(attribute);
+  const options = Array.isArray(attribute.options)
+    ? attribute.options
+        .filter((option) => option.isActive !== false)
+        .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    : [];
+
+  const isMulti = isMultiSelectAttribute(attribute);
+  const hasOptions = isOptionAttribute(attribute);
+  const selectedValues = Array.isArray(value)
+    ? value.map((item) => String(item))
+    : [];
+
+    const stringValue = String(value ?? "").trim();
+
+const optionValues = options.map((option) =>
+  String(option.value || option.label || "").trim(),
+);
+
+const hasSavedOption =
+  !stringValue || optionValues.includes(stringValue);
+
+const invalidSavedValue =
+  hasOptions && stringValue && !hasSavedOption ? stringValue : "";
+
+  function toggleMultiValue(nextValue: string) {
+    const exists = selectedValues.includes(nextValue);
+
+    onChange(
+      exists
+        ? selectedValues.filter((item) => item !== nextValue)
+        : [...selectedValues, nextValue],
+    );
+  }
+
+  return (
+    <Field label={label}>
+      {isMulti ? (
+        <div className="min-h-9 rounded-md border border-neutral-300 bg-white px-2 py-2">
+          {options.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {options.map((option) => {
+                const optionValue = String(option.value || option.label || "");
+                const selected = selectedValues.includes(optionValue);
+
+                return (
+                  <button
+                    key={option.id || optionValue}
+                    type="button"
+                    onClick={() => toggleMultiValue(optionValue)}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                      selected
+                        ? "border-neutral-950 bg-neutral-950 text-white"
+                        : "border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-400"
+                    }`}
+                  >
+                    {option.label || option.value}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <Input
+              value={selectedValues.join(", ")}
+              onChange={(event) =>
+                onChange(
+                  event.target.value
+                    .split(",")
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                )
+              }
+              placeholder={key}
+              className="h-8 border-0 px-0 text-sm focus:ring-0"
+            />
+          )}
+        </div>
+      ) : hasOptions ? (
+        <>
+  <select
+    value={hasSavedOption ? stringValue : ""}
+    onChange={(event) => onChange(event.target.value)}
+    className={`h-9 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10 ${
+      invalidSavedValue ? "border-red-300" : "border-neutral-300"
+    }`}
+  >
+    <option value="">Select {label}</option>
+
+    {options.map((option) => {
+      const optionValue = String(option.value || option.label || "").trim();
+
+      return (
+        <option key={option.id || optionValue} value={optionValue}>
+          {option.label || option.value}
+        </option>
+      );
+    })}
+  </select>
+
+  {invalidSavedValue ? (
+    <p className="mt-1 text-[11px] text-red-600">
+      Saved value "{invalidSavedValue}" active options me available nahi hai.
+      Attribute Management me ye option add karo ya valid option select karo.
+    </p>
+  ) : null}
+</>
+      ) : (
+        <Input
+          value={String(value || "")}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={key}
+          className="h-9 text-sm"
+        />
+      )}
+
+      <div className="mt-1 flex flex-wrap gap-1">
+        {attribute.isVariantLevel ? (
+          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-blue-100">
+            Variant
+          </span>
+        ) : null}
+
+        {attribute.isFilterable ? (
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-100">
+            Filter
+          </span>
+        ) : null}
+
+        {attribute.isSearchable ? (
+          <span className="rounded-full bg-neutral-50 px-2 py-0.5 text-[10px] font-medium text-neutral-600 ring-1 ring-neutral-200">
+            Search
+          </span>
+        ) : null}
+
+        {attribute.isRequired ? (
+          <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-100">
+            Required
+          </span>
+        ) : null}
+      </div>
+    </Field>
+  );
+}
+
+function GoogleMerchantDataSection({
+  productId,
+  categoryId,
+  taxonomyId,
+  categoryLabel,
+  value,
+  onChange,
+}: {
+  productId: string;
+  categoryId: string;
+  taxonomyId: string;
+  categoryLabel: string;
+  value: Record<string, unknown>;
+  onChange: (value: Record<string, unknown>) => void;
+}) {
+  const [payload, setPayload] = useState<GoogleMerchantRulesPayload | null>(null);
+  const [rules, setRules] = useState<GoogleMerchantRule[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [rulesError, setRulesError] = useState<string | null>(null);
+  const [showRecommended, setShowRecommended] = useState(true);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadRules() {
+  if (!productId && !taxonomyId && !categoryId) {
+        setPayload(null);
+        setRules([]);
+        setRulesError(null);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setRulesError(null);
+
+       const nextPayload = await fetchGoogleMerchantRules({
+  productId,
+  categoryId,
+  taxonomyId,
+});
+        const nextRules = extractGoogleMerchantRules(nextPayload);
+
+        if (ignore) return;
+
+        setPayload(nextPayload);
+        setRules(nextRules);
+
+        const googleCategory = nextPayload?.googleCategory;
+        const googleCategoryId =
+          googleCategory?.googleCategoryId || googleCategory?.id || "";
+        const googleCategoryPath = googleCategory?.fullPath || googleCategory?.name || "";
+
+        if (googleCategoryId || googleCategoryPath) {
+          onChange({
+            ...value,
+            ...(googleCategoryId && !value.google_product_category_id
+              ? { google_product_category_id: googleCategoryId }
+              : {}),
+            ...(googleCategoryPath && !value.google_product_category
+              ? { google_product_category: googleCategoryPath }
+              : {}),
+          });
+        }
+      } catch (error) {
+        if (!ignore) {
+          setPayload(null);
+          setRules([]);
+          setRulesError(
+            error instanceof Error
+              ? error.message
+              : "Google Merchant rules load failed.",
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadRules();
+
+    return () => {
+      ignore = true;
+    };
+  }, [productId, taxonomyId, categoryId]);
+
+  function updateField(key: string, nextValue: string) {
+    onChange({
+      ...value,
+      [key]: nextValue,
+    });
+  }
+
+  const saveableRules = rules.filter(isSaveableGoogleMerchantRule);
+
+const requiredRules = saveableRules.filter(
+  (rule) => String(rule.requirement || "").toUpperCase() === "REQUIRED",
+);
+
+const recommendedRules = saveableRules.filter(
+  (rule) => String(rule.requirement || "").toUpperCase() === "RECOMMENDED",
+);
+
+const optionalRules = saveableRules.filter((rule) => {
+  const requirement = String(rule.requirement || "").toUpperCase();
+
+  return requirement !== "REQUIRED" && requirement !== "RECOMMENDED";
+});
+
+  const visibleRecommendedRules = [...recommendedRules, ...optionalRules];
+
+const missingRequiredFields = requiredRules.filter((rule) => {
+  return !getGoogleMerchantFieldValue(value, rule).trim();
+});
+
+  const googleCategory = payload?.googleCategory;
+  const googleCategoryId = googleCategory?.googleCategoryId || googleCategory?.id;
+
+  return (
+    <FormSection
+      icon={<ShoppingBag className="h-4 w-4" />}
+      title="Google Merchant Data"
+      description="Backend-driven Google Merchant category mapping and feed attributes."
+    >
+    {!productId && !taxonomyId && !categoryId ? (
+       <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+  Pehle product/category/taxonomy select karo. Selection hote hi backend se
+  Google Merchant rules load honge.
+</div>
+      ) : null}
+
+      {categoryId ? (
+        <div className="mb-4 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-semibold text-neutral-950">
+                Selected Shahsi category
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">{categoryLabel}</p>
+              <p className="mt-1 font-mono text-[11px] text-neutral-400">
+                {categoryId}
+              </p>
+            </div>
+
+            {isLoading ? (
+              <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-neutral-500 ring-1 ring-neutral-200">
+                Loading rules...
+              </span>
+            ) : rules.length ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                {rules.length} rules loaded
+              </span>
+            ) : null}
+          </div>
+
+          {googleCategory ? (
+            <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2">
+              <p className="text-xs font-semibold text-blue-950">
+                Mapped Google category
+              </p>
+              <p className="mt-1 text-xs text-blue-800">
+                {googleCategory.fullPath || googleCategory.name || "Mapped"}
+              </p>
+              {googleCategoryId ? (
+                <p className="mt-1 font-mono text-[11px] text-blue-700">
+                  Google Category ID: {googleCategoryId}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {rulesError ? (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-xs text-red-700">
+          {rulesError}
+        </div>
+      ) : null}
+
+      {categoryId && !isLoading && !rulesError && !rules.length ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+          Is category ke liye rules empty aa rahe hain. Backend mapping response
+          aa raha hai, but attributes/rules array empty hai.
+        </div>
+      ) : null}
+
+      {requiredRules.length ? (
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-700">
+              Required fields
+            </h3>
+
+            {missingRequiredFields.length ? (
+              <span className="rounded-full bg-red-50 px-3 py-1 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
+                {missingRequiredFields.length} missing
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                Complete
+              </span>
+            )}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {requiredRules.map((rule) => (
+            <GoogleMerchantField
+  key={getRuleKey(rule)}
+  rule={rule}
+  value={getGoogleMerchantFieldValue(value, rule)}
+  onChange={(nextValue) =>
+    updateField(getRuleKey(rule), nextValue)
+  }
+/>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {visibleRecommendedRules.length ? (
+        <div className="mt-5 border-t border-neutral-200 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowRecommended((current) => !current)}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <span>
+              <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-neutral-700">
+                Recommended / optional fields
+              </span>
+              <span className="mt-1 block text-xs text-neutral-500">
+                Google Merchant feed quality improve karne ke liye optional data.
+              </span>
+            </span>
+
+            <ChevronDown
+              className={`h-4 w-4 transition ${
+                showRecommended ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          {showRecommended ? (
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {visibleRecommendedRules.map((rule) => (
+                <GoogleMerchantField
+  key={getRuleKey(rule)}
+  rule={rule}
+  value={getGoogleMerchantFieldValue(value, rule)}
+  onChange={(nextValue) =>
+    updateField(getRuleKey(rule), nextValue)
+  }
+/>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </FormSection>
+  );
+}
+
+function GoogleMerchantField({
+  rule,
+  value,
+  required = false,
+  onChange,
+}: {
+  rule: GoogleMerchantRule;
+  value: string;
+  required?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const key = getRuleKey(rule);
+  const label = getRuleLabel(rule);
+  const allowedValues = getRuleAllowedValues(rule);
+  const isMissing = required && !value.trim();
+
+  return (
+    <Field label={`${label}${required ? " *" : ""}`}>
+      {allowedValues.length ? (
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className={`h-9 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10 ${
+            isMissing ? "border-red-300" : "border-neutral-300"
+          }`}
+        >
+          <option value="">Select {label}</option>
+          {allowedValues.map((option) => (
+            <option key={`${key}-${option}`} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <Input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={key}
+          className={`h-9 text-sm ${isMissing ? "border-red-300" : ""}`}
+        />
+      )}
+
+      {rule.description ? (
+        <p className="mt-1 text-[11px] text-neutral-500">{rule.description}</p>
+      ) : null}
+
+      {rule.isVariantLevel || rule.variantLevel ? (
+        <p className="mt-1 text-[11px] font-medium text-blue-700">
+          Variant-level applicable
+        </p>
+      ) : null}
+
+      {isMissing ? (
+        <p className="mt-1 text-[11px] text-red-600">Required field</p>
+      ) : null}
+    </Field>
   );
 }
 

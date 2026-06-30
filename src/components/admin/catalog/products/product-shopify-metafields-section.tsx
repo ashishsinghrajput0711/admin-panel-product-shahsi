@@ -85,14 +85,42 @@ type ProductPickerApiResponse = {
   error?: unknown;
 };
 
+type CategoryPickerItem = {
+  id?: string | null;
+  name?: string | null;
+  title?: string | null;
+  slug?: string | null;
+  path?: string | null;
+  url?: string | null;
+  level?: number | null;
+  isActive?: boolean | null;
+  productSourceType?: string | null;
+  directProductCount?: number | null;
+  productCount?: number | null;
+  children?: CategoryPickerItem[] | null;
+};
+
+type CategoryPickerApiResponse = {
+  success?: boolean;
+  data?:
+    | CategoryPickerItem[]
+    | {
+        data?: CategoryPickerItem[];
+        categories?: CategoryPickerItem[];
+      };
+  categories?: CategoryPickerItem[];
+  message?: string;
+  error?: unknown;
+};
+
 type CollectionPickerItem = {
   id?: string | null;
   name?: string | null;
   title?: string | null;
   slug?: string | null;
-  status?: string | null;
   type?: string | null;
   collectionType?: string | null;
+  status?: string | null;
   isActive?: boolean | null;
   productsCount?: number | null;
   productCount?: number | null;
@@ -103,14 +131,12 @@ type CollectionPickerApiResponse = {
   data?:
     | CollectionPickerItem[]
     | {
-        items?: CollectionPickerItem[];
-        collections?: CollectionPickerItem[];
         data?: CollectionPickerItem[];
-        meta?: unknown;
-        total?: number;
+        collections?: CollectionPickerItem[];
+        items?: CollectionPickerItem[];
       };
-  items?: CollectionPickerItem[];
   collections?: CollectionPickerItem[];
+  items?: CollectionPickerItem[];
   message?: string;
   error?: unknown;
 };
@@ -192,15 +218,15 @@ const productMetafieldFields: ProductMetafieldField[] = [
   },
 {
   key: "primaryCollection",
-  label: "Primary collection",
+  label: "Primary category",
   type: "collection_picker",
-  placeholder: "Select primary collection",
+  placeholder: "Select primary category",
 },
 {
   key: "secondaryCollection",
-  label: "Secondary collection",
+  label: "Secondary category",
   type: "collection_picker",
-  placeholder: "Select secondary collection",
+  placeholder: "Select secondary category",
 },
   {
     key: "similarColorProducts",
@@ -529,20 +555,129 @@ function extractPickerItems(data: ProductPickerApiResponse | null) {
 }
 
 
+function extractCategoryTreeItems(data: CategoryPickerApiResponse | null) {
+  if (!data) return [];
+
+  if (Array.isArray(data.data)) return data.data;
+
+  if (data.data && typeof data.data === "object") {
+    if (Array.isArray(data.data.data)) return data.data.data;
+    if (Array.isArray(data.data.categories)) return data.data.categories;
+  }
+
+  if (Array.isArray(data.categories)) return data.categories;
+
+  return [];
+}
+
+
 function extractCollectionItems(data: CollectionPickerApiResponse | null) {
   if (!data) return [];
 
   if (Array.isArray(data.data)) return data.data;
-  if (Array.isArray(data.items)) return data.items;
   if (Array.isArray(data.collections)) return data.collections;
+  if (Array.isArray(data.items)) return data.items;
 
   if (data.data && typeof data.data === "object") {
-    if (Array.isArray(data.data.items)) return data.data.items;
-    if (Array.isArray(data.data.collections)) return data.data.collections;
     if (Array.isArray(data.data.data)) return data.data.data;
+    if (Array.isArray(data.data.collections)) return data.data.collections;
+    if (Array.isArray(data.data.items)) return data.data.items;
   }
 
   return [];
+}
+
+
+function flattenCategoryPickerItems(
+  nodes: CategoryPickerItem[],
+  depth = 0,
+  parentPath = "",
+): CategoryPickerItem[] {
+  const result: CategoryPickerItem[] = [];
+
+  nodes.forEach((node) => {
+    const slug = String(node.slug || "").trim();
+    const name = String(node.name || node.title || slug || "").trim();
+
+    if (!slug || !name) return;
+
+    const path = String(node.path || parentPath || slug).trim();
+
+    result.push({
+      ...node,
+      name,
+      slug,
+      path,
+      level: node.level ?? depth + 1,
+    });
+
+    if (Array.isArray(node.children) && node.children.length) {
+      result.push(...flattenCategoryPickerItems(node.children, depth + 1, path));
+    }
+  });
+
+  return result;
+}
+
+function getCategoryPickerValue(category: CategoryPickerItem) {
+  return String(category.path || category.slug || category.id || "").trim();
+}
+
+function getCategoryPickerLabel(category: CategoryPickerItem) {
+  const name = String(
+    category.name ||
+      category.title ||
+      category.slug ||
+      category.id ||
+      "Untitled category",
+  ).trim();
+
+  const level = Number(category.level || 1);
+  const indent = level > 1 ? `${"— ".repeat(level - 1)}` : "";
+
+  return `${indent}${name}`;
+}
+
+function getCategoryPickerSourceLabel(category: CategoryPickerItem) {
+  return String(category.productSourceType || "MANUAL").toUpperCase();
+}
+
+function getCategoryPickerStatusLabel(category: CategoryPickerItem) {
+  if (typeof category.isActive === "boolean") {
+    return category.isActive ? "ACTIVE" : "INACTIVE";
+  }
+
+  return "ACTIVE";
+}
+
+function getCategoryPickerProductsCount(category: CategoryPickerItem) {
+  return Number(category.productCount ?? category.directProductCount ?? 0);
+}
+
+async function fetchCategoryPickerItems() {
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/categories/tree?includeInactive=true&showProductCount=true&showEmpty=true&maxDepth=10`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const text = await response.text();
+  const data = text.trim()
+    ? (JSON.parse(text) as CategoryPickerApiResponse)
+    : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Categories picker failed: ${response.status}`),
+    );
+  }
+
+  return flattenCategoryPickerItems(extractCategoryTreeItems(data)).filter(
+    (category) => Boolean(getCategoryPickerValue(category)),
+  );
 }
 
 function getCollectionValue(collection: CollectionPickerItem) {
@@ -1450,7 +1585,7 @@ function handleDragEnd() {
 }
 
 
-function CollectionPickerInput({
+function CategoryPickerInput({
   label,
   value,
   placeholder,
@@ -1461,36 +1596,34 @@ function CollectionPickerInput({
   placeholder?: string | null;
   onChange: (value: MetafieldValue) => void;
 }) {
-  const [collections, setCollections] = useState<CollectionPickerItem[]>([]);
+  const [categories, setCategories] = useState<CategoryPickerItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
 
   const textValue = stringifyValue(value);
 
-  const selectedCollection = collections.find(
-    (collection) => getCollectionValue(collection) === textValue
+  const selectedCategory = categories.find(
+    (category) => getCategoryPickerValue(category) === textValue,
   );
 
   const currentValueMissing =
     Boolean(textValue) &&
-    !collections.some(
-      (collection) => getCollectionValue(collection) === textValue
+    !categories.some(
+      (category) => getCategoryPickerValue(category) === textValue,
     );
 
-  async function loadCollections() {
+  async function loadCategories() {
     try {
       setIsLoading(true);
       setPickerError(null);
 
-      const items = await fetchCollectionPickerItems();
+      const items = await fetchCategoryPickerItems();
 
-      setCollections(items);
+      setCategories(items);
     } catch (error) {
-      setCollections([]);
+      setCategories([]);
       setPickerError(
-        error instanceof Error
-          ? error.message
-          : "Collections load failed."
+        error instanceof Error ? error.message : "Categories load failed.",
       );
     } finally {
       setIsLoading(false);
@@ -1500,23 +1633,21 @@ function CollectionPickerInput({
   useEffect(() => {
     let ignore = false;
 
-    async function loadInitialCollections() {
+    async function loadInitialCategories() {
       try {
         setIsLoading(true);
         setPickerError(null);
 
-        const items = await fetchCollectionPickerItems();
+        const items = await fetchCategoryPickerItems();
 
         if (ignore) return;
 
-        setCollections(items);
+        setCategories(items);
       } catch (error) {
         if (!ignore) {
-          setCollections([]);
+          setCategories([]);
           setPickerError(
-            error instanceof Error
-              ? error.message
-              : "Collections load failed."
+            error instanceof Error ? error.message : "Categories load failed.",
           );
         }
       } finally {
@@ -1526,7 +1657,7 @@ function CollectionPickerInput({
       }
     }
 
-    loadInitialCollections();
+    loadInitialCategories();
 
     return () => {
       ignore = true;
@@ -1539,13 +1670,13 @@ function CollectionPickerInput({
         <div>
           <p className="text-sm font-medium text-neutral-950">{label}</p>
           <p className="mt-0.5 text-xs text-neutral-500">
-            Collection slug backend me save hoga.
+            Category path/slug backend me save hoga.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={loadCollections}
+          onClick={loadCategories}
           disabled={isLoading}
           className="w-fit rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -1560,23 +1691,23 @@ function CollectionPickerInput({
         className="mt-3 h-11 w-full cursor-pointer rounded-xl border border-neutral-200 bg-[#fbfaf6] px-3 text-sm font-medium text-neutral-950 outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
       >
         <option value="">
-          {isLoading ? "Loading collections..." : placeholder || "Select collection"}
+          {isLoading ? "Loading categories..." : placeholder || "Select category"}
         </option>
 
         {currentValueMissing ? (
           <option value={textValue}>Current saved: {textValue}</option>
         ) : null}
 
-        {collections.map((collection) => {
-          const optionValue = getCollectionValue(collection);
-          const optionLabel = getCollectionLabel(collection);
-          const typeLabel = getCollectionTypeLabel(collection);
-          const statusLabel = getCollectionStatusLabel(collection);
-          const count = getCollectionProductsCount(collection);
+        {categories.map((category) => {
+          const optionValue = getCategoryPickerValue(category);
+          const optionLabel = getCategoryPickerLabel(category);
+          const sourceLabel = getCategoryPickerSourceLabel(category);
+          const statusLabel = getCategoryPickerStatusLabel(category);
+          const count = getCategoryPickerProductsCount(category);
 
           return (
-            <option key={collection.id || optionValue} value={optionValue}>
-              {optionLabel} — {typeLabel} / {statusLabel}
+            <option key={category.id || optionValue} value={optionValue}>
+              {optionLabel} — {sourceLabel} / {statusLabel}
               {count ? ` / ${count} products` : ""}
             </option>
           );
@@ -1584,18 +1715,18 @@ function CollectionPickerInput({
       </select>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {selectedCollection ? (
+        {selectedCategory ? (
           <>
             <span className="rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
-              {getCollectionLabel(selectedCollection)}
+              {String(selectedCategory.name || selectedCategory.slug || "")}
             </span>
 
             <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-700 ring-1 ring-sky-100">
-              {getCollectionTypeLabel(selectedCollection)}
+              {getCategoryPickerSourceLabel(selectedCategory)}
             </span>
 
             <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-100">
-              {getCollectionStatusLabel(selectedCollection)}
+              {getCategoryPickerStatusLabel(selectedCategory)}
             </span>
           </>
         ) : textValue ? (
@@ -1604,18 +1735,18 @@ function CollectionPickerInput({
           </span>
         ) : (
           <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-semibold text-neutral-500">
-            No collection selected
+            No category selected
           </span>
         )}
 
         <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-500">
-          {collections.length} collections loaded
+          {categories.length} categories loaded
         </span>
       </div>
 
       {textValue ? (
         <p className="mt-2 text-xs text-neutral-400">
-          Saved slug:{" "}
+          Saved category path/slug:{" "}
           <span className="font-mono font-semibold text-neutral-700">
             {textValue}
           </span>
@@ -1642,9 +1773,9 @@ function ProductMetafieldInput({
 }) {
   const textValue = stringifyValue(value);
 
-  if (field.type === "collection_picker") {
+if (field.type === "collection_picker") {
   return (
-    <CollectionPickerInput
+    <CategoryPickerInput
       label={field.label}
       value={value}
       placeholder={field.placeholder}
@@ -2659,7 +2790,9 @@ function ProductMetafieldsCard({
           <div
             key={field.key}
             className={
-              field.type === "textarea" || field.type === "product_picker"
+           field.type === "textarea" ||
+field.type === "product_picker" ||
+field.type === "collection_picker"
                 ? "space-y-1.5 md:col-span-2"
                 : "space-y-1.5"
             }

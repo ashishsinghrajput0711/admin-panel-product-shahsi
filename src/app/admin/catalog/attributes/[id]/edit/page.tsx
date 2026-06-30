@@ -1,103 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useUpdate } from "@refinedev/core";
-import { ArrowLeft } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
+
 import { AttributeForm } from "@/components/admin/catalog/attributes/attribute-form";
 import type { AttributeFormValues } from "@/components/admin/catalog/attributes/attribute-schema";
-
-type ApiResponse<T> = {
-  success?: boolean;
-  data?: T;
-  error?: string | string[] | { message?: string | string[] };
-  message?: string | string[];
-};
-
-function getApiRootUrl() {
-  return "/api/proxy";
-}
-
-function getToken() {
-  if (typeof window === "undefined") return null;
-
-  const token =
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("access_token");
-
-  return token?.replace(/^Bearer\s+/i, "").trim() || null;
-}
-
-function getAuthHeaders() {
-  const token = getToken();
-
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    Accept: "*/*",
-  };
-
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  return headers;
-}
-
-async function parseApiResponse<T>(response: Response): Promise<T> {
-  const text = await response.text();
-
-  if (!text) return {} as T;
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new Error("Backend ne JSON response nahi diya.");
-  }
-}
-
-function getApiErrorMessage(data: ApiResponse<unknown>, fallback: string) {
-  if (Array.isArray(data.message)) return data.message.join(", ");
-  if (typeof data.message === "string") return data.message;
-
-  if (Array.isArray(data.error)) return data.error.join(", ");
-  if (typeof data.error === "string") return data.error;
-
-  if (data.error && typeof data.error === "object") {
-    if (Array.isArray(data.error.message)) return data.error.message.join(", ");
-    if (typeof data.error.message === "string") return data.error.message;
-  }
-
-  return fallback;
-}
-
-function extractAttributeData(
-  json: ApiResponse<AttributeFormValues> | AttributeFormValues
-) {
-  if (json && typeof json === "object" && "data" in json) {
-    return json.data;
-  }
-
-  return json as AttributeFormValues;
-}
+import {
+  fetchCatalogAttributeById,
+  updateCatalogAttribute,
+} from "@/lib/admin/catalog-attributes-api";
 
 export default function EditAttributePage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
+
   const id = String(params?.id ?? "");
 
   const [attribute, setAttribute] = useState<AttributeFormValues | undefined>();
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-
-  const updateMutation = useUpdate();
-  const { mutate } = updateMutation;
-
-  const isSubmitting =
-    "isLoading" in updateMutation
-      ? Boolean(updateMutation.isLoading)
-      : "isPending" in updateMutation
-        ? Boolean(updateMutation.isPending)
-        : false;
 
   useEffect(() => {
     let cancelled = false;
@@ -107,38 +31,17 @@ export default function EditAttributePage() {
         setIsLoading(true);
         setApiError(null);
 
-        const response = await fetch(
-          `${getApiRootUrl()}/admin/catalog/attributes/${id}`,
-          {
-            method: "GET",
-            headers: getAuthHeaders(),
-          }
-        );
-
-        const json = await parseApiResponse<
-          ApiResponse<AttributeFormValues> | AttributeFormValues
-        >(response);
-
-        if (!response.ok) {
-          throw new Error(
-            getApiErrorMessage(
-              json as ApiResponse<unknown>,
-              `Attribute fetch failed: ${response.status} ${response.statusText}`
-            )
-          );
-        }
-
-        const foundAttribute = extractAttributeData(json);
+        const result = await fetchCatalogAttributeById(id);
 
         if (!cancelled) {
-          setAttribute(foundAttribute);
+          setAttribute(result);
         }
       } catch (error) {
         if (!cancelled) {
           setApiError(
             error instanceof Error
               ? error.message
-              : "Attribute fetch failed."
+              : "Attribute fetch failed.",
           );
         }
       } finally {
@@ -160,22 +63,24 @@ export default function EditAttributePage() {
     };
   }, [id]);
 
-  function handleSubmit(values: AttributeFormValues) {
-    mutate({
-      resource: "attributes",
-      id,
-      values,
-      successNotification: {
-        message: "Attribute updated successfully",
-        description: "The attribute changes have been saved.",
-        type: "success",
-      },
-      errorNotification: {
-        message: "Attribute update failed",
-        description: "Please check backend API and submitted fields.",
-        type: "error",
-      },
-    });
+  async function handleSubmit(values: AttributeFormValues) {
+    try {
+      setIsSubmitting(true);
+      setApiError(null);
+
+      await updateCatalogAttribute(id, values);
+
+      router.push("/admin/catalog/attributes");
+      router.refresh();
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "Attribute update failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   if (isLoading) {
@@ -208,16 +113,21 @@ export default function EditAttributePage() {
         </h1>
 
         <p className="mt-3 max-w-2xl text-neutral-500">
-          Update attribute type, scope, group, rules and status.
+          Update attribute type, scope, group, rules, options and status.
         </p>
       </div>
 
       {apiError ? (
         <section className="mb-6 rounded-[1.5rem] border border-red-200 bg-red-50 p-5 text-sm text-red-800">
-          <p className="font-semibold">Attribute API error</p>
-          <p className="mt-3 rounded-xl bg-white/70 p-3 text-xs">
-            {apiError}
-          </p>
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold">Attribute API error</p>
+              <p className="mt-2 rounded-xl bg-white/70 p-3 text-xs">
+                {apiError}
+              </p>
+            </div>
+          </div>
         </section>
       ) : null}
 

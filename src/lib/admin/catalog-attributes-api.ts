@@ -1,7 +1,9 @@
 import type {
   Attribute,
   AttributeFiltersState,
+  AttributeOption,
 } from "@/components/admin/catalog/attributes/attribute-types";
+import type { AttributeFormValues } from "@/components/admin/catalog/attributes/attribute-schema";
 
 export type AttributePagination = {
   total: number;
@@ -28,8 +30,10 @@ type AttributesResponse = {
   success?: boolean;
   data?:
     | Attribute[]
+    | Attribute
+    | AttributeFormValues
     | {
-        data?: Attribute[];
+        data?: Attribute[] | Attribute | AttributeFormValues;
         attributes?: Attribute[];
         items?: Attribute[];
         total?: number;
@@ -46,6 +50,7 @@ type AttributesResponse = {
         meta?: PaginationShape;
         pagination?: PaginationShape;
       };
+  attribute?: Attribute;
   attributes?: Attribute[];
   items?: Attribute[];
   total?: number;
@@ -61,6 +66,14 @@ type AttributesResponse = {
   pages?: number;
   meta?: PaginationShape;
   pagination?: PaginationShape;
+  message?: string | string[];
+  error?: unknown;
+};
+
+type AttributeOptionResponse = {
+  success?: boolean;
+  data?: AttributeOption | AttributeOption[] | { option?: AttributeOption };
+  option?: AttributeOption;
   message?: string | string[];
   error?: unknown;
 };
@@ -132,11 +145,24 @@ async function parseApiResponse<T>(
   }
 }
 
-function getApiErrorMessage(data: AttributesResponse, fallback: string) {
-  if (Array.isArray(data.message)) return data.message.join(", ");
-  if (typeof data.message === "string") return data.message;
+function getApiErrorMessage(
+  data: AttributesResponse | AttributeOptionResponse | null,
+  fallback: string,
+) {
+  if (!data) return fallback;
 
-  if (typeof data.error === "string") return data.error;
+  if (Array.isArray(data.message)) return data.message.join(", ");
+  if (typeof data.message === "string" && data.message.trim()) {
+    return data.message;
+  }
+
+  if (typeof data.error === "string" && data.error.trim()) {
+    return data.error;
+  }
+
+  if (Array.isArray(data.error)) {
+    return data.error.join(", ");
+  }
 
   if (data.error && typeof data.error === "object") {
     const record = data.error as Record<string, unknown>;
@@ -145,12 +171,14 @@ function getApiErrorMessage(data: AttributesResponse, fallback: string) {
       return record.message.join(", ");
     }
 
-    if (typeof record.message === "string") {
+    if (typeof record.message === "string" && record.message.trim()) {
       return record.message;
     }
+
+    return JSON.stringify(record, null, 2);
   }
 
-  return fallback;
+  return `${fallback}. Response: ${JSON.stringify(data, null, 2)}`;
 }
 
 function toNumberOrNull(value: unknown) {
@@ -164,13 +192,36 @@ function toNumberOrNull(value: unknown) {
   return null;
 }
 
+function toSnakeCase(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function mapFrontendTypeToBackendType(type: unknown) {
+  const value = String(type || "TEXT").toUpperCase();
+
+  if (value === "TEXT") return "text";
+  if (value === "NUMBER") return "number";
+  if (value === "BOOLEAN") return "boolean";
+  if (value === "SELECT") return "dropdown";
+  if (value === "MULTI_SELECT") return "multi_select";
+  if (value === "COLOR") return "swatch";
+  if (value === "SIZE") return "dropdown";
+
+  return String(type || "text").trim().toLowerCase();
+}
+
 function getPaginationFromSource(
   response: AttributesResponse,
   nested?: AttributesResponse["data"],
 ) {
   const nestedObject =
     nested && !Array.isArray(nested) && typeof nested === "object"
-      ? nested
+      ? (nested as Record<string, any>)
       : undefined;
 
   const totalValue =
@@ -276,23 +327,25 @@ function extractAttributes(response: AttributesResponse): FetchAttributesResult 
   }
 
   if (response.data && !Array.isArray(response.data)) {
-    if (Array.isArray(response.data.data)) {
+    const dataRecord = response.data as Record<string, any>;
+
+    if (Array.isArray(dataRecord.data)) {
       return {
-        attributes: response.data.data,
+        attributes: dataRecord.data,
         pagination: getPaginationFromSource(response, response.data),
       };
     }
 
-    if (Array.isArray(response.data.attributes)) {
+    if (Array.isArray(dataRecord.attributes)) {
       return {
-        attributes: response.data.attributes,
+        attributes: dataRecord.attributes,
         pagination: getPaginationFromSource(response, response.data),
       };
     }
 
-    if (Array.isArray(response.data.items)) {
+    if (Array.isArray(dataRecord.items)) {
       return {
-        attributes: response.data.items,
+        attributes: dataRecord.items,
         pagination: getPaginationFromSource(response, response.data),
       };
     }
@@ -318,6 +371,28 @@ function extractAttributes(response: AttributesResponse): FetchAttributesResult 
   };
 }
 
+function extractSingleAttribute(response: AttributesResponse): AttributeFormValues {
+  if (response.data && !Array.isArray(response.data)) {
+    const dataRecord = response.data as Record<string, any>;
+
+    if (dataRecord.data && typeof dataRecord.data === "object") {
+      return dataRecord.data as AttributeFormValues;
+    }
+
+    if (dataRecord.attribute && typeof dataRecord.attribute === "object") {
+      return dataRecord.attribute as AttributeFormValues;
+    }
+
+    return response.data as AttributeFormValues;
+  }
+
+  if (response.attribute) {
+    return response.attribute as AttributeFormValues;
+  }
+
+  return response as AttributeFormValues;
+}
+
 function appendFilterParams(
   params: URLSearchParams,
   filters?: AttributeFiltersState,
@@ -341,6 +416,99 @@ function appendFilterParams(
   if (filters.flag && filters.flag !== "ALL") {
     params.set("flag", filters.flag);
   }
+}
+
+function cleanOptionPayload(option: Partial<AttributeOption>, index = 0) {
+  const label = String(option.label || option.value || "").trim();
+  const value = toSnakeCase(option.value || option.label || label);
+  const colorHex = String(
+    option.colorHex ||
+      option.hexCode ||
+      (option as Record<string, unknown>).colorCode ||
+      "",
+  ).trim();
+
+  const payload: Record<string, unknown> = {
+    label,
+    value,
+    sortOrder: Number(option.sortOrder ?? option.position ?? index + 1),
+    isActive: typeof option.isActive === "boolean" ? option.isActive : true,
+  };
+
+  if (colorHex) {
+    payload.colorHex = colorHex;
+    payload.hexCode = colorHex;
+    payload.colorCode = colorHex;
+  }
+
+  if (option.imageUrl) {
+    payload.imageUrl = String(option.imageUrl).trim();
+  }
+
+  return payload;
+}
+
+function cleanAttributePayload(values: AttributeFormValues) {
+  const record = values as Record<string, any>;
+
+  const name = String(record.name || record.label || "").trim();
+  const key = toSnakeCase(record.key || record.code || record.slug || name);
+  const backendType = mapFrontendTypeToBackendType(record.type);
+  const status = String(record.status || "ACTIVE").toUpperCase();
+
+  return {
+    key,
+    code: key,
+    slug: key,
+
+    name,
+    label: String(record.label || name).trim(),
+    description: String(record.description || "").trim(),
+
+    fieldType: backendType,
+    type: backendType,
+
+    isRequired: Boolean(record.isRequired),
+    isFilterable: Boolean(record.isFilterable),
+    isSearchable: Boolean(record.isSearchable),
+
+    isVariantLevel: Boolean(
+      record.isVariantLevel ||
+        record.isVariantDefining ||
+        record.isVariantOption,
+    ),
+    isVariantOption: Boolean(record.isVariantOption),
+
+  
+
+    isActive: status === "ACTIVE",
+    status,
+
+    validationRules: {
+      requiredMessage: `${name} is required`,
+    },
+
+    validations: {
+      requiredMessage: `${name} is required`,
+    },
+
+    displayRules: {},
+
+    defaultValue: String(record.defaultValue || ""),
+    sortOrder: Number(record.sortOrder || 0),
+
+    options: Array.isArray(record.options)
+      ? record.options
+          .map((option: AttributeOption, index: number) =>
+            cleanOptionPayload(option, index),
+          )
+          .filter(
+            (option) =>
+              String(option.label || "").trim() &&
+              String(option.value || "").trim(),
+          )
+      : [],
+  };
 }
 
 export async function fetchCatalogAttributes({
@@ -384,13 +552,156 @@ export async function fetchCatalogAttributes({
   return extractAttributes(json);
 }
 
-export async function archiveCatalogAttribute(attributeId: string) {
+export async function fetchCatalogAttributeById(attributeId: string) {
   const response = await fetch(
     `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(
       attributeId,
     )}`,
     {
-      method: "DELETE",
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const json = await parseApiResponse<AttributesResponse>(
+    response,
+    "Attribute detail API JSON response nahi de rahi",
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute fetch failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return extractSingleAttribute(json);
+}
+
+export async function createCatalogAttribute(values: AttributeFormValues) {
+  const payload = cleanAttributePayload(values);
+  const options = Array.isArray(payload.options) ? payload.options : [];
+
+  const response = await fetch(`${getApiRootUrl()}/admin/catalog/attributes`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      ...payload,
+      options: [],
+    }),
+  });
+
+  const json = await parseApiResponse<AttributesResponse>(
+    response,
+    "Attribute create API JSON response nahi de rahi",
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute create failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  const createdAttribute = extractSingleAttribute(json);
+  const attributeId = String(
+    (createdAttribute as Record<string, unknown>).id || "",
+  );
+
+  if (attributeId && options.length) {
+    await Promise.all(
+      options.map((option, index) =>
+        createCatalogAttributeOption({
+          attributeId,
+          option: {
+            ...option,
+            sortOrder: Number(
+              (option as Record<string, unknown>).sortOrder ?? index + 1,
+            ),
+          },
+        }),
+      ),
+    );
+  }
+
+  return createdAttribute;
+}
+
+export async function updateCatalogAttribute(
+  attributeId: string,
+  values: AttributeFormValues,
+) {
+  const originalOptions = Array.isArray(values.options) ? values.options : [];
+  const payload = cleanAttributePayload(values);
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(
+      attributeId,
+    )}`,
+    {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        ...payload,
+        options: [],
+      }),
+    },
+  );
+
+  const json = await parseApiResponse<AttributesResponse>(
+    response,
+    "Attribute update API JSON response nahi de rahi",
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute update failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  const newOptions = originalOptions
+    .filter((option) => !option.id)
+    .map((option, index) => cleanOptionPayload(option, index))
+    .filter(
+      (option) =>
+        String(option.label || "").trim() &&
+        String(option.value || "").trim(),
+    );
+
+  if (attributeId && newOptions.length) {
+    await Promise.all(
+      newOptions.map((option, index) =>
+        createCatalogAttributeOption({
+          attributeId,
+          option: {
+            ...option,
+            sortOrder: Number(
+              (option as Record<string, unknown>).sortOrder ?? index + 1,
+            ),
+          },
+        }),
+      ),
+    );
+  }
+
+  return extractSingleAttribute(json);
+}
+
+export async function archiveCatalogAttribute(attributeId: string) {
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(
+      attributeId,
+    )}/archive`,
+    {
+      method: "POST",
       headers: getAuthHeaders(),
     },
   );
@@ -405,6 +716,144 @@ export async function archiveCatalogAttribute(attributeId: string) {
       getApiErrorMessage(
         json,
         `Attribute archive failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return json;
+}
+
+export async function deleteCatalogAttribute(attributeId: string) {
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(
+      attributeId,
+    )}`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
+
+  const json = await parseApiResponse<AttributesResponse>(
+    response,
+    "Attribute delete API JSON response nahi de rahi",
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute delete failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return json;
+}
+
+export async function createCatalogAttributeOption({
+  attributeId,
+  option,
+}: {
+  attributeId: string;
+  option: Partial<AttributeOption>;
+}) {
+  const payload = cleanOptionPayload(option);
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(
+      attributeId,
+    )}/options`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  const json = await parseApiResponse<AttributeOptionResponse>(
+    response,
+    "Attribute option create API JSON response nahi de rahi",
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute option create failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return json;
+}
+
+export async function updateCatalogAttributeOption({
+  attributeId,
+  optionId,
+  option,
+}: {
+  attributeId: string;
+  optionId: string;
+  option: AttributeOption;
+}) {
+  const payload = cleanOptionPayload(option);
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(
+      attributeId,
+    )}/options/${encodeURIComponent(optionId)}`,
+    {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  const json = await parseApiResponse<AttributeOptionResponse>(
+    response,
+    "Attribute option update API JSON response nahi de rahi",
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute option update failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return json;
+}
+
+export async function deleteCatalogAttributeOption({
+  attributeId,
+  optionId,
+}: {
+  attributeId: string;
+  optionId: string;
+}) {
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(
+      attributeId,
+    )}/options/${encodeURIComponent(optionId)}`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
+
+  const json = await parseApiResponse<AttributeOptionResponse>(
+    response,
+    "Attribute option delete API JSON response nahi de rahi",
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute option delete failed: ${response.status} ${response.statusText}`,
       ),
     );
   }
