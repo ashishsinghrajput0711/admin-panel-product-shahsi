@@ -787,36 +787,47 @@ const form = useForm<ProductFormValues>({
 
 const normalizedCategoryId = String(categoryId || "").trim();
 
-const primarySelectedSlug =
-  selectedCategorySlugs.find(Boolean) || normalizedCategoryId;
+function getCatalogCategoryByValue(value?: string | null) {
+  const cleanValue = String(value || "").trim();
+
+  if (!cleanValue) return null;
+
+  return (
+    categoryOptions.find((category) => {
+      const targets = [category.id, category.slug, category.path]
+        .filter(Boolean)
+        .map((item) => String(item).trim());
+
+      return targets.includes(cleanValue);
+    }) || null
+  );
+}
+
+function getCatalogCategoryIdByValue(value?: string | null) {
+  return getCatalogCategoryByValue(value)?.id || "";
+}
+
+const selectedCatalogCategoryIds = Array.from(
+  new Set(
+    [normalizedCategoryId, ...selectedCategorySlugs]
+      .map((value) => getCatalogCategoryIdByValue(value))
+      .filter(Boolean),
+  ),
+);
+
+const selectedShahsiCategoryId =
+  getCatalogCategoryIdByValue(normalizedCategoryId) ||
+  selectedCatalogCategoryIds[0] ||
+  "";
 
 const selectedCategoryOption =
-  categoryOptions.find((category) => {
-    const targets = [
-      category.id,
-      category.slug,
-      category.path,
-      category.name,
-      category.label,
-    ]
-      .filter(Boolean)
-      .map((value) => String(value).trim());
-
-    return (
-      targets.includes(normalizedCategoryId) ||
-      targets.includes(primarySelectedSlug)
-    );
-  }) || null;
+  categoryOptions.find((category) => category.id === selectedShahsiCategoryId) ||
+  null;
 
 const selectedCategoryLabel =
   selectedCategoryOption?.label ||
   selectedCategoryOption?.name ||
-  categoryId ||
   "Selected category";
-
-const selectedShahsiCategoryId =
-  selectedCategoryOption?.id || "";
-
 
 
 const googleMerchantData =
@@ -1009,6 +1020,17 @@ const payload: ProductFormValues = {
   dynamicAttributes: cleanedDynamicAttributes as any,
 };
 
+const categorySlugsForSync = selectedCatalogCategoryIds
+  .map((categoryId) => {
+    const category = categoryOptions.find((item) => item.id === categoryId);
+    return category?.slug || "";
+  })
+  .filter(Boolean);
+
+(payload as any).categorySlugsForSync = categorySlugsForSync;
+
+console.log("PRODUCT_FORM_CATEGORY_SLUGS_FOR_SYNC:", categorySlugsForSync);
+
 delete (payload as any).googleMerchantData;
 
 if (Object.keys(cleanedGoogleMerchantData).length) {
@@ -1126,32 +1148,32 @@ onSubmit(payload);
     onClick={() => setIsCategoryModalOpen(true)}
     className="min-h-9 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-left text-sm outline-none transition hover:border-neutral-500 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
   >
-    {isCategoryLoading ? (
-      "Loading categories..."
-    ) : selectedCategorySlugs.length > 0 ? (
-      <span className="flex flex-wrap gap-1">
-        {selectedCategorySlugs.slice(0, 3).map((slug) => {
-          const category = categoryOptions.find((item) => item.slug === slug);
+  {isCategoryLoading ? (
+  "Loading categories..."
+) : selectedCatalogCategoryIds.length > 0 ? (
+  <span className="flex flex-wrap gap-1">
+    {selectedCatalogCategoryIds.slice(0, 3).map((categoryId) => {
+      const category = categoryOptions.find((item) => item.id === categoryId);
 
-          return (
-            <span
-              key={slug}
-              className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-800"
-            >
-              {category?.name || slug}
-            </span>
-          );
-        })}
+      return (
+        <span
+          key={categoryId}
+          className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-800"
+        >
+          {category?.name || "Selected category"}
+        </span>
+      );
+    })}
 
-        {selectedCategorySlugs.length > 3 ? (
-          <span className="rounded-full bg-neutral-950 px-2 py-0.5 text-xs font-medium text-white">
-            +{selectedCategorySlugs.length - 3}
-          </span>
-        ) : null}
+    {selectedCatalogCategoryIds.length > 3 ? (
+      <span className="rounded-full bg-neutral-950 px-2 py-0.5 text-xs font-medium text-white">
+        +{selectedCatalogCategoryIds.length - 3}
       </span>
-    ) : (
-      "Select categories"
-    )}
+    ) : null}
+  </span>
+) : (
+  "Select categories"
+)}
   </button>
 
   <p className="mt-1 text-[11px] text-neutral-500">
@@ -1404,27 +1426,46 @@ onSubmit(payload);
         </div>
       </div>
 
-      <CategoryTreeSelectorModal
+  <CategoryTreeSelectorModal
   open={isCategoryModalOpen}
   categories={categoryOptions}
-  selectedSlugs={selectedCategorySlugs}
-  primarySlug={categoryId || ""}
+  selectedSlugs={selectedCatalogCategoryIds}
+  primarySlug={selectedShahsiCategoryId}
   onClose={() => setIsCategoryModalOpen(false)}
   onApply={({ selectedSlugs, primarySlug }) => {
-    form.setValue("categories", selectedSlugs, {
+    const cleanedSelectedIds = Array.from(
+      new Set(
+        selectedSlugs
+          .map((value) => getCatalogCategoryIdByValue(value) || value)
+          .filter((value) =>
+            categoryOptions.some((category) => category.id === value),
+          ),
+      ),
+    );
+
+    const cleanedPrimaryId =
+      getCatalogCategoryIdByValue(primarySlug) ||
+      cleanedSelectedIds[0] ||
+      "";
+
+    form.setValue("categories", cleanedSelectedIds, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
-    form.setValue("categoryId", primarySlug, {
+    form.setValue("categoryId", cleanedPrimaryId, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
-    form.setValue("subcategoryId", selectedSlugs[1] || "", {
-      shouldValidate: true,
-      shouldDirty: true,
-    });
+    form.setValue(
+      "subcategoryId",
+      cleanedSelectedIds.find((id) => id !== cleanedPrimaryId) || "",
+      {
+        shouldValidate: true,
+        shouldDirty: true,
+      },
+    );
 
     setIsCategoryModalOpen(false);
   }}
@@ -2837,25 +2878,28 @@ function CategoryTreeSelectorModal({
         <div className="border-b border-neutral-200 px-5 py-4">
           <div className="flex min-h-10 flex-wrap gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-2">
             {draftSelectedSlugs.length > 0 ? (
-              draftSelectedSlugs.map((slug) => {
-                const category = categories.find((item) => item.slug === slug);
-                const isPrimary = draftPrimarySlug === slug;
+         draftSelectedSlugs.map((slug) => {
+  const category = categories.find(
+    (item) => item.id === slug || item.slug === slug || item.path === slug,
+  );
+  const categoryValue = category?.id || slug;
+  const isPrimary = draftPrimarySlug === categoryValue;
 
                 return (
                   <span
-                    key={slug}
+                 key={categoryValue}
                     className={`inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs font-semibold ${
                       isPrimary
                         ? "bg-neutral-950 text-white"
                         : "bg-white text-neutral-800 ring-1 ring-neutral-200"
                     }`}
                   >
-                    {category?.name || slug}
+                {category?.name || "Selected category"}
                     {isPrimary ? "Primary" : null}
 
                     <button
                       type="button"
-                      onClick={() => removeCategory(slug)}
+                    onClick={() => removeCategory(categoryValue)}
                       className="text-current opacity-70 hover:opacity-100"
                     >
                       ×
@@ -2887,9 +2931,10 @@ function CategoryTreeSelectorModal({
           </p>
 
           <div className="space-y-1">
-            {visibleCategories.map((category) => {
-              const isChecked = draftSelectedSlugs.includes(category.slug);
-              const isPrimary = draftPrimarySlug === category.slug;
+         {visibleCategories.map((category) => {
+  const categoryValue = category.id;
+  const isChecked = draftSelectedSlugs.includes(categoryValue);
+  const isPrimary = draftPrimarySlug === categoryValue;
 
               return (
                 <div
@@ -2902,13 +2947,13 @@ function CategoryTreeSelectorModal({
                   <input
                     type="checkbox"
                     checked={isChecked}
-                    onChange={() => toggleCategory(category.slug)}
+              onChange={() => toggleCategory(categoryValue)}
                     className="h-4 w-4"
                   />
 
                   <button
                     type="button"
-                    onClick={() => toggleCategory(category.slug)}
+                  onClick={() => toggleCategory(categoryValue)}
                     className="min-w-0 flex-1 text-left"
                   >
                     <span className="block truncate text-sm font-medium text-neutral-900">
@@ -2925,7 +2970,7 @@ function CategoryTreeSelectorModal({
                   {isChecked ? (
                     <button
                       type="button"
-                      onClick={() => setDraftPrimarySlug(category.slug)}
+                    onClick={() => setDraftPrimarySlug(categoryValue)}
                       className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
                         isPrimary
                           ? "bg-neutral-950 text-white"

@@ -11,11 +11,11 @@ import {
   Database,
   FolderTree,
   ImageIcon,
-  Layers,
   Layers3,
   LayoutDashboard,
   Package,
   Ruler,
+  Search,
   Settings2,
   Shirt,
   SlidersHorizontal,
@@ -89,6 +89,8 @@ export default function CatalogLayout({
   const pathname = usePathname();
 
   const isOverviewActive = pathname === "/admin/catalog";
+
+  const isSearchAdminActive = pathname.startsWith("/admin/search");
 
   const isProductSectionActive =
     pathname.startsWith("/admin/catalog/products") ||
@@ -170,6 +172,18 @@ export default function CatalogLayout({
                     })}
                   </div>
                 ) : null}
+
+                <Link
+  href="/admin/search"
+  className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${
+    isSearchAdminActive
+      ? "bg-neutral-950 text-white shadow-sm"
+      : "text-neutral-600 hover:bg-[#f7f2ea] hover:text-neutral-950"
+  }`}
+>
+  <Search className="h-4 w-4" />
+  <span>Search Admin</span>
+</Link>
               </nav>
 
              <div className="border-t border-neutral-200 p-4">

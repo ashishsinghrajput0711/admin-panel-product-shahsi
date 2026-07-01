@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { syncProductCategories } from "@/lib/admin/category-product-sync";
 import { useParams, useRouter } from "next/navigation";
+
+
 import {
   Archive,
   ArrowLeft,
@@ -27,10 +30,7 @@ import {
 } from "@/lib/admin/product-seo-api";
 
 import { saveProductCategoryMetafields } from "@/lib/admin/product-taxonomy-metafields-api";
-import {
-  buildCatalogProductPayload,
-  getSelectedProductCategorySlugs,
-} from "@/lib/admin/product-payload";
+import { buildCatalogProductPayload } from "@/lib/admin/product-payload";
 
 type ProductFormRecordValue =
   | string
@@ -254,6 +254,44 @@ function getToken() {
     localStorage.getItem("access_token");
 
   return token?.replace(/^Bearer\s+/i, "").trim() || null;
+}
+
+
+async function updateProductStatus(productId: string, status: string) {
+  const token = getToken();
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/${encodeURIComponent(productId)}/status`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        status,
+      }),
+    },
+  );
+
+  const text = await response.text();
+  let data: any = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+        data?.error ||
+        `Product status update failed: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return data;
 }
 
 function getAuthHeaders() {
@@ -693,6 +731,7 @@ setPreviousCategorySlugs(nextCategorySlugs);
   }, [productId, loadProduct]);
 
   async function handleSubmit(values: ProductFormValues) {
+    console.log("PRODUCT_EDIT_SUBMIT_START:", values);
     try {
       setIsSubmitting(true);
       setPageError(null);
@@ -718,6 +757,8 @@ setPreviousCategorySlugs(nextCategorySlugs);
             `Product update failed: ${response.status} ${response.statusText}`
         );
       }
+
+      await updateProductStatus(productId, String(values.status).toUpperCase());
       try {
   await saveProductSeo({
     apiRootUrl,
@@ -790,6 +831,9 @@ try {
       token,
     });
   }
+  setSuccessMessage(
+  "Product update ho gaya. SEO, tags, product metafields, category metafields, associated categories aur Google Merchant data save ho gaye.",
+);
 } catch (categoryMetafieldsError) {
   console.warn("CATEGORY_METAFIELDS_SAVE_FAILED:", categoryMetafieldsError);
 
@@ -800,11 +844,62 @@ try {
   return;
 }
 
-const selectedCategorySlugs = getSelectedProductCategorySlugs(values);
-setPreviousCategorySlugs(selectedCategorySlugs);
+console.log("CATEGORY_SYNC_VALUES:", {
+  categoryId: values.categoryId,
+  categories: values.categories,
+});
+
+const selectedCategoryIds = Array.from(
+  new Set(
+    [
+      values.categoryId,
+      ...(Array.isArray(values.categories) ? values.categories : []),
+    ]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean),
+  ),
+);
+
+console.log("CATEGORY_SYNC_PAYLOAD:", {
+  productId,
+  categoryIds: selectedCategoryIds,
+  primaryCategoryId: values.categoryId || selectedCategoryIds[0],
+});
+
+if (selectedCategoryIds.length) {
+  try {
+    console.log("CATEGORY_SYNC_CALL_START");
+
+const categorySlugsForSync = Array.isArray((values as any).categorySlugsForSync)
+  ? ((values as any).categorySlugsForSync as string[])
+  : [];
+
+console.log("CATEGORY_SYNC_SLUGS_FROM_FORM:", categorySlugsForSync);
+
+const categorySyncResponse = await syncProductCategories({
+  apiRootUrl: getApiRootUrl(),
+  productId,
+  selectedCategorySlugs: categorySlugsForSync,
+  previousCategorySlugs: [],
+  token: getToken(),
+});
+
+    console.log("CATEGORY_SYNC_CALL_SUCCESS:", categorySyncResponse);
+  } catch (categorySyncError) {
+    console.warn("PRODUCT_CATEGORY_SYNC_FAILED:", categorySyncError);
+
+    setSuccessMessage(
+      "Product update ho gaya, but associated categories sync me backend error aaya. Category sync API response check karni hogi.",
+    );
+
+    return;
+  }
+}
+
+setPreviousCategorySlugs(selectedCategoryIds);
 
 setSuccessMessage(
-  "Product update ho gaya. SEO, tags, product metafields, category metafields aur Google Merchant data save ho gaye."
+  "Product update ho gaya. SEO, tags, product metafields, category metafields, associated categories aur Google Merchant data save ho gaye.",
 );
     } catch (error) {
       setPageError(

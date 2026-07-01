@@ -372,16 +372,17 @@ const productMetafields = cleanRecord(
     }
   : {};
 
-  return removeEmptyValues({
-    title: cleanText(values.name),
+return removeEmptyValues({
+  title: cleanText(values.name),
 
-    description: cleanOptionalText(values.description),
-    shortDescription: cleanOptionalText(values.shortDescription),
-    slug: cleanText(values.slug),
-    sku: cleanText(values.sku),
+  description: cleanOptionalText(values.description),
+  shortDescription: cleanOptionalText(values.shortDescription),
+  slug: cleanText(values.slug),
+  sku: cleanText(values.sku),
 
-    mode: getModeFromCommerceTypes(values),
-    productType: getProductTypeForBackend(values.productType),
+
+  mode: getModeFromCommerceTypes(values),
+  productType: getProductTypeForBackend(values.productType),
 
     ...categoryPayload,
 
