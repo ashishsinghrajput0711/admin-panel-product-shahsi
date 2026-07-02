@@ -1,48 +1,75 @@
-export type PricingStatus = "DRAFT" | "ACTIVE" | "SCHEDULED" | "EXPIRED" | "ARCHIVED";
-
-export type PricingScope = "PRODUCT" | "VARIANT";
-
 export type CommerceType =
-  | "RETAIL"
-  | "MADE_TO_ORDER"
+  | "SHOP"
   | "RENTAL"
-  | "RESALE";
+  | "RESALE"
+  | "MTO"
+  | "SUBSCRIPTION";
 
-export type CurrencyCode = "USD" | "INR" | "GBP" | "EUR";
+export type PricingScope =
+  | "GLOBAL"
+  | "PRODUCT"
+  | "VARIANT"
+  | "CATEGORY"
+  | "LOCATION"
+  | "WAREHOUSE";
 
-export type DiscountType = "NONE" | "PERCENTAGE" | "FIXED_AMOUNT";
+export type AdjustmentType =
+  | "PERCENTAGE"
+  | "FIXED"
+  | "MULTIPLIER"
+  | "OVERRIDE";
 
-export type PricingRule = {
+export type DynamicPricingRule = {
   id: string;
-
   name: string;
-  code: string;
-
-  scope: PricingScope;
-
-  productId?: string | null;
-  productName?: string | null;
-
-  variantId?: string | null;
-  variantSku?: string | null;
-
+  description?: string | null;
   commerceType: CommerceType;
-
-  currency: CurrencyCode;
-
-  basePrice: number;
-  salePrice?: number | null;
-  rentalPrice?: number | null;
-  resalePrice?: number | null;
-  mtoPrice?: number | null;
-
-  discountType: DiscountType;
-  discountValue?: number | null;
-
-  effectiveFrom?: string | null;
-  effectiveTo?: string | null;
-
-  status: PricingStatus;
-
-  updatedAt: string;
+  scope: PricingScope;
+  adjustmentType: AdjustmentType;
+  adjustmentValue: number;
+  productId?: string | null;
+  productVariantId?: string | null;
+  categoryId?: string | null;
+  locationId?: string | null;
+  warehouseId?: string | null;
+  minBasePrice?: number | null;
+  maxBasePrice?: number | null;
+  priority?: number | null;
+  isActive?: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  conditions?: Record<string, unknown> | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
+
+export const COMMERCE_TYPES: CommerceType[] = [
+  "SHOP",
+  "RENTAL",
+  "RESALE",
+  "MTO",
+  "SUBSCRIPTION",
+];
+
+export const PRICING_SCOPES: PricingScope[] = [
+  "GLOBAL",
+  "PRODUCT",
+  "VARIANT",
+  "CATEGORY",
+  "LOCATION",
+  "WAREHOUSE",
+];
+
+export const ADJUSTMENT_TYPES: AdjustmentType[] = [
+  "PERCENTAGE",
+  "FIXED",
+  "MULTIPLIER",
+  "OVERRIDE",
+];
+
+export function formatPricingLabel(value?: string | null) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}

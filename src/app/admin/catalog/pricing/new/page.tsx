@@ -1,37 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useCreate } from "@refinedev/core";
+import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+
+import {
+  createPricingRule,
+  type DynamicPricingRulePayload,
+} from "@/lib/admin/dynamic-pricing-api";
 import { PricingForm } from "@/components/admin/catalog/pricing/pricing-form";
-import type { PricingFormValues } from "@/components/admin/catalog/pricing/pricing-schema";
 
-export default function NewPricingPage() {
-  const createMutation = useCreate();
-  const { mutate } = createMutation;
+export default function NewPricingRulePage() {
+  const router = useRouter();
 
-  const isSubmitting =
-    "isLoading" in createMutation
-      ? Boolean(createMutation.isLoading)
-      : "isPending" in createMutation
-        ? Boolean(createMutation.isPending)
-        : false;
-
-  function handleSubmit(values: PricingFormValues) {
-    mutate({
-      resource: "pricing",
-      values,
-      successNotification: {
-        message: "Pricing rule created successfully",
-        description: "The pricing rule has been saved in catalog.",
-        type: "success",
-      },
-      errorNotification: {
-        message: "Pricing rule create failed",
-        description: "Please check backend API and submitted fields.",
-        type: "error",
-      },
-    });
+  async function handleSubmit(values: DynamicPricingRulePayload) {
+    await createPricingRule(values);
+    router.push("/admin/catalog/pricing");
+    router.refresh();
   }
 
   return (
@@ -39,10 +24,10 @@ export default function NewPricingPage() {
       <div className="mb-6">
         <Link
           href="/admin/catalog/pricing"
-          className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-950"
+          className="inline-flex items-center gap-2 text-sm font-medium text-neutral-600 transition hover:text-neutral-950"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to pricing
+          Back to Pricing
         </Link>
 
         <p className="mt-6 text-xs uppercase tracking-[0.22em] text-neutral-500">
@@ -50,16 +35,16 @@ export default function NewPricingPage() {
         </p>
 
         <h1 className="mt-2 text-5xl font-medium tracking-tight">
-          Create Pricing Rule
+          New Pricing Rule
         </h1>
 
         <p className="mt-3 max-w-2xl text-neutral-500">
-          Add a pricing rule for product or variant commerce models, discounts
-          and scheduled effective dates.
+          Create a dynamic pricing rule for Shop, Rental, Resale, MTO or
+          Subscription commerce flows.
         </p>
       </div>
 
-      <PricingForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
+      <PricingForm submitLabel="Create Pricing Rule" onSubmit={handleSubmit} />
     </main>
   );
 }

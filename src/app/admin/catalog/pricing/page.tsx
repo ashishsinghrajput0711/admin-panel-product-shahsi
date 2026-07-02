@@ -1,25 +1,97 @@
 "use client";
 
 import Link from "next/link";
-import { useList } from "@refinedev/core";
-import { Archive, Copy, Plus, Upload } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { PricingFilters } from "@/components/admin/catalog/pricing/pricing-filters";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, RefreshCcw, SlidersHorizontal } from "lucide-react";
+
+import { PricingSimulator } from "@/components/admin/catalog/pricing/pricing-simulator";
+
+import {
+  deletePricingRule,
+  getPricingRules,
+  unwrapPricingRules,
+} from "@/lib/admin/dynamic-pricing-api";
+import type { DynamicPricingRule } from "@/components/admin/catalog/pricing/pricing-types";
+import {
+  ADJUSTMENT_TYPES,
+  COMMERCE_TYPES,
+  PRICING_SCOPES,
+  formatPricingLabel,
+} from "@/components/admin/catalog/pricing/pricing-types";
 import { PricingTable } from "@/components/admin/catalog/pricing/pricing-table";
-import type { PricingRule } from "@/components/admin/catalog/pricing/pricing-types";
 
 export default function PricingPage() {
-  const listResult = useList<PricingRule>({
-    resource: "pricing",
-  });
+  const [rules, setRules] = useState<DynamicPricingRule[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const data = listResult.result;
-  const isLoading = listResult.query?.isLoading ?? false;
-  const isError = listResult.query?.isError ?? false;
-  const error = listResult.query?.error;
+  const [commerceType, setCommerceType] = useState("");
+  const [scope, setScope] = useState("");
+  const [adjustmentType, setAdjustmentType] = useState("");
+  const [isActive, setIsActive] = useState("");
 
-  const pricingRules = data?.data ?? [];
+  async function loadPricingRules() {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const response = await getPricingRules({
+        commerceType,
+        scope,
+        adjustmentType,
+        isActive,
+      });
+
+      setRules(unwrapPricingRules(response));
+    } catch (err: any) {
+      console.error("Pricing rules load failed:", err);
+      setError(err?.message || "Pricing rules load failed.");
+      setRules([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadPricingRules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceType, scope, adjustmentType, isActive]);
+
+  const stats = useMemo(() => {
+    const active = rules.filter((rule) => rule.isActive !== false).length;
+    const rental = rules.filter((rule) => rule.commerceType === "RENTAL").length;
+    const shop = rules.filter((rule) => rule.commerceType === "SHOP").length;
+
+    return {
+      total: rules.length,
+      active,
+      rental,
+      shop,
+    };
+  }, [rules]);
+
+  async function handleDelete(id: string) {
+    const confirmed = window.confirm(
+      "Delete / soft delete this pricing rule?",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await deletePricingRule(id);
+      await loadPricingRules();
+    } catch (err: any) {
+      console.error("Pricing rule delete failed:", err);
+      alert(err?.message || "Pricing rule delete failed.");
+    }
+  }
+
+  function clearFilters() {
+    setCommerceType("");
+    setScope("");
+    setAdjustmentType("");
+    setIsActive("");
+  }
 
   return (
     <main className="min-h-screen bg-[#fbfaf6] p-6">
@@ -31,64 +103,156 @@ export default function PricingPage() {
         <div className="mt-4 flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
           <div>
             <h1 className="text-5xl font-medium tracking-tight">
-              Pricing Management
+              Dynamic Pricing
             </h1>
 
-            <p className="mt-4 max-w-3xl text-white/70">
-              Manage product and variant prices, sale rules, rental prices,
-              resale pricing, made-to-order pricing and scheduled discounts.
+            <p className="mt-4 max-w-2xl text-white/70">
+              Manage pricing rules for Shop, Rental, Resale, Made-to-Order and
+              Subscription flows.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="secondary" className="rounded-full">
-              <Upload className="mr-2 h-4 w-4" />
-              Bulk Upload
-            </Button>
-
-            <Button type="button" variant="secondary" className="rounded-full">
-              <Copy className="mr-2 h-4 w-4" />
-              Duplicate
-            </Button>
-
-            <Button type="button" variant="secondary" className="rounded-full">
-              <Archive className="mr-2 h-4 w-4" />
-              Archive
-            </Button>
-
-            <Button
-              asChild
-              className="rounded-full bg-white text-neutral-950 hover:bg-white/90"
+            <button
+              type="button"
+              onClick={loadPricingRules}
+              className="inline-flex h-11 items-center justify-center rounded-full border border-white/20 px-5 text-sm font-medium text-white transition hover:bg-white/10"
             >
-              <Link href="/admin/catalog/pricing/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Pricing
-              </Link>
-            </Button>
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              Refresh
+            </button>
+
+            <Link
+              href="/admin/catalog/pricing/new"
+              className="inline-flex h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-medium text-neutral-950 transition hover:bg-white/90"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Pricing Rule
+            </Link>
           </div>
         </div>
       </section>
 
-      {isError ? (
-        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Pricing API connect nahi ho paayi. Backend ready hone ke baad endpoint
-          check karna:{" "}
-          <span className="font-semibold">
-            GET /api/proxy/admin/catalog/pricing
-          </span>
-          {error instanceof Error && error.message ? (
-            <p className="mt-1 text-xs">{error.message}</p>
-          ) : null}
-        </div>
-      ) : null}
-
-      <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
-        <PricingFilters />
-
-        <Card className="rounded-[1.5rem] border-neutral-200 bg-white p-4">
-          <PricingTable pricingRules={pricingRules} isLoading={isLoading} />
-        </Card>
+      <section className="mb-6 grid gap-4 md:grid-cols-4">
+        <StatCard label="Total Rules" value={stats.total} />
+        <StatCard label="Active Rules" value={stats.active} />
+        <StatCard label="Rental Rules" value={stats.rental} />
+        <StatCard label="Shop Rules" value={stats.shop} />
       </section>
+
+      <section className="mb-6 rounded-[1.5rem] border border-neutral-200 bg-white p-5">
+  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <h2 className="flex items-center gap-2 text-lg font-medium text-neutral-950">
+      <SlidersHorizontal className="h-4 w-4" />
+      Filters
+    </h2>
+
+    <button
+      type="button"
+      onClick={clearFilters}
+      className="text-sm font-medium text-neutral-600 underline underline-offset-4 hover:text-neutral-950"
+    >
+      Clear Filters
+    </button>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <FilterSelect
+      label="Commerce Type"
+      value={commerceType}
+      onChange={setCommerceType}
+      options={COMMERCE_TYPES}
+    />
+
+    <FilterSelect
+      label="Scope"
+      value={scope}
+      onChange={setScope}
+      options={PRICING_SCOPES}
+    />
+
+    <FilterSelect
+      label="Adjustment Type"
+      value={adjustmentType}
+      onChange={setAdjustmentType}
+      options={ADJUSTMENT_TYPES}
+    />
+
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium text-neutral-700">
+        Status
+      </span>
+
+      <select
+        value={isActive}
+        onChange={(event) => setIsActive(event.target.value)}
+        className="h-11 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-neutral-950"
+      >
+        <option value="">All</option>
+        <option value="true">Active</option>
+        <option value="false">Inactive</option>
+      </select>
+    </label>
+  </div>
+</section>
+
+<PricingSimulator />
+
+<section className="w-full">
+  {error ? (
+    <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {error}
+    </div>
+  ) : null}
+
+  <PricingTable
+    rules={rules}
+    isLoading={isLoading}
+    onDelete={handleDelete}
+  />
+</section>
     </main>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[1.5rem] border border-neutral-200 bg-white p-5">
+      <p className="text-sm text-neutral-500">{label}</p>
+      <p className="mt-2 text-3xl font-semibold text-neutral-950">{value}</p>
+    </div>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium text-neutral-700">
+        {label}
+      </span>
+
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-neutral-950"
+      >
+        <option value="">All</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {formatPricingLabel(option)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

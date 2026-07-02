@@ -1,194 +1,174 @@
 "use client";
 
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import type { PricingRule } from "./pricing-types";
+import { Pencil, Trash2 } from "lucide-react";
 
-const commerceTypeLabels = {
-  RETAIL: "Retail",
-  MADE_TO_ORDER: "Made-to-Order",
-  RENTAL: "Rental",
-  RESALE: "Resale",
-} as const;
+import type { DynamicPricingRule } from "./pricing-types";
+import { formatPricingLabel } from "./pricing-types";
 
-const scopeLabels = {
-  PRODUCT: "Product",
-  VARIANT: "Variant",
-} as const;
+function formatDate(value?: string | null) {
+  if (!value) return "No date";
 
-const discountTypeLabels = {
-  NONE: "No Discount",
-  PERCENTAGE: "Percentage",
-  FIXED_AMOUNT: "Fixed Amount",
-} as const;
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getRuleTargetId(rule: DynamicPricingRule) {
+  return (
+    rule.productId ||
+    rule.productVariantId ||
+    rule.categoryId ||
+    rule.locationId ||
+    rule.warehouseId ||
+    ""
+  );
+}
+
+function formatAdjustment(rule: DynamicPricingRule) {
+  const value = Number(rule.adjustmentValue || 0);
+
+  if (rule.adjustmentType === "PERCENTAGE") return `${value}%`;
+  if (rule.adjustmentType === "MULTIPLIER") return `${value}x`;
+
+  return value.toLocaleString("en-IN");
+}
 
 export function PricingTable({
-  pricingRules,
+  rules,
   isLoading,
+  onDelete,
 }: {
-  pricingRules: PricingRule[];
+  rules: DynamicPricingRule[];
   isLoading: boolean;
+  onDelete: (id: string) => void;
 }) {
   if (isLoading) {
     return (
-      <div className="p-8 text-sm text-neutral-500">Loading pricing rules...</div>
+      <div className="rounded-[1.5rem] border border-neutral-200 bg-white p-8 text-sm text-neutral-500">
+        Loading pricing rules...
+      </div>
     );
   }
 
-  if (!pricingRules.length) {
+  if (!rules.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-neutral-300 bg-[#fbfaf6] p-10 text-center">
-        <h3 className="text-lg font-semibold text-neutral-950">
+      <div className="rounded-[1.5rem] border border-dashed border-neutral-300 bg-white p-10 text-center">
+        <p className="text-lg font-semibold text-neutral-950">
           No pricing rules found
-        </h3>
+        </p>
         <p className="mt-2 text-sm text-neutral-500">
-          Backend pricing rules ready hone ke baad yahan show honge.
+          Create your first dynamic pricing rule.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-neutral-200">
-      <table className="w-full min-w-[1150px] text-sm">
-        <thead className="bg-[#f7f2ea] text-left">
-          <tr>
-            <th className="p-4 font-medium">Pricing Rule</th>
-            <th className="p-4 font-medium">Scope</th>
-            <th className="p-4 font-medium">Commerce</th>
-            <th className="p-4 font-medium">Currency</th>
-            <th className="p-4 font-medium">Prices</th>
-            <th className="p-4 font-medium">Discount</th>
-            <th className="p-4 font-medium">Effective Dates</th>
-            <th className="p-4 font-medium">Status</th>
-            <th className="p-4 text-right font-medium">Actions</th>
-          </tr>
-        </thead>
+  <div className="overflow-hidden rounded-[1.5rem] border border-neutral-200 bg-white">
+<div className="w-full overflow-x-auto">
+<table className="w-full min-w-[1050px] table-fixed border-collapse text-sm">
+          <thead className="bg-[#f7f2ea] text-left text-xs uppercase tracking-[0.16em] text-neutral-500">
+ <tr>
+  <th className="w-[24%] px-5 py-4">Rule</th>
+  <th className="w-[11%] px-5 py-4">Commerce</th>
+  <th className="w-[9%] px-5 py-4">Scope</th>
+  <th className="w-[13%] px-5 py-4">Adjustment</th>
+  <th className="w-[8%] px-5 py-4">Priority</th>
+  <th className="w-[16%] px-5 py-4">Schedule</th>
+  <th className="w-[9%] px-5 py-4">Status</th>
+  <th className="w-[10%] px-5 py-4 text-right">Action</th>
+</tr>
+          </thead>
 
-        <tbody>
-          {pricingRules.map((rule) => (
-            <tr key={rule.id} className="border-t border-neutral-200">
-              <td className="p-4">
-                <p className="font-medium text-neutral-950">{rule.name}</p>
-                <code className="mt-1 inline-block rounded-md bg-neutral-100 px-2 py-1 text-xs">
-                  {rule.code}
-                </code>
-                <p className="mt-1 text-xs text-neutral-500">
-                  {rule.productName || rule.variantSku || "No product/variant"}
-                </p>
-              </td>
+          <tbody className="divide-y divide-neutral-200">
+            {rules.map((rule) => (
+              <tr key={rule.id} className="align-top hover:bg-[#fbfaf6]">
+          <td className="px-5 py-4">
+  <p className="line-clamp-2 font-semibold leading-6 text-neutral-950">
+    {rule.name}
+  </p>
+                  {getRuleTargetId(rule) ? (
+  <p className="mt-1 max-w-[260px] truncate text-xs text-neutral-500">
+    ID: {getRuleTargetId(rule)}
+  </p>
+) : null}
+                </td>
 
-              <td className="p-4">
-                <Badge variant="outline">
-                  {scopeLabels[rule.scope] ?? rule.scope}
-                </Badge>
-              </td>
+                <td className="px-5 py-4">
+                  <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-700">
+                    {formatPricingLabel(rule.commerceType)}
+                  </span>
+                </td>
 
-              <td className="p-4">
-                {commerceTypeLabels[rule.commerceType] ?? rule.commerceType}
-              </td>
+                <td className="px-5 py-4">
+                  <span className="rounded-full border border-neutral-200 px-3 py-1 text-xs font-medium text-neutral-700">
+                    {formatPricingLabel(rule.scope)}
+                  </span>
+                </td>
 
-              <td className="p-4">{rule.currency}</td>
-
-              <td className="p-4">
-                <p className="font-medium">
-                  Base: {rule.currency} {rule.basePrice}
-                </p>
-
-                {rule.salePrice != null && (
-                  <p className="text-xs text-neutral-500">
-                    Sale: {rule.currency} {rule.salePrice}
+                <td className="px-5 py-4">
+                  <p className="font-medium text-neutral-950">
+                    {formatPricingLabel(rule.adjustmentType)}
                   </p>
-                )}
-
-                {rule.rentalPrice != null && (
-                  <p className="text-xs text-neutral-500">
-                    Rental: {rule.currency} {rule.rentalPrice}
+                  <p className="mt-1 text-xs text-neutral-500">
+                    {formatAdjustment(rule)}
                   </p>
-                )}
+                </td>
 
-                {rule.resalePrice != null && (
-                  <p className="text-xs text-neutral-500">
-                    Resale: {rule.currency} {rule.resalePrice}
-                  </p>
-                )}
+                <td className="px-5 py-4 text-neutral-700">
+                  {rule.priority ?? 0}
+                </td>
 
-                {rule.mtoPrice != null && (
-                  <p className="text-xs text-neutral-500">
-                    MTO: {rule.currency} {rule.mtoPrice}
-                  </p>
-                )}
-              </td>
+                <td className="px-5 py-4 text-xs text-neutral-600">
+                  <p>Start: {formatDate(rule.startsAt)}</p>
+                  <p className="mt-1">End: {formatDate(rule.endsAt)}</p>
+                </td>
 
-              <td className="p-4">
-                <p>{discountTypeLabels[rule.discountType] ?? rule.discountType}</p>
-                {rule.discountValue != null && rule.discountType !== "NONE" && (
-                  <p className="text-xs text-neutral-500">
-                    Value: {rule.discountValue}
-                    {rule.discountType === "PERCENTAGE" ? "%" : ""}
-                  </p>
-                )}
-              </td>
+               <td className="px-5 py-4">
+  <span
+    className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-semibold ${
+      rule.isActive === false
+        ? "bg-neutral-100 text-neutral-600"
+        : "bg-emerald-50 text-emerald-700"
+    }`}
+  >
+    {rule.isActive === false ? "Inactive" : "Active"}
+  </span>
+</td>
+<td className="px-5 py-4">
+  <div className="flex justify-end gap-2">
+    <Link
+      href={`/admin/catalog/pricing/${rule.id}`}
+      title="Edit pricing rule"
+      aria-label="Edit pricing rule"
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-200 text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950"
+    >
+      <Pencil className="h-4 w-4" />
+    </Link>
 
-              <td className="p-4">
-                <p className="text-xs text-neutral-500">
-                  From: {rule.effectiveFrom || "Immediately"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  To: {rule.effectiveTo || "No end date"}
-                </p>
-              </td>
-
-              <td className="p-4">
-                <StatusBadge status={rule.status} />
-              </td>
-
-              <td className="p-4 text-right">
-                <div className="flex justify-end gap-2">
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="rounded-full"
-                  >
-                    <Link href={`/admin/catalog/pricing/${rule.id}/edit`}>
-                      Edit
-                    </Link>
-                  </Button>
-
-                  <Button size="sm" variant="outline" className="rounded-full">
-                    Activate
-                  </Button>
-
-                  <Button size="sm" variant="outline" className="rounded-full">
-                    More
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <button
+      type="button"
+      onClick={() => onDelete(rule.id)}
+      title="Delete pricing rule"
+      aria-label="Delete pricing rule"
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-200 text-red-600 transition hover:bg-red-50"
+    >
+      <Trash2 className="h-4 w-4" />
+    </button>
+  </div>
+</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const className =
-    status === "ACTIVE"
-      ? "bg-emerald-50 text-emerald-700"
-      : status === "SCHEDULED"
-        ? "bg-blue-50 text-blue-700"
-        : status === "DRAFT"
-          ? "bg-amber-50 text-amber-700"
-          : status === "EXPIRED"
-            ? "bg-neutral-100 text-neutral-700"
-            : "bg-red-50 text-red-700";
-
-  return (
-    <span className={`rounded-full px-3 py-1 text-xs font-medium ${className}`}>
-      {status}
-    </span>
   );
 }

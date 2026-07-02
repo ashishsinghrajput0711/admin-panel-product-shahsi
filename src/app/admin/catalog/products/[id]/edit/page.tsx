@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { syncProductCategories } from "@/lib/admin/category-product-sync";
 import { useParams, useRouter } from "next/navigation";
 
+import { ProductPricingSection } from "@/components/admin/catalog/products/product-pricing-section";
+
 
 import {
   Archive,
@@ -984,21 +986,29 @@ setSuccessMessage(
           </div>
         ) : null}
 
-        {defaultValues ? (
-          <ProductForm
-            key={formKey}
-            productId={productId}
-            mediaItems={product?.media ?? product?.images ?? []}
-            defaultValues={defaultValues}
-            onSubmit={handleSubmit}
-            isSubmitting={isSubmitting}
-            onMediaChanged={() => loadProduct({ silent: true })}
-          />
-        ) : (
-          <div className="rounded-2xl bg-white p-6 ring-1 ring-neutral-200">
-            Product default values nahi mil paayi.
-          </div>
-        )}
+      {defaultValues ? (
+  <div className="space-y-5">
+    <ProductPricingSection
+      productId={productId}
+      values={product ?? defaultValues}
+      onSaved={() => loadProduct({ silent: true })}
+    />
+
+    <ProductForm
+      key={formKey}
+      productId={productId}
+      mediaItems={product?.media ?? product?.images ?? []}
+      defaultValues={defaultValues}
+      onSubmit={handleSubmit}
+      isSubmitting={isSubmitting}
+      onMediaChanged={() => loadProduct({ silent: true })}
+    />
+  </div>
+) : (
+  <div className="rounded-2xl bg-white p-6 ring-1 ring-neutral-200">
+    Product default values nahi mil paayi.
+  </div>
+)}
       </div>
     </main>
   );
