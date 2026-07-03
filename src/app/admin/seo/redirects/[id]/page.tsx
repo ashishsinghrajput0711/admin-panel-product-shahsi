@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, Save, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { getAdminToken } from "@/lib/admin-auth";
 
 type RedirectRecord = {
@@ -51,10 +50,25 @@ function normalizeApiMessage(data: unknown, fallback: string) {
 function getRedirectPayload(response: RedirectResponse): RedirectRecord | null {
   if (response.data) return response.data;
   if (response.redirect) return response.redirect;
+
+  const nestedData = response.data as unknown;
+  if (nestedData && typeof nestedData === "object" && "redirect" in nestedData) {
+    return (nestedData as { redirect?: RedirectRecord }).redirect || null;
+  }
+
   if (response.id && response.sourceUrl && response.destinationUrl) {
     return response as RedirectRecord;
   }
+
   return null;
+}
+
+function getRedirectSource(redirect: RedirectRecord) {
+  return redirect.sourcePath || redirect.sourceUrl || "";
+}
+
+function getRedirectDestination(redirect: RedirectRecord) {
+  return redirect.destinationPath || redirect.destinationUrl || "";
 }
 
 function normalizePath(value: string) {
@@ -142,8 +156,8 @@ export default function RedirectEditPage() {
       }
 
       setForm({
-        sourceUrl: redirect.sourcePath || redirect.sourceUrl || "",
-        destinationUrl: redirect.destinationPath || redirect.destinationUrl || "",
+        sourceUrl: getRedirectSource(redirect),
+        destinationUrl: getRedirectDestination(redirect),
         notes: redirect.notes || "",
       });
     } catch (err) {
@@ -180,21 +194,36 @@ export default function RedirectEditPage() {
 
       const body = buildSaveBody();
 
-      if (isCreateMode) {
-        await apiRequest("/admin/seo/redirects", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        setNotice("Redirect created successfully.");
-      } else {
-        await apiRequest(`/admin/seo/redirects/${redirectId}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        setNotice("Redirect updated successfully.");
-      }
+      const response = isCreateMode
+        ? await apiRequest<RedirectResponse>("/admin/seo/redirects", {
+            method: "POST",
+            body: JSON.stringify(body),
+          })
+        : await apiRequest<RedirectResponse>(`/admin/seo/redirects/${redirectId}`, {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          });
 
-      router.push("/admin/seo/redirects");
+      const savedRedirect = getRedirectPayload(response);
+      const finalSourceUrl = savedRedirect ? getRedirectSource(savedRedirect) : body.sourceUrl;
+      const finalDestinationUrl = savedRedirect
+        ? getRedirectDestination(savedRedirect)
+        : body.destinationUrl;
+      const destinationAdjusted = finalDestinationUrl !== body.destinationUrl;
+      const sourceAdjusted = finalSourceUrl !== body.sourceUrl;
+
+      setForm({
+        sourceUrl: finalSourceUrl,
+        destinationUrl: finalDestinationUrl,
+        notes: savedRedirect?.notes || form.notes,
+      });
+
+      setNotice(
+        destinationAdjusted || sourceAdjusted
+          ? `${isCreateMode ? "Redirect created" : "Redirect updated"} successfully. Backend adjusted the final URL to ${finalDestinationUrl}.`
+          : `${isCreateMode ? "Redirect created" : "Redirect updated"} successfully.`,
+      );
+
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Redirect save failed.");
@@ -312,7 +341,9 @@ export default function RedirectEditPage() {
                     />
                   </Field>
 
-                  
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-sm leading-6 text-blue-800">
+                    For product-to-product redirects, backend may update the actual product slug and auto-adjust the final destination if the requested slug already exists. After save, this form will show the final saved destination URL.
+                  </div>
                 </div>
               )}
             </Card>
@@ -356,7 +387,7 @@ function Field({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label className="block min-w-0">

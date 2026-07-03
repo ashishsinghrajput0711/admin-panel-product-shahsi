@@ -204,7 +204,16 @@ export default function SeoRedirectsPage() {
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
               </Button>
-              
+              <Button
+                asChild
+                type="button"
+                className="rounded-xl bg-white text-neutral-950 hover:bg-neutral-100"
+              >
+                <Link href="/admin/seo/redirects/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create URL redirect
+                </Link>
+              </Button>
             </div>
           </div>
         </Card>
@@ -313,8 +322,24 @@ export default function SeoRedirectsPage() {
                 ) : (
                   <tr>
                     <td colSpan={5} className="px-5 py-12 text-center">
-                     
-                      
+                      <div className="mx-auto max-w-md">
+                        <p className="text-sm font-semibold text-neutral-950">
+                          No redirects found
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-neutral-500">
+                          Create a redirect to send visitors from an old product or collection URL to a new URL.
+                        </p>
+                        <Button
+                          asChild
+                          type="button"
+                          className="mt-4 rounded-xl bg-neutral-950"
+                        >
+                          <Link href="/admin/seo/redirects/new">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create URL redirect
+                          </Link>
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 )}

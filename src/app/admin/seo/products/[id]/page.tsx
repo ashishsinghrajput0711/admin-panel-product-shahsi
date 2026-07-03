@@ -245,6 +245,15 @@ type ProductSeoRecord = {
     }[];
   };
 
+  publishing?: {
+    indexable?: boolean | null;
+    followLinks?: boolean | null;
+    includeInSitemap?: boolean | null;
+    includeInSearch?: boolean | null;
+    includeInPinterestFeed?: boolean | null;
+    includeInMerchantFeed?: boolean | null;
+  };
+
   seoScoreBreakdown: {
     overallScore: number;
     searchMetadataScore: number;
@@ -1555,7 +1564,7 @@ export default function ProductSeoEditPage() {
   const [originalSlug, setOriginalSlug] = useState("");
   const [originalCanonicalUrl, setOriginalCanonicalUrl] = useState("");
   const [createUrlRedirect, setCreateUrlRedirect] = useState(false);
-
+const [existingRedirectResolved, setExistingRedirectResolved] = useState(false);
   const [form, setForm] = useState({
     productName: "",
     productDescription: "",
@@ -1571,6 +1580,8 @@ export default function ProductSeoEditPage() {
     structuredDataJsonLd: "",
 
     faqEnabled: false,
+    indexable: false,
+    followLinks: false,
   });
 
   const seoFactors = seo?.seoScoreBreakdown.factors || [];
@@ -1622,7 +1633,7 @@ export default function ProductSeoEditPage() {
     form.canonicalUrl || form.slug || product?.publicUrl || "",
     cleanSlug || productId,
   );
-  const urlHandleInputValue = form.canonicalUrl || effectiveCanonicalUrl;
+  const urlHandleInputValue = effectiveCanonicalUrl;
   const originalRedirectSlug = getSlugFromUrlOrHandle(
     originalSlug || originalCanonicalUrl || product?.slug || "",
   );
@@ -1902,6 +1913,58 @@ async function apiRequest<T>(
     return data as T;
   }
 
+  async function checkExistingRedirectForSlug(
+  sourceSlug: string,
+  destinationSlug: string,
+) {
+  if (!sourceSlug || !destinationSlug || sourceSlug === destinationSlug) {
+    setExistingRedirectResolved(false);
+    return;
+  }
+
+  try {
+    const sourcePath = `/products/${sourceSlug}`;
+    const expectedDestinationPath = `/products/${destinationSlug}`;
+
+    const response = await fetch(
+      `${getBackendApiBaseUrl()}/seo/redirects/resolve?path=${encodeURIComponent(sourcePath)}`,
+      {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      setExistingRedirectResolved(false);
+      return;
+    }
+
+    const json = await response.json();
+    const redirectRecord = json?.data || null;
+
+    const destination =
+      redirectRecord?.destinationPath || redirectRecord?.destinationUrl || "";
+
+    const normalizedDestinationSlug = getSlugFromUrlOrHandle(destination);
+    const normalizedExpectedSlug = getSlugFromUrlOrHandle(expectedDestinationPath);
+
+    const isResolved =
+      redirectRecord?.status === "ACTIVE" &&
+      normalizedDestinationSlug === normalizedExpectedSlug;
+
+    setExistingRedirectResolved(isResolved);
+
+    if (isResolved) {
+      setCreateUrlRedirect(false);
+    }
+  } catch {
+    setExistingRedirectResolved(false);
+  }
+}
+
   function handleUrlHandleChange(value: string) {
     const nextSlug = getSlugFromUrlOrHandle(value);
 
@@ -1912,8 +1975,9 @@ async function apiRequest<T>(
     }));
 
     if (originalRedirectSlug && nextSlug && originalRedirectSlug !== nextSlug) {
-      setCreateUrlRedirect(true);
-    }
+  setExistingRedirectResolved(false);
+  setCreateUrlRedirect(true);
+}
   }
 
   async function createProductUrlRedirectIfNeeded(
@@ -2015,6 +2079,8 @@ async function apiRequest<T>(
       structuredDataJsonLd: jsonToText(record.structuredData?.jsonLdPreview),
 
       faqEnabled: Boolean(record.faqBuilder?.enabled),
+      indexable: getPublishingBoolean(record.publishing?.indexable),
+      followLinks: getPublishingBoolean(record.publishing?.followLinks),
     }));
 
     setFaqItems(
@@ -2179,7 +2245,19 @@ async function apiRequest<T>(
         payload.seo.searchMetadata?.slug || payload.product?.slug || "";
       const initialCanonicalUrl =
         payload.seo.searchMetadata?.canonicalUrl || payload.product?.publicUrl || "";
+const seoSavedSlug = getSlugFromUrlOrHandle(
+  payload.seo.searchMetadata?.slug || payload.seo.searchMetadata?.canonicalUrl || "",
+);
 
+const currentProductSlug = getSlugFromUrlOrHandle(
+  payload.product?.slug || payload.product?.publicUrl || "",
+);
+
+if (seoSavedSlug && currentProductSlug && seoSavedSlug !== currentProductSlug) {
+  await checkExistingRedirectForSlug(seoSavedSlug, currentProductSlug);
+} else {
+  setExistingRedirectResolved(false);
+}
       setOriginalSlug(getSlugFromUrlOrHandle(initialSlug || initialCanonicalUrl));
       setOriginalCanonicalUrl(initialCanonicalUrl);
       setCreateUrlRedirect(false);
@@ -2255,6 +2333,12 @@ async function apiRequest<T>(
       slug: cleanedSlugForSave,
       canonicalUrl: canonicalUrlForSave,
       structuredDataJsonLd,
+
+      faqBuilder: buildFaqSaveBody(),
+      publishing: {
+        indexable: form.indexable,
+        followLinks: form.followLinks,
+      },
     };
   }
 
@@ -2335,13 +2419,6 @@ async function apiRequest<T>(
   }
 
   function buildFaqSaveBody() {
-    if (!form.faqEnabled) {
-      return {
-        enabled: false,
-        faqs: [],
-      };
-    }
-
     const validFaqs = faqItems
       .filter((faq) => faq.question.trim() && faq.answer.trim())
       .map((faq, index) => ({
@@ -2351,7 +2428,7 @@ async function apiRequest<T>(
       }));
 
     return {
-      enabled: true,
+      enabled: form.faqEnabled,
       faqs: validFaqs,
     };
   }
@@ -3370,7 +3447,7 @@ async function apiRequest<T>(
                       />
                     </Field>
 
-                    {hasUrlChanged ? (
+                    {hasUrlChanged && !existingRedirectResolved ? (
                       <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
                         <label className="flex cursor-pointer items-start gap-3">
                           <input
@@ -3402,6 +3479,26 @@ async function apiRequest<T>(
                         </div>
                       </div>
                     ) : null}
+                    {hasUrlChanged && existingRedirectResolved ? (
+  <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+    <p className="text-sm font-semibold text-emerald-800">
+      Existing URL redirect already available
+    </p>
+    <p className="mt-1 text-xs leading-5 text-emerald-700">
+      Old product URL already redirects to the current product URL, so no duplicate redirect is needed.
+    </p>
+
+    <div className="mt-3 flex flex-col gap-2 text-xs sm:flex-row sm:items-center">
+      <span className="min-w-0 rounded-full bg-white px-3 py-1.5 text-neutral-600">
+        {originalRedirectSlug}
+      </span>
+      <span className="text-emerald-500">→</span>
+      <span className="min-w-0 rounded-full bg-white px-3 py-1.5 text-emerald-700">
+        {cleanSlug}
+      </span>
+    </div>
+  </div>
+) : null}
                   </div>
                 </div>
 
@@ -4140,6 +4237,17 @@ async function apiRequest<T>(
               </div>
             </Card>
 
+            <RobotMetaCard
+              indexable={form.indexable}
+              followLinks={form.followLinks}
+              onIndexableChange={(value) =>
+                setForm((prev) => ({ ...prev, indexable: value }))
+              }
+              onFollowLinksChange={(value) =>
+                setForm((prev) => ({ ...prev, followLinks: value }))
+              }
+            />
+
             <Card className="rounded-2xl border-neutral-200 bg-white p-4 shadow-sm">
               <h3 className="text-sm font-semibold text-neutral-950">
                 Next best action
@@ -4570,6 +4678,84 @@ function IssueGroupCard({ group }: { group: SeoFactorGroup }) {
         ))}
       </div>
     </details>
+  );
+}
+
+function RobotMetaCard({
+  indexable,
+  followLinks,
+  onIndexableChange,
+  onFollowLinksChange,
+}: {
+  indexable: boolean;
+  followLinks: boolean;
+  onIndexableChange: (value: boolean) => void;
+  onFollowLinksChange: (value: boolean) => void;
+}) {
+  const robotsText = `${indexable ? "index" : "noindex"}, ${
+    followLinks ? "follow" : "nofollow"
+  }`;
+
+  return (
+    <Card className="rounded-2xl border-neutral-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-neutral-950">
+            Robot Meta
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-neutral-500">
+            Control how search engines index this product page.
+          </p>
+        </div>
+        <Badge className="bg-neutral-100 text-neutral-700">{robotsText}</Badge>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <RobotMetaToggle
+          checked={indexable}
+          title="Index"
+          description="Allow search engines to discover and display this page in search results"
+          onChange={onIndexableChange}
+        />
+        <RobotMetaToggle
+          checked={followLinks}
+          title="Follow"
+          description="Allow search engines to discover and index links on this page"
+          onChange={onFollowLinksChange}
+        />
+      </div>
+    </Card>
+  );
+}
+
+function RobotMetaToggle({
+  checked,
+  title,
+  description,
+  onChange,
+}: {
+  checked: boolean;
+  title: string;
+  description: string;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-neutral-100 bg-[#fbfaf6] p-3 transition hover:bg-neutral-50">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4 rounded border-neutral-300 text-neutral-950 focus:ring-neutral-950"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-neutral-950">
+          {title}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-neutral-500">
+          {description}
+        </span>
+      </span>
+    </label>
   );
 }
 
