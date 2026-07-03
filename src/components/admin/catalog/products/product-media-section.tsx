@@ -9,9 +9,9 @@ import {
   Info,
   Maximize2,
   Minimize2,
-  RotateCcw,
-  
 } from "lucide-react";
+
+
 import {
   Check,
   ChevronDown,
@@ -366,6 +366,9 @@ const [cropperZoom, setCropperZoom] = useState(1);
 const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
 
 const [mediaAspectRatio, setMediaAspectRatio] = useState("4:5");
+const [mediaOrientation, setMediaOrientation] = useState<
+  "portrait" | "landscape"
+>("portrait");
 
 const [mediaCropX, setMediaCropX] = useState(0);
 const [mediaCropY, setMediaCropY] = useState(0);
@@ -375,7 +378,7 @@ const [mediaCropHeight, setMediaCropHeight] = useState(1250);
 const [mediaResizeWidth, setMediaResizeWidth] = useState(1000);
 const [mediaResizeHeight, setMediaResizeHeight] = useState(1250);
 
-const [mediaSaveAsNew, setMediaSaveAsNew] = useState(true);
+
 const [isTransformingMedia, setIsTransformingMedia] = useState(false);
 const [mediaTransformError, setMediaTransformError] = useState<string | null>(
   null
@@ -395,7 +398,44 @@ const aspectRatioMap: Record<string, number | undefined> = {
   "9:16": 9 / 16,
 };
 
-const currentCropAspect = aspectRatioMap[mediaAspectRatio];
+function getOriginalMediaAspect(item: ProductMediaItem | null) {
+  const width = Number(item?.width || 0);
+  const height = Number(item?.height || 0);
+
+  if (width > 0 && height > 0) {
+    return width / height;
+  }
+
+  return 4 / 5;
+}
+
+const currentCropAspect = useMemo(() => {
+  if (mediaAspectRatio === "freeform") {
+    const width = Math.max(Number(mediaCropWidth || 1), 1);
+    const height = Math.max(Number(mediaCropHeight || 1), 1);
+    return width / height;
+  }
+
+  if (mediaAspectRatio === "original") {
+    const originalAspect = getOriginalMediaAspect(editingMedia);
+
+    return mediaOrientation === "landscape"
+      ? Math.max(originalAspect, 1 / originalAspect)
+      : Math.min(originalAspect, 1 / originalAspect);
+  }
+
+  const selectedAspect = aspectRatioMap[mediaAspectRatio] ?? 4 / 5;
+
+  return mediaOrientation === "landscape"
+    ? Math.max(selectedAspect, 1 / selectedAspect)
+    : Math.min(selectedAspect, 1 / selectedAspect);
+}, [
+  editingMedia,
+  mediaAspectRatio,
+  mediaCropHeight,
+  mediaCropWidth,
+  mediaOrientation,
+]);
 
 const mediaAspectRatioOptions = [
   { label: "Original", value: "original" },
@@ -893,7 +933,8 @@ setCropperZoom(1);
 setCroppedAreaPixels(null);
 
 setMediaAspectRatio("original");
-  setMediaCropX(0);
+setMediaOrientation("portrait");
+setMediaCropX(0);
   setMediaCropY(0);
   setMediaCropWidth(initialWidth);
   setMediaCropHeight(initialHeight);
@@ -901,7 +942,7 @@ setMediaAspectRatio("original");
   setMediaResizeWidth(initialWidth);
   setMediaResizeHeight(initialHeight);
 
-  setMediaSaveAsNew(true);
+
 }
 
 async function handleSaveMediaDetails() {
@@ -967,24 +1008,24 @@ async function handleTransformMedia(mode: ProductMediaTransformMode) {
       mode === "crop"
         ? {
             mode: "crop" as const,
-            aspectRatio:
+           aspectRatio:
   mediaAspectRatio === "original" || mediaAspectRatio === "freeform"
     ? null
     : mediaAspectRatio,
-         crop: {
+      crop: {
   x: Math.round(croppedAreaPixels?.x ?? mediaCropX ?? 0),
   y: Math.round(croppedAreaPixels?.y ?? mediaCropY ?? 0),
   width: Math.round(croppedAreaPixels?.width ?? mediaCropWidth ?? 1000),
   height: Math.round(croppedAreaPixels?.height ?? mediaCropHeight ?? 1250),
 },
 resize: {
-  width: Math.round(croppedAreaPixels?.width ?? mediaCropWidth ?? 1000),
-  height: Math.round(croppedAreaPixels?.height ?? mediaCropHeight ?? 1250),
+  width: Math.round(mediaCropWidth || croppedAreaPixels?.width || 1000),
+  height: Math.round(mediaCropHeight || croppedAreaPixels?.height || 1250),
 },
             gravity: "auto",
             format: "jpg",
             quality: "auto",
-            saveAsNew: mediaSaveAsNew,
+       saveAsNew: false,
             name: mediaName || editingMedia.name || editingMedia.title || null,
             title: mediaName || editingMedia.title || editingMedia.name || null,
             altText: mediaAltText || editingMedia.altText || null,
@@ -1004,7 +1045,7 @@ resize: {
             gravity: "auto",
             format: "jpg",
             quality: "auto",
-            saveAsNew: mediaSaveAsNew,
+         saveAsNew: false,
             name: mediaName || editingMedia.name || editingMedia.title || null,
             title: mediaName || editingMedia.title || editingMedia.name || null,
             altText: mediaAltText || editingMedia.altText || null,
@@ -1040,12 +1081,12 @@ resize: {
       onDrop={handleDropUpload}
       onDragOver={handleDragOverUpload}
       onDragLeave={handleDragLeaveUpload}
-      className={`relative rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 transition sm:p-5 ${
-        isDraggingUpload ? "ring-2 ring-neutral-950" : "ring-neutral-200"
-      }`}
+  className={`relative rounded-[2rem] border border-neutral-200 bg-white p-5 shadow-sm transition-all duration-300 sm:p-6 ${
+  isDraggingUpload ? "ring-2 ring-neutral-950" : ""
+}`}
     >
       {isDraggingUpload ? (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[1.5rem] border-2 border-dashed border-neutral-950 bg-white/80 backdrop-blur-sm">
+       <div className="pointer-events-none absolute inset-0 z-20 flex animate-in fade-in zoom-in-95 items-center justify-center rounded-[2rem] border-2 border-dashed border-neutral-950 bg-white/85 backdrop-blur-sm">
           <div className="rounded-2xl bg-neutral-950 px-6 py-4 text-center text-white shadow-xl">
             <Upload className="mx-auto h-7 w-7" />
             <p className="mt-2 text-sm font-semibold">
@@ -1058,19 +1099,19 @@ resize: {
         </div>
       ) : null}
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-neutral-100 p-2">
-            <ImageIcon className="h-4 w-4 text-neutral-700" />
+        <div className="rounded-2xl bg-neutral-100 p-3">
+        <ImageIcon className="h-5 w-5 text-neutral-700" />
           </div>
 
           <div>
-            <h2 className="text-base font-semibold text-neutral-950">Media</h2>
-            <p className="mt-0.5 text-xs text-neutral-500">
+           <h2 className="text-xl font-semibold text-neutral-950">Media</h2>
+          <p className="mt-1 text-sm text-neutral-500">
               Upload, add URL, choose library media and drag to reorder.
             </p>
             {totalMediaCount > 0 ? (
-              <p className="mt-1 text-[11px] text-neutral-400">
+              <p className="mt-2 text-sm text-neutral-400">
                 First media item will be treated as the primary display item.
               </p>
             ) : null}
@@ -1111,7 +1152,7 @@ resize: {
             variant="outline"
             disabled={isUploading}
             onClick={() => setIsMenuOpen((current) => !current)}
-            className="rounded-full"
+            className="h-11 rounded-full border-neutral-200 px-5 text-sm font-semibold shadow-sm transition hover:bg-neutral-50"
           >
             <Plus className="mr-2 h-4 w-4" />
             {isUploading ? "Working..." : "Add media"}
@@ -1119,14 +1160,14 @@ resize: {
           </Button>
 
           {isMenuOpen ? (
-            <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-1 shadow-xl">
+        <div className="absolute right-0 z-30 mt-2 w-60 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-1.5 shadow-2xl animate-in fade-in slide-in-from-top-2">
               <button
                 type="button"
                 onClick={() => {
                   setIsMenuOpen(false);
                   fileInputRef.current?.click();
                 }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
               >
                 <Upload className="h-4 w-4" />
                 Upload files
@@ -1138,7 +1179,7 @@ resize: {
                   setIsMenuOpen(false);
                   setIsUrlModalOpen(true);
                 }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+               className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
               >
                 <LinkIcon className="h-4 w-4" />
                 Add from URL
@@ -1150,7 +1191,7 @@ resize: {
                   setIsMenuOpen(false);
                   void openMediaLibrary();
                 }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+           className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950"
               >
                 <ImageIcon className="h-4 w-4" />
                 Choose from library
@@ -1189,20 +1230,20 @@ resize: {
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className={`flex min-h-[140px] w-full flex-col items-center justify-center rounded-2xl border border-dashed text-neutral-500 transition ${
+       className={`flex min-h-[190px] w-full flex-col items-center justify-center rounded-[1.5rem] border border-dashed text-neutral-500 transition-all duration-300 ${
             isDraggingUpload
               ? "border-neutral-950 bg-neutral-100"
-              : "border-neutral-300 bg-neutral-50 hover:bg-neutral-100"
+          : "border-neutral-300 bg-neutral-50 hover:-translate-y-0.5 hover:bg-neutral-100 hover:shadow-sm"
           }`}
         >
-          <Plus className="h-8 w-8" />
+        <Plus className="h-10 w-10 text-neutral-500 transition group-hover:scale-110" />
           <span className="mt-2 text-sm font-medium">Add media</span>
           <span className="mt-1 text-xs">
             Upload images/videos or drag files here
           </span>
         </button>
 
-        <div className="grid content-start gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+     <div className="grid content-start gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {orderedMediaItems.map((item, index) => {
             const isDragged = draggedMediaId === item.id;
             const isDragOver = dragOverMediaId === item.id;
@@ -1217,19 +1258,19 @@ resize: {
                 onDragOver={(event) => handleMediaDragOver(event, item.id)}
                 onDrop={(event) => handleMediaDrop(event, item.id)}
                 onDragEnd={handleMediaDragEnd}
-                className={`group relative cursor-grab overflow-hidden rounded-2xl border bg-neutral-50 transition-all duration-200 active:cursor-grabbing ${
+              className={`group relative cursor-grab overflow-hidden rounded-[1.5rem] border bg-neutral-50 shadow-sm transition-all duration-300 active:cursor-grabbing ${
                   isDragged
-                    ? "scale-95 opacity-40 ring-2 ring-neutral-950"
-                    : "scale-100 opacity-100"
+                   ? "scale-95 rotate-1 opacity-40 ring-2 ring-neutral-950"
+: "scale-100 rotate-0 opacity-100 hover:-translate-y-1"
                 } ${
   isDragOver || isSelected
-    ? "border-neutral-950 shadow-lg ring-2 ring-neutral-950"
-    : "border-neutral-200 hover:shadow-md"
+   ? "border-neutral-950 shadow-xl ring-2 ring-neutral-950"
+: "border-neutral-200 hover:shadow-xl"
 }`}
               >
                 <MediaPreview
                   item={item}
-                  className="h-32 w-full select-none object-contain"
+                 className="h-40 w-full select-none object-cover"
                 />
 
 
@@ -1239,14 +1280,14 @@ resize: {
     event.stopPropagation();
     toggleMediaSelection(item.id);
   }}
-  className={`absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full border shadow transition ${
+className={`absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border shadow-md transition-all duration-200 ${
     isSelected
       ? "border-neutral-950 bg-neutral-950 text-white"
       : "border-neutral-200 bg-white/95 text-neutral-500 hover:text-neutral-950"
   }`}
   title={isSelected ? "Unselect media" : "Select media"}
 >
-  {isSelected ? <Check className="h-4 w-4" /> : null}
+ {isSelected ? <Check className="h-5 w-5" /> : null}
 </button>
 
                <div className="absolute left-10 top-2 hidden items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-[10px] font-semibold text-neutral-700 shadow ring-1 ring-neutral-200 group-hover:flex">
@@ -1254,11 +1295,11 @@ resize: {
                   Drag
                 </div>
 
-                <div className="absolute left-2 bottom-2 flex items-center gap-1">
+           <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
                   {index === 0 ? (
-                    <span className="rounded-full bg-neutral-950 px-2 py-1 text-[10px] font-semibold text-white">
-                      Primary
-                    </span>
+                  <span className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
+  Primary
+</span>
                   ) : null}
 
                   {item.sourceType === "EXTERNAL_URL" ? (
@@ -1279,7 +1320,7 @@ resize: {
   type="button"
   disabled={isUploading}
   onClick={() => openEditMediaDetails(item)}
-  className="absolute right-11 top-2 hidden rounded-full bg-white px-2 py-1.5 text-[10px] font-semibold text-neutral-700 shadow ring-1 ring-neutral-200 group-hover:block"
+className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 opacity-0 shadow-lg ring-1 ring-neutral-200 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100"
 >
   Edit
 </button>
@@ -1288,7 +1329,7 @@ resize: {
                   type="button"
                   disabled={isUploading}
                   onClick={() => handleDeleteMedia(item.id)}
-                  className="absolute right-2 top-2 hidden rounded-full bg-white p-1.5 text-red-600 shadow ring-1 ring-neutral-200 group-hover:block"
+               className="absolute right-3 top-3 translate-y-1 rounded-full bg-white p-2 text-red-600 opacity-0 shadow-lg ring-1 ring-neutral-200 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -1308,7 +1349,7 @@ resize: {
                 onDragOver={(event) => handlePendingDragOver(event, index)}
                 onDrop={(event) => handlePendingDrop(event, index)}
                 onDragEnd={handlePendingDragEnd}
-                className={`group relative cursor-grab overflow-hidden rounded-2xl border border-dashed bg-neutral-50 transition-all duration-200 active:cursor-grabbing ${
+               className={`group relative cursor-grab overflow-hidden rounded-[1.5rem] border border-dashed bg-neutral-50 shadow-sm transition-all duration-300 active:cursor-grabbing ${
                   isDragged
                     ? "scale-95 opacity-40 ring-2 ring-neutral-950"
                     : "scale-100 opacity-100"
@@ -1331,7 +1372,7 @@ resize: {
                 <button
                   type="button"
                   onClick={() => removePendingFile(index)}
-                  className="absolute right-2 top-2 hidden rounded-full bg-white p-1.5 text-red-600 shadow ring-1 ring-neutral-200 group-hover:block"
+           className="absolute right-3 top-3 translate-y-1 rounded-full bg-white p-2 text-red-600 opacity-0 shadow-lg ring-1 ring-neutral-200 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -1346,7 +1387,7 @@ resize: {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className={`flex h-32 flex-col items-center justify-center rounded-2xl border border-dashed text-neutral-500 transition ${
+          className={`flex h-40 flex-col items-center justify-center rounded-[1.5rem] border border-dashed text-neutral-500 transition-all duration-300 hover:-translate-y-1 hover:shadow-sm ${
               isDraggingUpload
                 ? "border-neutral-950 bg-neutral-100"
                 : "border-neutral-300 bg-neutral-50 hover:bg-neutral-100"
@@ -1359,7 +1400,7 @@ resize: {
       </div>
 
       {orderedMediaItems.length > 1 || pendingFiles.length > 1 ? (
-        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+      <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm font-medium text-emerald-800">
           Drag karke media shuffle/reorder kar sakte ho. First media item
           primary rahega.
         </div>
@@ -1703,7 +1744,12 @@ resize: {
             <button
               type="button"
               onClick={() => setMediaToolMode("information")}
-              className="flex w-full items-center gap-3 text-left text-lg font-semibold text-white"
+             className={[
+  "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-lg font-semibold transition",
+  mediaToolMode === "information"
+    ? "bg-white/10 text-white"
+    : "text-neutral-300 hover:bg-white/5 hover:text-white",
+].join(" ")}
             >
               <Info className="h-5 w-5" />
               Information
@@ -1794,7 +1840,12 @@ resize: {
             <button
               type="button"
               onClick={() => setMediaToolMode("crop")}
-              className="flex w-full items-center gap-3 text-left text-lg font-semibold text-white"
+         className={[
+  "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-lg font-semibold transition",
+  mediaToolMode === "crop"
+    ? "bg-white/10 text-white"
+    : "text-neutral-300 hover:bg-white/5 hover:text-white",
+].join(" ")}
             >
               <Crop className="h-5 w-5" />
               Crop and transform
@@ -1802,27 +1853,45 @@ resize: {
 
             {mediaToolMode === "crop" ? (
               <div className="mt-5 space-y-5">
-                <div>
-                  <p className="text-sm font-semibold text-white">
-                    Orientation
-                  </p>
+            <div>
+  <p className="text-sm font-semibold text-white">Orientation</p>
 
-                  <div className="mt-3 grid grid-cols-2 rounded-xl bg-neutral-800 p-1">
-                    <button
-                      type="button"
-                      className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-600 text-white"
-                    >
-                      <Minimize2 className="h-4 w-4 rotate-90" />
-                    </button>
+  <div className="mt-3 grid grid-cols-2 rounded-xl bg-neutral-800 p-1">
+    <button
+      type="button"
+      onClick={() => {
+        setMediaOrientation("portrait");
+        setCroppedAreaPixels(null);
+      }}
+      className={[
+        "inline-flex h-10 items-center justify-center rounded-lg transition",
+        mediaOrientation === "portrait"
+          ? "bg-neutral-600 text-white"
+          : "text-neutral-300 hover:bg-neutral-700 hover:text-white",
+      ].join(" ")}
+      title="Portrait crop"
+    >
+      <Minimize2 className="h-4 w-4 rotate-90" />
+    </button>
 
-                    <button
-                      type="button"
-                      className="inline-flex h-10 items-center justify-center rounded-lg text-neutral-300"
-                    >
-                      <Minimize2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
+    <button
+      type="button"
+      onClick={() => {
+        setMediaOrientation("landscape");
+        setCroppedAreaPixels(null);
+      }}
+      className={[
+        "inline-flex h-10 items-center justify-center rounded-lg transition",
+        mediaOrientation === "landscape"
+          ? "bg-neutral-600 text-white"
+          : "text-neutral-300 hover:bg-neutral-700 hover:text-white",
+      ].join(" ")}
+      title="Landscape crop"
+    >
+      <Minimize2 className="h-4 w-4" />
+    </button>
+  </div>
+</div>
 
                 <div className="space-y-2">
                   {mediaAspectRatioOptions.map((option) => {
@@ -1832,10 +1901,61 @@ resize: {
                       <button
                         key={option.value}
                         type="button"
-                        onClick={() => {
-                          setMediaAspectRatio(option.value);
-                          setMediaToolMode("crop");
-                        }}
+                       onClick={() => {
+  setMediaAspectRatio(option.value);
+  setMediaToolMode("crop");
+  setCroppedAreaPixels(null);
+
+  if (option.value === "1:1") {
+    setMediaCropWidth(1000);
+    setMediaCropHeight(1000);
+  }
+
+  if (option.value === "3:2") {
+    setMediaCropWidth(
+      mediaOrientation === "landscape" ? 1200 : 800
+    );
+    setMediaCropHeight(
+      mediaOrientation === "landscape" ? 800 : 1200
+    );
+  }
+
+  if (option.value === "5:4") {
+    setMediaCropWidth(
+      mediaOrientation === "landscape" ? 1250 : 1000
+    );
+    setMediaCropHeight(
+      mediaOrientation === "landscape" ? 1000 : 1250
+    );
+  }
+
+  if (option.value === "7:5") {
+    setMediaCropWidth(
+      mediaOrientation === "landscape" ? 1400 : 1000
+    );
+    setMediaCropHeight(
+      mediaOrientation === "landscape" ? 1000 : 1400
+    );
+  }
+
+  if (option.value === "16:9") {
+    setMediaCropWidth(
+      mediaOrientation === "landscape" ? 1600 : 900
+    );
+    setMediaCropHeight(
+      mediaOrientation === "landscape" ? 900 : 1600
+    );
+  }
+
+  if (option.value === "5:9") {
+    setMediaCropWidth(
+      mediaOrientation === "landscape" ? 1800 : 1000
+    );
+    setMediaCropHeight(
+      mediaOrientation === "landscape" ? 1000 : 1800
+    );
+  }
+}}
                         className={[
                         "flex h-11 w-full items-center justify-between rounded-xl px-3 text-left text-sm font-semibold transition",
                           selected
@@ -1854,17 +1974,50 @@ resize: {
                   })}
                 </div>
 
-                <label className="flex items-center gap-3 text-sm font-semibold text-neutral-200">
-                  <input
-                    type="checkbox"
-                    checked={mediaSaveAsNew}
-                    onChange={(event) =>
-                      setMediaSaveAsNew(event.target.checked)
-                    }
-                    className="h-4 w-4 accent-white"
-                  />
-                  Save as new media
-                </label>
+                {mediaAspectRatio === "freeform" ? (
+  <div className="rounded-2xl border border-white/10 bg-neutral-950/60 p-3">
+    <p className="text-sm font-semibold text-white">Freeform crop size</p>
+    <p className="mt-1 text-xs text-neutral-400">
+      Width aur height change karoge to crop frame ka ratio update hoga.
+    </p>
+
+    <div className="mt-3 grid grid-cols-2 gap-3">
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
+          Width
+        </label>
+        <input
+          type="number"
+          min={1}
+          value={mediaCropWidth}
+          onChange={(event) => {
+            setMediaCropWidth(Number(event.target.value || 1));
+            setCroppedAreaPixels(null);
+          }}
+          className="mt-2 h-10 w-full rounded-xl border border-white/15 bg-neutral-950 px-3 text-sm text-white outline-none focus:border-white/40"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
+          Height
+        </label>
+        <input
+          type="number"
+          min={1}
+          value={mediaCropHeight}
+          onChange={(event) => {
+            setMediaCropHeight(Number(event.target.value || 1));
+            setCroppedAreaPixels(null);
+          }}
+          className="mt-2 h-10 w-full rounded-xl border border-white/15 bg-neutral-950 px-3 text-sm text-white outline-none focus:border-white/40"
+        />
+      </div>
+    </div>
+  </div>
+) : null}
+
+              
 
                 {mediaTransformError ? (
                   <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -1888,7 +2041,12 @@ resize: {
             <button
               type="button"
               onClick={() => setMediaToolMode("resize")}
-              className="flex w-full items-center gap-3 text-left text-lg font-semibold text-white"
+             className={[
+  "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-lg font-semibold transition",
+  mediaToolMode === "resize"
+    ? "bg-white/10 text-white"
+    : "text-neutral-300 hover:bg-white/5 hover:text-white",
+].join(" ")}
             >
               <Maximize2 className="h-5 w-5" />
               Resize
@@ -1928,17 +2086,7 @@ resize: {
                   </div>
                 </div>
 
-                <label className="flex items-center gap-3 text-sm font-semibold text-neutral-200">
-                  <input
-                    type="checkbox"
-                    checked={mediaSaveAsNew}
-                    onChange={(event) =>
-                      setMediaSaveAsNew(event.target.checked)
-                    }
-                    className="h-4 w-4 accent-white"
-                  />
-                  Save as new media
-                </label>
+               
 
                 {mediaTransformError ? (
                   <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
