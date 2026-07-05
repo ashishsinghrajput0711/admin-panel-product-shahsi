@@ -1,10 +1,14 @@
 import { z } from "zod";
 
+const metafieldReferenceSchema = z.object({}).passthrough();
+
 const metafieldValueSchema = z.union([
   z.string(),
   z.number(),
   z.boolean(),
   z.array(z.string()),
+  z.array(metafieldReferenceSchema),
+  metafieldReferenceSchema,
   z.null(),
   z.undefined(),
 ]);
@@ -62,6 +66,12 @@ export const productSchema = z.object({
     .optional(),
 
   brand: z.string().optional(),
+
+  color: z.string().optional(),
+colorFamily: z.string().optional(),
+colorHex: z.string().optional(),
+colorStoryId: z.string().optional(),
+colorShadeId: z.string().optional(),
 
   categoryId: z.string().min(1, "Category is required"),
   subcategoryId: z.string().optional(),

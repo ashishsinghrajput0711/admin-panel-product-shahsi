@@ -39,6 +39,8 @@ type ProductFormRecordValue =
   | number
   | boolean
   | string[]
+  | Record<string, unknown>
+  | Array<Record<string, unknown>>
   | null
   | undefined;
 
@@ -64,62 +66,198 @@ function normalizeProductFormRecord(value: unknown) {
     }
 
     if (Array.isArray(item)) {
-      const list = item
+      cleaned[key] = item
         .map((entry) => {
           if (
+            entry === null ||
+            entry === undefined ||
             typeof entry === "string" ||
-            typeof entry === "number"
+            typeof entry === "number" ||
+            typeof entry === "boolean"
           ) {
             return entry;
           }
 
           if (entry && typeof entry === "object") {
-            const option = entry as Record<string, unknown>;
-            const value =
-              option.value ??
-              option.label ??
-              option.name ??
-              option.slug ??
-              option.code ??
-              option.id ??
-              "";
-
-            if (typeof value === "string" || typeof value === "number") {
-              return value;
-            }
+            return entry as Record<string, unknown>;
           }
 
           return "";
         })
-        .filter((entry): entry is string | number => entry !== "");
-
-     if (list.length) {
-  cleaned[key] = list.map(String);
-}
+        .filter((entry) => entry !== "") as ProductFormRecordValue;
 
       return;
     }
 
     if (item && typeof item === "object") {
-      const option = item as Record<string, unknown>;
-      const value =
-        option.value ??
-        option.label ??
-        option.name ??
-        option.slug ??
-        option.code ??
-        option.id ??
-        "";
-
-      if (
-        typeof value === "string" ||
-        typeof value === "number" ||
-        typeof value === "boolean"
-      ) {
-        cleaned[key] = value;
-      }
+      cleaned[key] = item as Record<string, unknown>;
     }
   });
+
+  return cleaned;
+}
+
+
+function normalizePrimitiveFormRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const cleaned: Record<
+    string,
+    string | number | boolean | string[] | number[] | null | undefined
+  > = {};
+
+  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+    if (!key) return;
+
+    if (
+      item === undefined ||
+      item === null ||
+      typeof item === "string" ||
+      typeof item === "number" ||
+      typeof item === "boolean"
+    ) {
+      cleaned[key] = item;
+      return;
+    }
+
+    if (Array.isArray(item)) {
+      cleaned[key] = item
+        .map((entry) => {
+          if (typeof entry === "string" || typeof entry === "number") {
+            return entry;
+          }
+
+          if (typeof entry === "boolean") {
+            return String(entry);
+          }
+
+          if (entry && typeof entry === "object") {
+            const record = entry as Record<string, unknown>;
+
+            return String(
+              record.value ||
+                record.label ||
+                record.name ||
+                record.slug ||
+                record.code ||
+                record.id ||
+                ""
+            );
+          }
+
+          return "";
+        })
+        .filter(Boolean) as string[];
+      return;
+    }
+
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+
+      cleaned[key] = String(
+        record.value ||
+          record.label ||
+          record.name ||
+          record.slug ||
+          record.code ||
+          record.id ||
+          ""
+      );
+    }
+  });
+
+  return cleaned;
+}
+
+
+function cleanCategoryMetafieldsForTaxonomySave(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const cleaned: Record<
+    string,
+    string | number | boolean | string[] | null | undefined
+  > = {};
+
+  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+    if (!key) return;
+
+    if (
+      item === undefined ||
+      item === null ||
+      typeof item === "string" ||
+      typeof item === "number" ||
+      typeof item === "boolean"
+    ) {
+      cleaned[key] = item;
+      return;
+    }
+
+    if (Array.isArray(item)) {
+      cleaned[key] = item
+        .map((entry) => {
+          if (
+            entry === null ||
+            entry === undefined ||
+            typeof entry === "string" ||
+            typeof entry === "number" ||
+            typeof entry === "boolean"
+          ) {
+            return String(entry);
+          }
+
+          if (entry && typeof entry === "object") {
+            const record = entry as Record<string, unknown>;
+
+            return String(
+              record.value ||
+                record.label ||
+                record.name ||
+                record.slug ||
+                record.code ||
+                record.id ||
+                ""
+            );
+          }
+
+          return "";
+        })
+        .filter(Boolean);
+
+      return;
+    }
+
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+
+      cleaned[key] = String(
+        record.value ||
+          record.label ||
+          record.name ||
+          record.slug ||
+          record.code ||
+          record.id ||
+          ""
+      );
+    }
+  });
+
+  return cleaned;
+}
+
+function cleanCategoryMetafieldsForSave(value: unknown) {
+  const normalized = normalizeProductFormRecord(value);
+
+  const {
+    colorHex,
+    colorFamily,
+    colorStoryId,
+    colorShadeId,
+    ...cleaned
+  } = normalized;
 
   return cleaned;
 }
@@ -131,6 +269,8 @@ type MetafieldValue =
   | number
   | boolean
   | string[]
+  | Record<string, unknown>
+  | Array<Record<string, unknown>>
   | null
   | undefined;
 
@@ -193,6 +333,11 @@ categoryMetafields?: MetafieldRecord | null;
   socialCaption?: string | null;
   socialImage?: string | null;
   image?: string | null;
+  color?: string | null;
+colorFamily?: string | null;
+colorHex?: string | null;
+colorStoryId?: string | null;
+colorShadeId?: string | null;
 
 
 
@@ -470,13 +615,33 @@ function getProductMetafields(product: BackendProduct): MetafieldRecord {
     "similarPrintProducts",
   ];
 
-  const possibleSources = [
-    product.metafields,
-    product.productMetafields,
-    product.data && typeof product.data === "object"
-      ? (product.data as { metafields?: MetafieldRecord }).metafields
-      : null,
-  ];
+const possibleSources = [
+  product.productMetafields,
+
+  product.metafields &&
+  typeof product.metafields === "object" &&
+  product.metafields.productMetafields &&
+  typeof product.metafields.productMetafields === "object"
+    ? product.metafields.productMetafields
+    : null,
+
+  product.metafields &&
+  typeof product.metafields === "object" &&
+  product.metafields.data &&
+  typeof product.metafields.data === "object" &&
+  product.metafields.data.metafields &&
+  typeof product.metafields.data.metafields === "object"
+    ? product.metafields.data.metafields
+    : null,
+
+  product.data && typeof product.data === "object"
+    ? (product.data as { metafields?: MetafieldRecord }).metafields
+    : null,
+
+  product.metafields,
+
+  product,
+];
 
   for (const source of possibleSources) {
     if (!source || typeof source !== "object") continue;
@@ -573,7 +738,14 @@ taxonomy: product.taxonomy
     description: product.description || "",
     shortDescription: product.shortDescription || "",
     brand: product.brand || "",
-    categoryId: primaryCategory,
+  
+color: product.color || "",
+colorFamily: product.colorFamily || "",
+colorHex: product.colorHex || "",
+colorStoryId: product.colorStoryId || "",
+colorShadeId: product.colorShadeId || "",
+categoryId: primaryCategory,
+  
     subcategoryId: product.subcategoryId || categories[1] || "",
     categories,
     businessType: normalizeBusinessType(product),
@@ -594,9 +766,9 @@ occasionTags: [],
 metaKeywords: [],
 productMetafields: normalizeProductFormRecord(getProductMetafields(product)),
 categoryMetafields: normalizeProductFormRecord(getCategoryMetafields(product)),
-dynamicAttributes: normalizeProductFormRecord(product.dynamicAttributes),
+dynamicAttributes: normalizePrimitiveFormRecord(product.dynamicAttributes),
 
-googleMerchantData: normalizeProductFormRecord(product.googleMerchantData),
+googleMerchantData: normalizePrimitiveFormRecord(product.googleMerchantData),
   };
 }
 
@@ -650,8 +822,47 @@ export default function EditProductPage() {
           );
         }
 
-      const nextProduct = extractProduct(data, productId);
-const mappedValues = mapProductToFormValues(nextProduct);
+  const nextProduct = extractProduct(data, productId);
+let mappedValues = mapProductToFormValues(nextProduct);
+
+const productRecord = nextProduct as unknown as Record<string, unknown>;
+
+const detailProductMetafields =
+  productRecord.productMetafields &&
+  typeof productRecord.productMetafields === "object" &&
+  !Array.isArray(productRecord.productMetafields)
+    ? productRecord.productMetafields
+    : productRecord.metafields &&
+        typeof productRecord.metafields === "object" &&
+        !Array.isArray(productRecord.metafields)
+      ? productRecord.metafields
+      : {};
+
+const normalizedDetailProductMetafields =
+  normalizeProductFormRecord(detailProductMetafields);
+
+mappedValues = {
+  ...mappedValues,
+  productMetafields: {
+    ...mappedValues.productMetafields,
+    ...normalizedDetailProductMetafields,
+
+    productFaqs:
+      normalizedDetailProductMetafields.productFaqs ??
+      mappedValues.productMetafields?.productFaqs ??
+      "",
+
+    careInstructions:
+      normalizedDetailProductMetafields.careInstructions ??
+      mappedValues.productMetafields?.careInstructions ??
+      "",
+
+    compositionOrigin:
+      normalizedDetailProductMetafields.compositionOrigin ??
+      mappedValues.productMetafields?.compositionOrigin ??
+      "",
+  },
+};
 const nextCategorySlugs = getProductCategorySlugs(nextProduct);
 
 let seoData: Awaited<ReturnType<typeof getProductSeo>> | null = null;
@@ -802,17 +1013,66 @@ try {
   return;
 }
 
-      console.log("PRODUCT_METAFIELDS_BEFORE_SAVE:", values.productMetafields);
-console.log("CATEGORY_METAFIELDS_BEFORE_SAVE:", values.categoryMetafields);
+ const productMetafieldsForSave: Record<string, ProductFormRecordValue> = {
+  ...(defaultValues?.productMetafields || {}),
+  ...(values.productMetafields || {}),
+};
 
-      try {
-  await saveProductMetafields({
-    apiRootUrl,
-    productId,
-    productMetafields: values.productMetafields,
-    categoryMetafields: values.categoryMetafields,
-    token,
-  });
+const pageReferenceKeys = [
+  "productFaqs",
+  "careInstructions",
+  "compositionOrigin",
+];
+
+pageReferenceKeys.forEach((key) => {
+  const currentValue = productMetafieldsForSave[key];
+
+  const isEmptyString =
+    typeof currentValue === "string" && currentValue.trim() === "";
+
+  const isEmptyArray =
+    Array.isArray(currentValue) && currentValue.length === 0;
+
+  const isEmptyObject =
+    currentValue &&
+    typeof currentValue === "object" &&
+    !Array.isArray(currentValue) &&
+    Object.keys(currentValue).length === 0;
+
+  if (
+    currentValue === undefined ||
+    currentValue === null ||
+    isEmptyString ||
+    isEmptyArray ||
+    isEmptyObject
+  ) {
+    const oldValue = defaultValues?.productMetafields?.[key];
+
+    if (oldValue !== undefined && oldValue !== null && oldValue !== "") {
+      productMetafieldsForSave[key] = oldValue;
+      return;
+    }
+
+    delete productMetafieldsForSave[key];
+  }
+});
+
+console.log("PRODUCT_METAFIELDS_BEFORE_SAVE:", productMetafieldsForSave);
+console.log(
+  "CATEGORY_METAFIELDS_BEFORE_SAVE:",
+  cleanCategoryMetafieldsForSave(values.categoryMetafields),
+);
+
+try {
+await saveProductMetafields({
+  apiRootUrl,
+  productId,
+  productMetafields: values.productMetafields,
+categoryMetafields: cleanCategoryMetafieldsForTaxonomySave(
+  values.categoryMetafields,
+),
+  token,
+});
 } catch (metafieldsError) {
   console.warn("PRODUCT_METAFIELDS_SAVE_FAILED:", metafieldsError);
 
@@ -825,17 +1085,20 @@ console.log("CATEGORY_METAFIELDS_BEFORE_SAVE:", values.categoryMetafields);
 
 try {
   if (values.taxonomyId) {
-    await saveProductCategoryMetafields({
-      apiRootUrl,
-      productId,
-      taxonomyId: values.taxonomyId,
-      categoryMetafields: values.categoryMetafields || {},
-      token,
-    });
+await saveProductCategoryMetafields({
+  apiRootUrl,
+  productId,
+  taxonomyId: values.taxonomyId,
+ categoryMetafields: cleanCategoryMetafieldsForTaxonomySave(
+  values.categoryMetafields,
+),
+  token,
+});
   }
   setSuccessMessage(
   "Product update ho gaya. SEO, tags, product metafields, category metafields, associated categories aur Google Merchant data save ho gaye.",
 );
+await loadProduct({ silent: true });
 } catch (categoryMetafieldsError) {
   console.warn("CATEGORY_METAFIELDS_SAVE_FAILED:", categoryMetafieldsError);
 

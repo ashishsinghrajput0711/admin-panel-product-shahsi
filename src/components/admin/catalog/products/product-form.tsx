@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 
 import { ProductTagsSection } from "@/components/admin/catalog/products/product-tags-section";
@@ -105,6 +105,42 @@ type CatalogAttributeOption = {
   imageUrl?: string | null;
   sortOrder?: number | null;
   isActive?: boolean | null;
+};
+
+
+type ColorShade = {
+  id?: string;
+  name?: string | null;
+  label?: string | null;
+  value?: string | null;
+  colorName?: string | null;
+  family?: string | null;
+  colorFamily?: string | null;
+  hex?: string | null;
+  colorHex?: string | null;
+  hexCode?: string | null;
+  isActive?: boolean | null;
+};
+
+type ColorStory = {
+  id: string;
+  name?: string | null;
+  title?: string | null;
+  family?: string | null;
+  colorFamily?: string | null;
+  hex?: string | null;
+  colorHex?: string | null;
+  shades?: ColorShade[] | null;
+  colors?: ColorShade[] | null;
+  options?: ColorShade[] | null;
+  isActive?: boolean | null;
+};
+
+type ColorStoriesApiResponse = {
+  success?: boolean;
+  data?: ColorStory[] | { items?: ColorStory[]; data?: ColorStory[] };
+  items?: ColorStory[];
+  colorStories?: ColorStory[];
 };
 
 type CatalogAttribute = {
@@ -468,6 +504,102 @@ async function fetchProductCatalogAttributes() {
   return [];
 }
 
+
+async function fetchColorStories(category: string) {
+  const cleanCategory = String(category || "").trim();
+
+  if (!cleanCategory) {
+    return [];
+  }
+
+  const params = new URLSearchParams();
+  params.set("category", cleanCategory);
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/color-stories?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const data = (await response.json().catch(() => null)) as
+    | ColorStoriesApiResponse
+    | null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Color stories API failed: ${response.status}`),
+    );
+  }
+
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.colorStories)) return data.colorStories;
+  if (Array.isArray(data?.data?.items)) return data.data.items;
+  if (Array.isArray(data?.data?.data)) return data.data.data;
+
+  return [];
+}
+
+function getColorStoryName(story: ColorStory) {
+  return String(story.name || story.title || "Color story");
+}
+
+function getColorShadeName(shade: ColorShade, story: ColorStory) {
+  return String(
+    shade.name ||
+      shade.label ||
+      shade.value ||
+      shade.colorName ||
+      story.name ||
+      story.title ||
+      "Color",
+  );
+}
+
+function getColorShadeHex(shade: ColorShade, story: ColorStory) {
+  return String(
+    shade.colorHex ||
+      shade.hex ||
+      shade.hexCode ||
+      story.colorHex ||
+      story.hex ||
+      "",
+  );
+}
+
+function getColorFamily(shade: ColorShade, story: ColorStory) {
+  return String(
+    shade.colorFamily ||
+      shade.family ||
+      story.colorFamily ||
+      story.family ||
+      story.name ||
+      story.title ||
+      "",
+  );
+}
+
+function getColorShades(story: ColorStory) {
+  const shades = story.shades || story.colors || story.options || [];
+
+  if (Array.isArray(shades) && shades.length) {
+    return shades.filter((shade) => shade.isActive !== false);
+  }
+
+  return [
+    {
+      id: story.id,
+      name: story.name || story.title,
+      colorFamily: story.colorFamily || story.family,
+      colorHex: story.colorHex || story.hex,
+      isActive: true,
+    },
+  ];
+}
+
 function getAttributeKey(attribute: CatalogAttribute) {
   return String(
     attribute.slug ||
@@ -562,8 +694,13 @@ function getDefaultFormValues(
     description: "",
     shortDescription: "",
     brand: "",
-   categoryId: "",
-subcategoryId: "",
+  
+color: "",
+colorFamily: "",
+colorHex: "",
+colorStoryId: "",
+colorShadeId: "",
+categoryId: "",
 categories: [],
     businessType: "SHAHSI",
     commerceTypes: ["RETAIL"],
@@ -770,6 +907,11 @@ const [catalogAttributes, setCatalogAttributes] = useState<CatalogAttribute[]>([
 const [isAttributesLoading, setIsAttributesLoading] = useState(true);
 const [attributesError, setAttributesError] = useState<string | null>(null);
 
+const [colorStories, setColorStories] = useState<ColorStory[]>([]);
+const [isColorLoading, setIsColorLoading] = useState(true);
+const [colorError, setColorError] = useState<string | null>(null);
+const [colorSearch, setColorSearch] = useState("");
+
 const form = useForm<ProductFormValues>({
   resolver: zodResolver(productSchema) as Resolver<ProductFormValues>,
   defaultValues: getDefaultFormValues(defaultValues),
@@ -781,9 +923,12 @@ const form = useForm<ProductFormValues>({
   const selectedTaxonomyId = form.watch("taxonomyId") || "";
   const selectedCategorySlugs = form.watch("categories") ?? [];
   const commerceTypes = form.watch("commerceTypes") ?? [];
-  const descriptionValue = form.watch("description") ?? "";
+const descriptionValue = form.watch("description") ?? "";
+const selectedColor = form.watch("color") || "";
+const selectedColorFamily = form.watch("colorFamily") || "";
+const selectedColorHex = form.watch("colorHex") || "";
 
-  const formValues = form.watch();
+const formValues = form.watch();
 
 const normalizedCategoryId = String(categoryId || "").trim();
 
@@ -835,6 +980,98 @@ const googleMerchantData =
 
   const dynamicAttributes =
   ((form.watch("dynamicAttributes" as any) || {}) as Record<string, unknown>);
+
+  const colorOptions = useMemo(() => {
+  const search = colorSearch.trim().toLowerCase();
+
+  return colorStories
+    .flatMap((story) =>
+      getColorShades(story).map((shade) => {
+        const name = getColorShadeName(shade, story);
+        const family = getColorFamily(shade, story);
+        const hex = getColorShadeHex(shade, story);
+
+        return {
+          story,
+          shade,
+          storyId: story.id,
+          shadeId: shade.id || "",
+          name,
+          family,
+          hex,
+          storyName: getColorStoryName(story),
+        };
+      }),
+    )
+    .filter((item) => {
+      if (!search) return true;
+
+      return [item.name, item.family, item.hex, item.storyName]
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
+    });
+}, [colorSearch, colorStories]);
+
+function selectProductColor(item: {
+  storyId: string;
+  shadeId: string;
+  name: string;
+  family: string;
+  hex: string;
+}) {
+  form.setValue("color", item.name, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorFamily", item.family, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorHex", item.hex, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorStoryId", item.storyId, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorShadeId", item.shadeId, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+}
+
+function clearProductColor() {
+  form.setValue("color", "", {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorFamily", "", {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorHex", "", {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorStoryId", "", {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+
+  form.setValue("colorShadeId", "", {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+}
 
 
 
@@ -923,6 +1160,60 @@ const googleMerchantData =
     ignore = true;
   };
 }, []);
+
+
+useEffect(() => {
+  let ignore = false;
+
+  async function loadColorStories() {
+    const colorCategory =
+      selectedCategoryOption?.slug ||
+      selectedCategoryOption?.name ||
+      selectedCategoryOption?.path ||
+      "";
+
+    if (!colorCategory) {
+      setColorStories([]);
+      setColorError(null);
+      setIsColorLoading(false);
+      return;
+    }
+
+    try {
+      setIsColorLoading(true);
+      setColorError(null);
+
+      const result = await fetchColorStories(colorCategory);
+
+      const activeStories = result
+        .filter((story) => story.isActive !== false)
+        .sort((a, b) =>
+          getColorStoryName(a).localeCompare(getColorStoryName(b)),
+        );
+
+      if (!ignore) {
+        setColorStories(activeStories);
+      }
+    } catch (error) {
+      if (!ignore) {
+        setColorStories([]);
+        setColorError(
+          error instanceof Error ? error.message : "Color stories load failed.",
+        );
+      }
+    } finally {
+      if (!ignore) {
+        setIsColorLoading(false);
+      }
+    }
+  }
+
+  loadColorStories();
+
+  return () => {
+    ignore = true;
+  };
+}, [selectedCategoryOption]);
 
   function toggleCommerceType(type: ProductFormValues["commerceTypes"][number]) {
     const exists = commerceTypes.includes(type);
@@ -1221,6 +1512,8 @@ onSubmit(payload);
           </Field>
         </div>
       </FormSection>
+
+   
 
       <ProductDynamicAttributesSection
   attributes={catalogAttributes}

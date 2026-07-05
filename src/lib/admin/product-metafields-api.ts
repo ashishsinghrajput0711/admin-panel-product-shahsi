@@ -3,6 +3,8 @@ export type MetafieldValue =
   | number
   | boolean
   | string[]
+  | Record<string, unknown>
+  | Array<Record<string, unknown>>
   | null
   | undefined;
 
@@ -82,38 +84,100 @@ function getApiError(data: unknown, fallback: string) {
   return fallback;
 }
 
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeTextValue(value: MetafieldValue) {
+  if (value === null || value === undefined) return "";
+
+  if (typeof value === "string") return value;
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return "";
+}
+
+function normalizeStringListValue(value: MetafieldValue) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (typeof item === "number" || typeof item === "boolean") {
+          return String(item);
+        }
+        if (isPlainObject(item)) {
+          return String(item.id || item.slug || item.handle || item.title || "");
+        }
+        return "";
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function normalizePageReferenceValue(value: MetafieldValue) {
+  if (isPlainObject(value)) {
+    return value;
+  }
+
+  return normalizeTextValue(value);
+}
+
+function normalizeSeeMoreFromValue(value: MetafieldValue) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") return item.trim();
+        if (isPlainObject(item)) {
+          return String(item.slug || item.handle || item.id || "").trim();
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join(",");
+  }
+
+  return normalizeTextValue(value);
+}
+
 function cleanAllowedProductMetafields(values?: MetafieldRecord | null) {
   const source = values || {};
 
   return {
-    productFaqs: String(source.productFaqs ?? ""),
-    careInstructions: String(source.careInstructions ?? ""),
-    compositionOrigin: String(source.compositionOrigin ?? ""),
-    customBadge: String(source.customBadge ?? ""),
-    seeMoreFrom: String(source.seeMoreFrom ?? ""),
-    primaryCollection: String(source.primaryCollection ?? ""),
-    secondaryCollection: String(source.secondaryCollection ?? ""),
-    similarColorProducts: Array.isArray(source.similarColorProducts)
-      ? source.similarColorProducts.map(String).filter(Boolean)
-      : [],
-    matchWithAccessories: Array.isArray(source.matchWithAccessories)
-      ? source.matchWithAccessories.map(String).filter(Boolean)
-      : [],
-    completeTheLook: Array.isArray(source.completeTheLook)
-      ? source.completeTheLook.map(String).filter(Boolean)
-      : [],
-    advancedProductTitle: String(source.advancedProductTitle ?? ""),
-    similarStyleProduct: Array.isArray(source.similarStyleProduct)
-      ? source.similarStyleProduct.map(String).filter(Boolean)
-      : [],
-    style: String(source.style ?? ""),
-    fabric: String(source.fabric ?? ""),
-    print: String(source.print ?? ""),
-    printSwatch: String(source.printSwatch ?? ""),
-    similarPrintTitle: String(source.similarPrintTitle ?? ""),
-    similarPrintProducts: Array.isArray(source.similarPrintProducts)
-      ? source.similarPrintProducts.map(String).filter(Boolean)
-      : [],
+    productFaqs: normalizePageReferenceValue(source.productFaqs),
+    careInstructions: normalizePageReferenceValue(source.careInstructions),
+    compositionOrigin: normalizePageReferenceValue(source.compositionOrigin),
+
+    customBadge: normalizeTextValue(source.customBadge),
+    seeMoreFrom: normalizeSeeMoreFromValue(source.seeMoreFrom),
+    primaryCollection: normalizeTextValue(source.primaryCollection),
+    secondaryCollection: normalizeTextValue(source.secondaryCollection),
+
+    similarColorProducts: normalizeStringListValue(source.similarColorProducts),
+    matchWithAccessories: normalizeStringListValue(source.matchWithAccessories),
+    completeTheLook: normalizeStringListValue(source.completeTheLook),
+
+    advancedProductTitle: normalizeTextValue(source.advancedProductTitle),
+    similarStyleProduct: normalizeStringListValue(source.similarStyleProduct),
+
+    style: normalizeTextValue(source.style),
+    fabric: normalizeTextValue(source.fabric),
+    print: normalizeTextValue(source.print),
+    printSwatch: normalizeTextValue(source.printSwatch),
+    similarPrintTitle: normalizeTextValue(source.similarPrintTitle),
+    similarPrintProducts: normalizeStringListValue(source.similarPrintProducts),
   };
 }
 

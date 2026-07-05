@@ -24,11 +24,27 @@ import {
   type TaxonomyCategory,
 } from "@/lib/admin/product-taxonomy-metafields-api";
 
+type PageReferenceValue = {
+  id?: string | null;
+  title?: string | null;
+  slug?: string | null;
+  handle?: string | null;
+  status?: string | null;
+  type?: string | null;
+  pageType?: string | null;
+  isHidden?: boolean | null;
+  isActive?: boolean | null;
+  publishedAt?: string | null;
+  updatedAt?: string | null;
+};
+
 type MetafieldValue =
   | string
   | number
   | boolean
   | string[]
+  | PageReferenceValue
+  | PageReferenceValue[]
   | null
   | undefined;
 
@@ -37,8 +53,12 @@ type ProductFieldType =
   | "textarea"
   | "tags"
   | "select"
+  | "attribute_option_picker"
+  | "media_picker"
   | "product_picker"
-  | "collection_picker";
+  | "collection_picker"
+  | "category_list_picker"
+  | "page_picker";
 
 type ProductMetafieldField = {
   key: string;
@@ -46,6 +66,7 @@ type ProductMetafieldField = {
   type: ProductFieldType;
   placeholder?: string;
   options?: string[];
+  attributeKey?: string;
 };
 
 type ProductPickerItem = {
@@ -142,6 +163,43 @@ type CollectionPickerApiResponse = {
 };
 
 
+type CmsPagePickerItem = {
+  id: string;
+  title?: string | null;
+  slug?: string | null;
+  handle?: string | null;
+  description?: string | null;
+  status?: string | null;
+  type?: string | null;
+  isHidden?: boolean | null;
+  isActive?: boolean | null;
+  publishedAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type CmsPagePickerApiResponse = {
+  success?: boolean;
+  data?:
+    | CmsPagePickerItem[]
+    | {
+        data?: CmsPagePickerItem[];
+        pages?: CmsPagePickerItem[];
+        items?: CmsPagePickerItem[];
+      };
+  pages?: CmsPagePickerItem[];
+  items?: CmsPagePickerItem[];
+  meta?: {
+    page?: number;
+    limit?: number;
+    total?: number;
+    totalPages?: number;
+    count?: number;
+  };
+  message?: string;
+  error?: unknown;
+};
+
+
 type AttributeOptionItem = {
   id?: string | null;
   label?: string | null;
@@ -149,7 +207,10 @@ type AttributeOptionItem = {
   value?: string | null;
   colorHex?: string | null;
   hexCode?: string | null;
+  colorCode?: string | null;
   hex?: string | null;
+  imageUrl?: string | null;
+  sortOrder?: number | null;
   isActive?: boolean | null;
 };
 
@@ -185,37 +246,72 @@ type ColorPresetOption = {
   colorHex: string;
 };
 
+type ProductAttributeOption = {
+  id: string;
+  label: string;
+  value: string;
+  colorHex?: string;
+  imageUrl?: string;
+};
+
+type MediaLibraryItem = {
+  id?: string | null;
+  url?: string | null;
+  secureUrl?: string | null;
+  thumbnailUrl?: string | null;
+  thumbnail?: string | null;
+  name?: string | null;
+  title?: string | null;
+  altText?: string | null;
+  type?: string | null;
+  resourceType?: string | null;
+  status?: string | null;
+};
+
+type MediaLibraryApiResponse = {
+  success?: boolean;
+  data?:
+    | MediaLibraryItem[]
+    | {
+        items?: MediaLibraryItem[];
+        data?: MediaLibraryItem[];
+      };
+  items?: MediaLibraryItem[];
+  message?: string;
+  error?: unknown;
+};
+
 const productMetafieldFields: ProductMetafieldField[] = [
-  {
-    key: "productFaqs",
-    label: "Product FAQs",
-    type: "textarea",
-    placeholder: "Add product FAQs",
-  },
-  {
-    key: "careInstructions",
-    label: "Care & Instructions",
-    type: "text",
-    placeholder: "Dry clean only",
-  },
-  {
-    key: "compositionOrigin",
-    label: "Composition & Origin",
-    type: "text",
-    placeholder: "Made in India. Fabric: premium silk blend.",
-  },
+ {
+  key: "productFaqs",
+  label: "Product FAQs",
+  type: "page_picker",
+  placeholder: "Select FAQ page",
+},
+{
+  key: "careInstructions",
+  label: "Care & Instructions",
+  type: "page_picker",
+  placeholder: "Select care instructions page",
+},
+{
+  key: "compositionOrigin",
+  label: "Composition & Origin",
+  type: "page_picker",
+  placeholder: "Select composition/origin page",
+},
   {
     key: "customBadge",
     label: "Custom Badge",
     type: "text",
     placeholder: "Premium / New / Limited",
   },
-  {
-    key: "seeMoreFrom",
-    label: "See More from",
-    type: "text",
-    placeholder: "Shahida",
-  },
+ {
+  key: "seeMoreFrom",
+  label: "See More from",
+  type: "category_list_picker",
+  placeholder: "Select categories",
+},
 {
   key: "primaryCollection",
   label: "Primary category",
@@ -258,29 +354,32 @@ const productMetafieldFields: ProductMetafieldField[] = [
     type: "product_picker",
     placeholder: "Select similar style products",
   },
-  {
+    {
     key: "style",
     label: "Style",
-    type: "text",
-    placeholder: "Bridal",
+    type: "attribute_option_picker",
+    attributeKey: "style",
+    placeholder: "Select style",
   },
   {
     key: "fabric",
     label: "Fabric",
-    type: "text",
-    placeholder: "Silk Blend",
+    type: "attribute_option_picker",
+    attributeKey: "fabric",
+    placeholder: "Select fabric",
   },
   {
     key: "print",
     label: "Print",
-    type: "text",
-    placeholder: "Solid",
+    type: "attribute_option_picker",
+    attributeKey: "print",
+    placeholder: "Select print",
   },
   {
     key: "printSwatch",
     label: "Print Swatch",
-    type: "text",
-    placeholder: "https://cdn.example.com/swatches/silk-solid.jpg",
+    type: "media_picker",
+    placeholder: "Select image",
   },
   {
     key: "similarPrintTitle",
@@ -588,6 +687,177 @@ function extractCollectionItems(data: CollectionPickerApiResponse | null) {
 }
 
 
+function extractCmsPageItems(data: CmsPagePickerApiResponse | null) {
+  if (!data) return [];
+
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.pages)) return data.pages;
+  if (Array.isArray(data.items)) return data.items;
+
+  if (data.data && typeof data.data === "object") {
+    if (Array.isArray(data.data.data)) return data.data.data;
+    if (Array.isArray(data.data.pages)) return data.data.pages;
+    if (Array.isArray(data.data.items)) return data.data.items;
+  }
+
+  return [];
+}
+
+
+function readText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+
+  if (typeof value === "string") {
+    const text = value.trim();
+
+    if (!text || text === "[object Object]") return "";
+
+    return text;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+
+  if (Array.isArray(value)) return "";
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+
+    const directText =
+      readText(record.title) ||
+      readText(record.name) ||
+      readText(record.label) ||
+      readText(record.slug) ||
+      readText(record.handle) ||
+      readText(record.id);
+
+    if (directText) return directText;
+
+    if (
+      record.value &&
+      typeof record.value === "object" &&
+      !Array.isArray(record.value)
+    ) {
+      return readText(record.value);
+    }
+
+    return readText(record.value);
+  }
+
+  return "";
+}
+
+function normalizePageReferenceValue(value: MetafieldValue) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const record = value as Record<string, unknown>;
+
+  const nestedValue =
+    record.value && typeof record.value === "object" && !Array.isArray(record.value)
+      ? (record.value as Record<string, unknown>)
+      : record;
+
+  return {
+    id: readText(nestedValue.id),
+    title:
+      readText(nestedValue.title) ||
+      readText(nestedValue.name) ||
+      readText(nestedValue.label) ||
+      readText(nestedValue.handle) ||
+      readText(nestedValue.slug) ||
+      readText(nestedValue.id),
+    slug: readText(nestedValue.slug) || readText(nestedValue.handle),
+    handle: readText(nestedValue.handle) || readText(nestedValue.slug),
+    status: readText(nestedValue.status),
+    type: "page_reference",
+    pageType: readText(nestedValue.pageType) || readText(nestedValue.type) || "PAGE",
+    isHidden:
+      typeof nestedValue.isHidden === "boolean" ? nestedValue.isHidden : undefined,
+    isActive:
+      typeof nestedValue.isActive === "boolean" ? nestedValue.isActive : undefined,
+    publishedAt: readText(nestedValue.publishedAt),
+    updatedAt: readText(nestedValue.updatedAt),
+  };
+}
+
+function getCmsPageTitle(page: CmsPagePickerItem | PageReferenceValue) {
+  return (
+    readText(page.title) ||
+    readText(page.handle) ||
+    readText(page.slug) ||
+    readText(page.id)
+  );
+}
+
+function normalizePageReference(page: CmsPagePickerItem): PageReferenceValue {
+  return {
+    id: readText(page.id),
+    title:
+      readText(page.title) ||
+      readText(page.handle) ||
+      readText(page.slug) ||
+      readText(page.id),
+    slug: readText(page.slug) || readText(page.handle),
+    handle: readText(page.handle) || readText(page.slug),
+    status: readText(page.status),
+    type: "page_reference",
+    pageType: readText(page.type) || "PAGE",
+    isHidden: page.isHidden ?? null,
+    isActive: page.isActive ?? null,
+    publishedAt: readText(page.publishedAt) || null,
+    updatedAt: readText(page.updatedAt) || null,
+  };
+}
+
+function isPageReferenceObject(value: MetafieldValue): value is PageReferenceValue {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+async function fetchCmsPagePickerItems({
+  search,
+  page = 1,
+  limit = 20,
+}: {
+  search: string;
+  page?: number;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+
+  if (search.trim()) {
+    params.set("search", search.trim());
+  }
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/cms/pages/picker?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const text = await response.text();
+  const data = text.trim()
+    ? (JSON.parse(text) as CmsPagePickerApiResponse)
+    : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `CMS page picker failed: ${response.status}`),
+    );
+  }
+
+  return {
+    items: extractCmsPageItems(data),
+    meta: data?.meta || null,
+  };
+}
+
 function flattenCategoryPickerItems(
   nodes: CategoryPickerItem[],
   depth = 0,
@@ -846,6 +1116,198 @@ async function fetchColorPresetOptions() {
   if (!colorAttribute) return [];
 
   return mapColorOptions(colorAttribute);
+}
+
+function mapAttributeOptions(attribute: CatalogAttributeItem): ProductAttributeOption[] {
+  if (!Array.isArray(attribute.options)) return [];
+
+  return attribute.options
+    .map((option) => {
+      const label = String(option.label || option.name || option.value || "").trim();
+      const value = String(option.value || label).trim();
+
+      if (!label || !value) return null;
+
+      return {
+        id: String(option.id || value),
+        label,
+        value,
+        colorHex: normalizeHexValue(option.colorHex || option.hexCode || option.hex),
+        imageUrl: String(option.imageUrl || "").trim(),
+      };
+    })
+    .filter(Boolean) as ProductAttributeOption[];
+}
+
+function matchAttributeByKey(attribute: CatalogAttributeItem, key: string) {
+  const identity = getAttributeIdentity(attribute);
+  const normalizedKey = key.trim().toLowerCase();
+
+  return (
+    identity === normalizedKey ||
+    identity === normalizedKey.replace(/_/g, "-") ||
+    identity === normalizedKey.replace(/-/g, "_") ||
+    identity.includes(normalizedKey)
+  );
+}
+
+async function fetchAttributeOptions(attributeKey: string) {
+  const params = new URLSearchParams();
+
+  params.set("page", "1");
+  params.set("limit", "100");
+  params.set("search", attributeKey);
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const text = await response.text();
+  const data = text.trim() ? (JSON.parse(text) as AttributesApiResponse) : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `${attributeKey} attributes load failed: ${response.status}`)
+    );
+  }
+
+  const attributes = extractAttributes(data);
+
+  const matchedAttribute =
+    attributes.find((attribute) => matchAttributeByKey(attribute, attributeKey)) ||
+    attributes[0];
+
+  if (!matchedAttribute) {
+    return {
+      attribute: null,
+      options: [],
+    };
+  }
+
+  return {
+    attribute: matchedAttribute,
+    options: mapAttributeOptions(matchedAttribute),
+  };
+}
+
+async function createAttributeOption({
+  attributeId,
+  label,
+}: {
+  attributeId: string;
+  label: string;
+}) {
+  const cleanLabel = label.trim();
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attributes/${encodeURIComponent(attributeId)}/options`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        label: cleanLabel,
+        value: cleanLabel
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, ""),
+        colorHex: "",
+        hexCode: "",
+        colorCode: "",
+        imageUrl: "",
+        sortOrder: 0,
+        isActive: true,
+      }),
+    }
+  );
+
+  const text = await response.text();
+  const data = text.trim() ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Attribute option create failed: ${response.status}`)
+    );
+  }
+
+  return data;
+}
+
+function extractMediaLibraryItems(data: MediaLibraryApiResponse | null) {
+  if (!data) return [];
+
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.items)) return data.items;
+
+  if (data.data && typeof data.data === "object") {
+    if (Array.isArray(data.data.items)) return data.data.items;
+    if (Array.isArray(data.data.data)) return data.data.data;
+  }
+
+  return [];
+}
+
+function getMediaUrl(item: MediaLibraryItem) {
+  return String(
+    item.secureUrl ||
+      item.thumbnailUrl ||
+      item.thumbnail ||
+      item.url ||
+      ""
+  ).trim();
+}
+
+function getMediaTitle(item: MediaLibraryItem) {
+  return String(item.title || item.name || item.altText || item.id || "Untitled media").trim();
+}
+
+function isValidImageUrl(value: string) {
+  const cleanValue = String(value || "").trim();
+
+  if (!cleanValue) return false;
+
+  return (
+    /^https?:\/\//i.test(cleanValue) ||
+    cleanValue.startsWith("/") ||
+    cleanValue.startsWith("data:image/")
+  );
+}
+
+async function fetchMediaLibraryItems(search: string) {
+  const params = new URLSearchParams();
+
+  params.set("page", "1");
+  params.set("limit", "30");
+
+  if (search.trim()) {
+    params.set("search", search.trim());
+  }
+
+  params.set("type", "IMAGE");
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/media-library?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const text = await response.text();
+  const data = text.trim() ? (JSON.parse(text) as MediaLibraryApiResponse) : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `Media library load failed: ${response.status}`)
+    );
+  }
+
+  return extractMediaLibraryItems(data).filter((item) => Boolean(getMediaUrl(item)));
 }
 
 function isColorMetafield(definition: CategoryMetafieldDefinition) {
@@ -1354,24 +1816,19 @@ function handleDragEnd() {
   setDragOverId(null);
 }
 
-  return (
-    <div className="rounded-xl border border-neutral-200 bg-white">
+return (
+    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
       {!isEditorOpen ? (
         <button
           type="button"
           onClick={openEditor}
-          className="grid w-full grid-cols-[220px_1fr] items-center gap-4 px-4 py-3 text-left transition hover:bg-neutral-50"
+     className="grid w-full grid-cols-1 items-center gap-2 px-3 py-2 text-left transition hover:bg-neutral-50"
         >
-          <div>
-            <p className="text-sm font-medium text-neutral-950">{label}</p>
-            <p className="mt-0.5 text-xs text-neutral-500">
-              Product {multiple ? "(List)" : ""}
-            </p>
-          </div>
+         
 
           <div className="min-w-0">
             {selectedIds.length > 0 ? (
-              <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-lg border border-neutral-300 bg-white px-2 py-1.5">
+              <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-2 py-1.5 shadow-[inset_0_1px_0_rgba(0,0,0,0.02)]">
                 {selectedIds.slice(0, 4).map((id) => {
                   const product = selectedProductsById[id];
                   const title = product ? getProductTitle(product) : id;
@@ -1380,7 +1837,7 @@ function handleDragEnd() {
                   return (
                     <span
                       key={id}
-                      className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-neutral-100 px-1.5 py-1 text-sm text-neutral-900"
+                   className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-neutral-100 px-1.5 py-1 text-[13px] text-neutral-900 ring-1 ring-neutral-200/60"
                     >
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded bg-white ring-1 ring-neutral-200">
                         {image ? (
@@ -1423,12 +1880,7 @@ function handleDragEnd() {
       ) : (
         <div className="animate-in slide-in-from-top-1 duration-150">
           <div className="grid grid-cols-[220px_1fr] gap-4 border-b border-neutral-200 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-neutral-950">{label}</p>
-              <p className="mt-0.5 text-xs text-neutral-500">
-                Product {multiple ? "(List)" : ""}
-              </p>
-            </div>
+           
 
             <div className="flex items-center justify-between gap-3">
               <Button
@@ -1543,8 +1995,8 @@ function handleDragEnd() {
             </div>
           )}
 
-          <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-3">
-            <p className="text-[11px] text-neutral-400">
+         <div className="flex items-center justify-between border-t border-neutral-100 px-3 py-2">
+         <p className="text-[10px] text-neutral-400">
               Product IDs backend me {multiple ? "ordered array" : "single ID"} ke
               form me save honge.
             </p>
@@ -1664,31 +2116,28 @@ function CategoryPickerInput({
     };
   }, []);
 
-  return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-medium text-neutral-950">{label}</p>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            Category path/slug backend me save hoga.
-          </p>
-        </div>
+return (
+<div className="rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-[inset_0_1px_0_rgba(0,0,0,0.02)]">
+      <div className="mb-2 flex items-center justify-between gap-3">
+ <p className="truncate text-[11px] text-neutral-400">
+  Category path/slug backend me save hoga.
+</p>
 
-        <button
-          type="button"
-          onClick={loadCategories}
-          disabled={isLoading}
-          className="w-fit rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isLoading ? "Loading..." : "Refresh"}
-        </button>
-      </div>
+  <button
+    type="button"
+    onClick={loadCategories}
+    disabled={isLoading}
+   className="shrink-0 text-[11px] font-semibold text-neutral-500 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-60"
+  >
+    {isLoading ? "Loading..." : "Refresh"}
+  </button>
+</div>
 
       <select
         value={textValue}
         onChange={(event) => onChange(event.target.value)}
         disabled={isLoading}
-        className="mt-3 h-11 w-full cursor-pointer rounded-xl border border-neutral-200 bg-[#fbfaf6] px-3 text-sm font-medium text-neutral-950 outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
+     className="h-10 w-full cursor-pointer rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-[13px] font-medium text-neutral-950 outline-none transition hover:bg-white focus:border-neutral-950 focus:bg-white disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
       >
         <option value="">
           {isLoading ? "Loading categories..." : placeholder || "Select category"}
@@ -1714,7 +2163,7 @@ function CategoryPickerInput({
         })}
       </select>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {selectedCategory ? (
           <>
             <span className="rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
@@ -1745,7 +2194,7 @@ function CategoryPickerInput({
       </div>
 
       {textValue ? (
-        <p className="mt-2 text-xs text-neutral-400">
+       <p className="mt-1 truncate text-[11px] text-neutral-400">
           Saved category path/slug:{" "}
           <span className="font-mono font-semibold text-neutral-700">
             {textValue}
@@ -1762,6 +2211,882 @@ function CategoryPickerInput({
   );
 }
 
+
+
+
+function parseCategoryListValue(value: MetafieldValue) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+
+function titleCaseFromSlug(value: string) {
+  const lastPart = String(value || "")
+    .split("/")
+    .filter(Boolean)
+    .pop();
+
+  if (!lastPart) return value;
+
+  return lastPart
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getReadableCategoryChipLabel(
+  path: string,
+  category?: CategoryPickerItem,
+) {
+  const record = category as unknown as Record<string, unknown> | undefined;
+
+  const categoryName = record
+    ? String(record.name || record.title || record.label || "").trim()
+    : "";
+
+  if (categoryName) return categoryName;
+
+  return titleCaseFromSlug(path);
+}
+
+function CategoryListPickerInput({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: MetafieldValue;
+  placeholder?: string | null;
+  onChange: (value: MetafieldValue) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [categories, setCategories] = useState<CategoryPickerItem[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+
+  const selectedPaths = parseCategoryListValue(value);
+  const selectedSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
+
+  const selectedCategories = useMemo(() => {
+    return selectedPaths.map((path) => {
+  const matched = categories.find((category) => {
+  const record = category as unknown as Record<string, unknown>;
+  const value = getCategoryPickerValue(category);
+  const slug = String(record.slug || "").trim();
+  const url = String(record.url || "").replace(/^\//, "").trim();
+
+  return value === path || slug === path || url === path;
+});
+
+      return {
+        path,
+        category: matched,
+      };
+    });
+  }, [categories, selectedPaths]);
+
+  const filteredCategories = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    if (!normalizedSearch) return categories;
+
+    return categories.filter((category) => {
+      const haystack = [
+        getCategoryPickerLabel(category),
+        getCategoryPickerValue(category),
+        category.name,
+        category.slug,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [categories, search]);
+
+  async function loadCategories() {
+    try {
+      setIsLoading(true);
+      setPickerError(null);
+
+      const items = await fetchCategoryPickerItems();
+
+      setCategories(items);
+    } catch (error) {
+      setCategories([]);
+      setPickerError(
+        error instanceof Error ? error.message : "Categories load failed.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen || categories.length > 0) return;
+
+    loadCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  function updateSelectedPaths(nextPaths: string[]) {
+    onChange(
+      Array.from(
+        new Set(
+          nextPaths.map((path) => String(path || "").trim()).filter(Boolean),
+        ),
+      ),
+    );
+  }
+
+  function toggleCategory(category: CategoryPickerItem) {
+    const path = getCategoryPickerValue(category);
+
+    if (!path) return;
+
+    if (selectedSet.has(path)) {
+      updateSelectedPaths(selectedPaths.filter((item) => item !== path));
+      return;
+    }
+
+    updateSelectedPaths([...selectedPaths, path]);
+  }
+
+  function removeCategory(path: string) {
+    updateSelectedPaths(selectedPaths.filter((item) => item !== path));
+  }
+
+  function clearAll() {
+    updateSelectedPaths([]);
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white">
+      <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          className="min-w-0 flex-1 text-left"
+        >
+          {selectedCategories.length > 0 ? (
+            <div className="flex min-h-9 flex-wrap items-center gap-2">
+              {selectedCategories.slice(0, 4).map(({ path, category }) => {
+               const title = getReadableCategoryChipLabel(path, category);
+
+                return (
+                  <span
+                    key={path}
+                    className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-neutral-100 px-2 py-1 text-sm text-neutral-900"
+                  >
+                    <span className="truncate">{title}</span>
+
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeCategory(path);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          removeCategory(path);
+                        }
+                      }}
+                      className="rounded-full p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-950"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </span>
+                  </span>
+                );
+              })}
+
+              {selectedCategories.length > 4 ? (
+                <span className="rounded-md bg-neutral-100 px-2 py-1 text-sm text-neutral-600">
+                  +{selectedCategories.length - 4} more
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400">
+              {placeholder || "Select categories"}
+            </p>
+          )}
+        </button>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {selectedPaths.length > 0 ? (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+            >
+              Clear all
+            </button>
+          ) : null}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsOpen((previous) => !previous)}
+            className="h-8 rounded-xl px-3 text-xs"
+          >
+            {selectedPaths.length > 0 ? "Change" : "Select categories"}
+          </Button>
+        </div>
+      </div>
+
+      {isOpen ? (
+        <div className="border-t border-neutral-100 p-3">
+          <div className="flex h-10 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3">
+            <Search className="h-4 w-4 text-neutral-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search categories..."
+              className="h-full flex-1 bg-transparent text-sm outline-none"
+            />
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-xs text-neutral-400">
+              {selectedPaths.length} categories selected
+            </p>
+
+            <button
+              type="button"
+              onClick={loadCategories}
+              disabled={isLoading}
+              className="text-xs font-semibold text-neutral-500 hover:text-neutral-950 disabled:opacity-50"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {pickerError ? (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {pickerError}
+            </div>
+          ) : null}
+
+          {!pickerError && isLoading && categories.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-sm text-neutral-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading categories...
+            </div>
+          ) : null}
+
+          {!pickerError && !isLoading && filteredCategories.length === 0 ? (
+            <div className="flex h-20 items-center justify-center text-sm text-neutral-500">
+              No categories found.
+            </div>
+          ) : null}
+
+          {filteredCategories.length > 0 ? (
+            <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-neutral-100">
+              <div className="divide-y divide-neutral-100">
+                {filteredCategories.map((category) => {
+                  const path = getCategoryPickerValue(category);
+                  const selected = selectedSet.has(path);
+                  const label = getCategoryPickerLabel(category);
+                  const count = getCategoryPickerProductsCount(category);
+
+                  return (
+                    <button
+                      key={category.id || path}
+                      type="button"
+                      onClick={() => toggleCategory(category)}
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-neutral-50"
+                    >
+                      <span
+                        className={[
+                          "flex h-5 w-5 shrink-0 items-center justify-center rounded border",
+                          selected
+                            ? "border-neutral-950 bg-neutral-950 text-white"
+                            : "border-neutral-300 bg-white",
+                        ].join(" ")}
+                      >
+                        {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-neutral-950">
+                          {label}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-neutral-500">
+                          {path}
+                        </span>
+                      </span>
+
+                      <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-medium text-neutral-500">
+                        {count} products
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+
+
+function getDefaultPageSearch(fieldKey: string) {
+  if (fieldKey === "productFaqs") return "faq";
+  if (fieldKey === "careInstructions") return "care";
+  if (fieldKey === "compositionOrigin") return "composition";
+
+  return "";
+}
+
+function PageReferenceInput({
+  fieldKey,
+  value,
+  placeholder,
+  onChange,
+}: {
+  fieldKey: string;
+  value: MetafieldValue;
+  placeholder?: string | null;
+  onChange: (value: MetafieldValue) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState(getDefaultPageSearch(fieldKey));
+  const [items, setItems] = useState<CmsPagePickerItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+
+ const selectedPage = isPageReferenceObject(value)
+  ? normalizePageReferenceValue(value)
+  : null;
+  const oldStringValue =
+  typeof value === "string" && readText(value) ? readText(value) : "";
+
+const selectedTitle = selectedPage
+  ? getCmsPageTitle(selectedPage)
+  : oldStringValue;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let ignore = false;
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setIsLoading(true);
+        setPickerError(null);
+
+        const result = await fetchCmsPagePickerItems({
+          search,
+          page: 1,
+          limit: 20,
+        });
+
+        if (ignore) return;
+
+        setItems(result.items);
+      } catch (error) {
+        if (!ignore) {
+          setItems([]);
+          setPickerError(
+            error instanceof Error ? error.message : "CMS pages load failed.",
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timeout);
+    };
+  }, [isOpen, search]);
+
+  function clearSelection() {
+    onChange("");
+  }
+
+  function selectPage(page: CmsPagePickerItem) {
+    onChange(normalizePageReference(page));
+    setIsOpen(false);
+  }
+
+  return (
+  <div className="rounded-xl border border-neutral-200 bg-white shadow-[inset_0_1px_0_rgba(0,0,0,0.02)]">
+      <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          className="min-w-0 flex-1 text-left"
+        >
+          {selectedTitle ? (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-neutral-950">
+                {selectedTitle}
+              </p>
+
+              <p className="mt-0.5 truncate text-xs text-neutral-500">
+                {selectedPage?.slug || selectedPage?.handle || "Page reference"}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400">
+              {placeholder || "Select page"}
+            </p>
+          )}
+        </button>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {selectedTitle ? (
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+            >
+              Clear
+            </button>
+          ) : null}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsOpen((previous) => !previous)}
+            className="h-8 rounded-xl px-3 text-xs"
+          >
+            {selectedTitle ? "Change" : "Select page"}
+          </Button>
+        </div>
+      </div>
+
+      {isOpen ? (
+        <div className="border-t border-neutral-100 p-3">
+          <div className="flex h-10 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3">
+            <Search className="h-4 w-4 text-neutral-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Find pages"
+              className="h-full flex-1 bg-transparent text-sm outline-none"
+            />
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+            ) : null}
+          </div>
+
+          {pickerError ? (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {pickerError}
+            </div>
+          ) : null}
+
+          {!pickerError && isLoading && items.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-sm text-neutral-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading pages...
+            </div>
+          ) : null}
+
+          {!pickerError && !isLoading && items.length === 0 ? (
+            <div className="flex h-20 items-center justify-center text-sm text-neutral-500">
+              No pages found.
+            </div>
+          ) : null}
+
+          {items.length > 0 ? (
+            <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-neutral-100">
+              <div className="divide-y divide-neutral-100">
+                {items.map((page) => {
+                  const selected = selectedPage?.id === page.id;
+
+                  return (
+                    <button
+                      key={page.id}
+                      type="button"
+                      onClick={() => selectPage(page)}
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-neutral-50"
+                    >
+                      <span
+                        className={[
+                          "flex h-5 w-5 shrink-0 items-center justify-center rounded border",
+                          selected
+                            ? "border-neutral-950 bg-neutral-950 text-white"
+                            : "border-neutral-300 bg-white",
+                        ].join(" ")}
+                      >
+                        {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-neutral-950">
+                          {page.title || page.handle || page.slug || page.id}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-neutral-500">
+                          {page.slug || page.handle || page.id}
+                        </span>
+                      </span>
+
+                      <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-medium text-neutral-600">
+                        {page.status || "PAGE"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AttributeOptionPickerInput({
+  attributeKey,
+  value,
+  placeholder,
+  onChange,
+}: {
+  attributeKey: string;
+  value: MetafieldValue;
+  placeholder?: string | null;
+  onChange: (value: MetafieldValue) => void;
+}) {
+  const [attribute, setAttribute] = useState<CatalogAttributeItem | null>(null);
+  const [options, setOptions] = useState<ProductAttributeOption[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newOptionLabel, setNewOptionLabel] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const textValue = stringifyValue(value);
+
+  async function loadOptions() {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const result = await fetchAttributeOptions(attributeKey);
+
+      setAttribute(result.attribute);
+      setOptions(result.options);
+    } catch (loadError) {
+      setAttribute(null);
+      setOptions([]);
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : `${attributeKey} options load failed.`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attributeKey]);
+
+  async function handleAddItem() {
+    const label = newOptionLabel.trim();
+
+    if (!label) return;
+
+    if (!attribute?.id) {
+      setError(`${attributeKey} attribute id missing hai.`);
+      return;
+    }
+
+    try {
+      setIsAdding(true);
+      setError(null);
+
+      await createAttributeOption({
+        attributeId: attribute.id,
+        label,
+      });
+
+      setNewOptionLabel("");
+      await loadOptions();
+      onChange(label);
+    } catch (addError) {
+      setError(
+        addError instanceof Error
+          ? addError.message
+          : "Option add karte time error aa gaya."
+      );
+    } finally {
+      setIsAdding(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-2">
+      <div className="flex gap-2">
+        <select
+          value={textValue}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={isLoading}
+          className="h-10 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-[13px] text-neutral-950 outline-none transition hover:bg-white focus:border-neutral-950 focus:bg-white disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
+        >
+          <option value="">
+            {isLoading ? "Loading..." : placeholder || "Select option"}
+          </option>
+
+          {textValue && !options.some((option) => option.label === textValue || option.value === textValue) ? (
+            <option value={textValue}>Current saved: {textValue}</option>
+          ) : null}
+
+          {options.map((option) => (
+            <option key={option.id} value={option.label}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        {textValue ? (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="h-10 rounded-xl px-3 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-2 flex gap-2">
+        <input
+          value={newOptionLabel}
+          onChange={(event) => setNewOptionLabel(event.target.value)}
+          placeholder="Add item"
+          className="h-9 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none transition focus:border-neutral-950"
+        />
+
+        <button
+          type="button"
+          onClick={handleAddItem}
+          disabled={isAdding || !newOptionLabel.trim()}
+          className="inline-flex h-9 items-center gap-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-800 shadow-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isAdding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+          Add item
+        </button>
+      </div>
+
+      {error ? (
+        <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function MediaPickerInput({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: MetafieldValue;
+  placeholder?: string | null;
+  onChange: (value: MetafieldValue) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [items, setItems] = useState<MediaLibraryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+
+  const textValue = stringifyValue(value);
+
+  const hasValidImage = isValidImageUrl(textValue);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let ignore = false;
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setIsLoading(true);
+        setPickerError(null);
+
+        const result = await fetchMediaLibraryItems(search);
+
+        if (!ignore) {
+          setItems(result);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setItems([]);
+          setPickerError(
+            error instanceof Error ? error.message : "Media library load failed."
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timeout);
+    };
+  }, [isOpen, search]);
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white">
+      <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          className="min-w-0 flex-1 text-left"
+        >
+         {hasValidImage ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={textValue} alt="Print swatch" className="h-full w-full object-cover" />
+              </span>
+
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-neutral-950">
+                  Selected image
+                </span>
+                <span className="block truncate text-xs text-neutral-500">
+                  {textValue}
+                </span>
+              </span>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400">
+              {placeholder || "Select image"}
+            </p>
+          )}
+        </button>
+
+        <div className="flex shrink-0 items-center gap-2">
+     {hasValidImage ? (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+            >
+              Clear
+            </button>
+          ) : null}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsOpen((previous) => !previous)}
+            className="h-8 rounded-xl px-3 text-xs"
+          >
+         {hasValidImage ? "Change" : "Select image"}
+          </Button>
+        </div>
+      </div>
+
+      {isOpen ? (
+        <div className="border-t border-neutral-100 p-3">
+          <div className="flex h-10 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3">
+            <Search className="h-4 w-4 text-neutral-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search media..."
+              className="h-full flex-1 bg-transparent text-sm outline-none"
+            />
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+            ) : null}
+          </div>
+
+          {pickerError ? (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {pickerError}
+            </div>
+          ) : null}
+
+          {!pickerError && isLoading && items.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-sm text-neutral-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading media...
+            </div>
+          ) : null}
+
+          {!pickerError && !isLoading && items.length === 0 ? (
+            <div className="flex h-20 items-center justify-center text-sm text-neutral-500">
+              No media found.
+            </div>
+          ) : null}
+
+          {items.length > 0 ? (
+            <div className="mt-3 grid max-h-72 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 md:grid-cols-4">
+              {items.map((item) => {
+                const mediaUrl = getMediaUrl(item);
+                const title = getMediaTitle(item);
+                const selected = textValue === mediaUrl;
+
+                return (
+                  <button
+                    key={item.id || mediaUrl}
+                    type="button"
+                    onClick={() => {
+                      onChange(mediaUrl);
+                      setIsOpen(false);
+                    }}
+                    className={[
+                      "overflow-hidden rounded-xl border bg-white text-left transition hover:border-neutral-400",
+                      selected ? "border-neutral-950 ring-2 ring-neutral-950/10" : "border-neutral-200",
+                    ].join(" ")}
+                  >
+                    <span className="block aspect-square bg-neutral-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mediaUrl} alt={title} className="h-full w-full object-cover" />
+                    </span>
+
+                    <span className="block truncate px-2 py-1.5 text-xs font-medium text-neutral-800">
+                      {title}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ProductMetafieldInput({
   field,
   value,
@@ -1773,10 +3098,52 @@ function ProductMetafieldInput({
 }) {
   const textValue = stringifyValue(value);
 
+  if (field.type === "page_picker") {
+  return (
+  <PageReferenceInput
+  fieldKey={field.key}
+  value={value}
+  placeholder={field.placeholder}
+  onChange={onChange}
+/>
+  );
+}
+
+if (field.type === "category_list_picker") {
+  return (
+    <CategoryListPickerInput
+      value={value}
+      placeholder={field.placeholder}
+      onChange={onChange}
+    />
+  );
+}
+
 if (field.type === "collection_picker") {
   return (
     <CategoryPickerInput
       label={field.label}
+      value={value}
+      placeholder={field.placeholder}
+      onChange={onChange}
+    />
+  );
+}
+
+if (field.type === "attribute_option_picker") {
+  return (
+    <AttributeOptionPickerInput
+      attributeKey={field.attributeKey || field.key}
+      value={value}
+      placeholder={field.placeholder}
+      onChange={onChange}
+    />
+  );
+}
+
+if (field.type === "media_picker") {
+  return (
+    <MediaPickerInput
       value={value}
       placeholder={field.placeholder}
       onChange={onChange}
@@ -1803,7 +3170,7 @@ if (field.type === "collection_picker") {
         onChange={(event) => onChange(event.target.value)}
         placeholder={field.placeholder}
         rows={3}
-        className="min-h-[84px] w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-neutral-950"
+      className="h-10 w-full rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-950 focus:bg-white"
       />
     );
   }
@@ -1813,7 +3180,7 @@ if (field.type === "collection_picker") {
       <select
         value={textValue}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+        className="h-10 w-full rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-neutral-950 focus:bg-white"
       >
         {(field.options || [""]).map((option) => (
           <option key={option || "blank"} value={option}>
@@ -1835,7 +3202,7 @@ if (field.type === "collection_picker") {
         )
       }
       placeholder={field.placeholder}
-      className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+    className="h-10 w-full rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-[13px] text-neutral-900 outline-none transition placeholder:text-neutral-400 hover:bg-white focus:border-neutral-950 focus:bg-white"
     />
   );
 }
@@ -2612,6 +3979,91 @@ useEffect(() => {
   );
 }
 
+
+function ShopifyMetafieldRow({
+  label,
+  description,
+  required,
+  children,
+}: {
+  label: string;
+  description?: string | null;
+  required?: boolean | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-3 border-t border-neutral-200/70 px-4 py-3 first:border-t-0 md:grid-cols-[230px_minmax(0,1fr)] md:items-center lg:px-5">
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-[13px] font-medium text-neutral-900">
+            {label}
+          </p>
+
+          {required ? (
+            <span className="text-xs font-semibold text-red-500">*</span>
+          ) : null}
+        </div>
+
+        {description ? (
+          <p className="mt-0.5 truncate text-[11px] leading-4 text-neutral-400">
+            {description}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function ShopifyMetafieldsHeader({
+  title,
+  subtitle,
+  badge,
+  filledCount,
+  totalCount,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  filledCount?: number;
+  totalCount?: number;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-neutral-200/70 px-4 py-4 sm:flex-row sm:items-start sm:justify-between lg:px-5">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-neutral-950">
+            {title}
+          </h2>
+
+          {badge ? (
+            <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-600 ring-1 ring-neutral-200/70">
+              {badge}
+            </span>
+          ) : null}
+        </div>
+
+        {subtitle ? (
+          <p className="mt-1 max-w-2xl text-[12px] leading-5 text-neutral-500">
+            {subtitle}
+          </p>
+        ) : null}
+
+        {filledCount !== undefined && totalCount !== undefined ? (
+          <p className="mt-1 text-[11px] font-medium text-neutral-400">
+            {filledCount} of {totalCount} fields filled
+          </p>
+        ) : null}
+      </div>
+
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
 function CategoryMetafieldsCard({
   values,
   definitions,
@@ -2632,112 +4084,90 @@ function CategoryMetafieldsCard({
       if (Array.isArray(value)) return value.length > 0;
       if (value === null || value === undefined) return false;
 
+      if (typeof value === "object") {
+  return Boolean(readText(value));
+}
+
       return String(value).trim().length > 0;
     }).length;
   }, [definitions, values]);
 
+  const taxonomyBadge = getTaxonomyLabel(values.taxonomy) || "Category fields";
+
   return (
-    <section className="rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-neutral-200 sm:p-5">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="rounded-xl bg-neutral-100 p-2 text-neutral-700">
-          <Layers3 className="h-4 w-4" />
-        </div>
-
-        <div>
-          <h2 className="text-base font-semibold text-neutral-950">
-            Category metafields
-          </h2>
-
-          <p className="mt-0.5 text-xs text-neutral-500">
-            Selected taxonomy category ke according backend se dynamic fields.
-          </p>
-
-          <p className="mt-1 text-[11px] text-neutral-400">
-            {filledCount} of {definitions.length} fields filled
-          </p>
-        </div>
-      </div>
+    <section className="overflow-hidden rounded-[1.5rem] bg-white shadow-sm ring-1 ring-neutral-200">
+      <ShopifyMetafieldsHeader
+        title="Category metafields"
+        subtitle="Selected taxonomy category ke according backend se dynamic product details."
+        badge={taxonomyBadge}
+        filledCount={filledCount}
+        totalCount={definitions.length}
+      />
 
       {isLoading ? (
-        <div className="flex min-h-[160px] items-center justify-center rounded-xl border border-dashed border-neutral-200 text-sm text-neutral-500">
+        <div className="flex min-h-[160px] items-center justify-center text-sm text-neutral-500">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           Loading category metafields...
         </div>
       ) : null}
 
       {!isLoading && error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
         </div>
       ) : null}
 
       {!isLoading && !error && definitions.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">
-          Is taxonomy category ke liye backend se koi active metafield definition
-          nahi aayi.
+        <div className="m-4 rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">
+          Is taxonomy category ke liye backend se koi active metafield definition nahi aayi.
         </div>
       ) : null}
 
       {!isLoading && !error && definitions.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          {definitions.map((definition) => (
-            <div
-              key={definition.key}
-              className={
-                definition.type === "multi_line_text" ||
-                definition.type === "product_reference" ||
-                definition.type === "list_product_reference"
-                  ? "space-y-1.5 md:col-span-2"
-                  : "space-y-1.5"
-              }
-            >
-              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                {definition.label}
-                {definition.isRequired ? (
-                  <span className="ml-1 text-red-500">*</span>
-                ) : null}
-              </label>
+        <div className="divide-y divide-neutral-100">
+          {definitions.map((definition) => {
+            const value = isColorMetafield(definition)
+              ? getValue(values, "categoryMetafields", "color") ||
+                getValue(values, "categoryMetafields", definition.key)
+              : getValue(values, "categoryMetafields", definition.key);
 
-            <DynamicCategoryMetafieldInput
-  definition={definition}
-  value={
-  isColorMetafield(definition)
-    ? getValue(values, "categoryMetafields", "color") ||
-      getValue(values, "categoryMetafields", definition.key)
-    : getValue(values, "categoryMetafields", definition.key)
-}
-  onChange={(value) =>
-    updateValue(
-      values,
-      "categoryMetafields",
-      definition.key,
-      value,
-      onChange
-    )
-  }
-  onColorSelect={
-  isColorMetafield(definition)
-    ? (colorOption) => {
-        onChange({
-          ...values,
-          categoryMetafields: {
-            ...(values.categoryMetafields || {}),
-            color: colorOption.color,
-            colorHex: colorOption.colorHex,
-          },
-        });
-      }
-    : undefined
-}
-/>
-
-              {definition.description ? (
-                <p className="text-[11px] text-neutral-400">
-                  {definition.description}
-                </p>
-              ) : null}
-            </div>
-          ))}
+            return (
+              <ShopifyMetafieldRow
+                key={definition.key}
+                label={definition.label}
+                description={definition.description}
+                required={definition.isRequired}
+              >
+                <DynamicCategoryMetafieldInput
+                  definition={definition}
+                  value={value}
+                  onChange={(nextValue) =>
+                    updateValue(
+                      values,
+                      "categoryMetafields",
+                      definition.key,
+                      nextValue,
+                      onChange
+                    )
+                  }
+                  onColorSelect={
+                    isColorMetafield(definition)
+                      ? (colorOption) => {
+                          onChange({
+                            ...values,
+                            categoryMetafields: {
+                              ...(values.categoryMetafields || {}),
+                              color: colorOption.color,
+                              colorHex: colorOption.colorHex,
+                            },
+                          });
+                        }
+                      : undefined
+                  }
+                />
+              </ShopifyMetafieldRow>
+            );
+          })}
         </div>
       ) : null}
     </section>
@@ -2758,65 +4188,82 @@ function ProductMetafieldsCard({
       if (Array.isArray(value)) return value.length > 0;
       if (value === null || value === undefined) return false;
 
+      if (typeof value === "object") {
+        return Boolean(readText(value));
+      }
+
       return String(value).trim().length > 0;
     }).length;
   }, [values]);
 
   return (
-    <section className="rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-neutral-200 sm:p-5">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="rounded-xl bg-neutral-100 p-2 text-neutral-700">
-          <Tags className="h-4 w-4" />
-        </div>
+    <section className="overflow-hidden rounded-[22px] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-neutral-200">
+      <ShopifyMetafieldsHeader
+        title="Product metafields"
+        subtitle="Product-level content for merchandising, recommendations and extra storefront blocks."
+        filledCount={filledCount}
+        totalCount={productMetafieldFields.length}
+        action={
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className="h-9 rounded-full border-neutral-200 bg-white px-4 text-xs font-medium text-neutral-500 shadow-sm"
+            >
+              View all
+            </Button>
 
-        <div>
-          <h2 className="text-base font-semibold text-neutral-950">
-            Product metafields
-          </h2>
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className="h-9 rounded-full border-neutral-200 bg-white px-4 text-xs font-medium text-neutral-500 shadow-sm"
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Add definition
+            </Button>
+          </div>
+        }
+      />
 
-          <p className="mt-0.5 text-xs text-neutral-500">
-            Product-level content for merchandising, recommendations and extra
-            storefront blocks.
-          </p>
-
-          <p className="mt-1 text-[11px] text-neutral-400">
-            {filledCount} of {productMetafieldFields.length} fields filled
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="divide-y divide-neutral-200/70">
         {productMetafieldFields.map((field) => (
-          <div
+          <ShopifyMetafieldRow
             key={field.key}
-            className={
-           field.type === "textarea" ||
-field.type === "product_picker" ||
-field.type === "collection_picker"
-                ? "space-y-1.5 md:col-span-2"
-                : "space-y-1.5"
+            label={field.label}
+            description={
+              field.type === "product_picker"
+                ? "Product reference list"
+                : field.type === "collection_picker"
+                  ? "Category reference"
+                  : field.type === "category_list_picker"
+                    ? "Category reference list"
+                    : field.type === "page_picker"
+                      ? "Page reference"
+                      : undefined
             }
           >
-         {field.type !== "product_picker" ? (
-  <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-    {field.label}
-  </label>
-) : null}
-
             <ProductMetafieldInput
               field={field}
               value={getValue(values, "productMetafields", field.key)}
               onChange={(value) =>
-                updateValue(values, "productMetafields", field.key, value, onChange)
+                updateValue(
+                  values,
+                  "productMetafields",
+                  field.key,
+                  value,
+                  onChange
+                )
               }
             />
 
             {field.type === "tags" ? (
-              <p className="text-[11px] text-neutral-400">
+              <p className="mt-1 text-[11px] text-neutral-400">
                 Comma separated values use karo.
               </p>
             ) : null}
-          </div>
+          </ShopifyMetafieldRow>
         ))}
       </div>
     </section>
