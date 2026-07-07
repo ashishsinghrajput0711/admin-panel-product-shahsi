@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { syncProductCategories } from "@/lib/admin/category-product-sync";
+import { ProductFitDataSection } from "@/components/admin/catalog/products/product-fit-data-section";
 import { useParams, useRouter } from "next/navigation";
 
 import { ProductPricingSection } from "@/components/admin/catalog/products/product-pricing-section";
@@ -332,6 +333,45 @@ colorFamily?: string | null;
 colorHex?: string | null;
 colorStoryId?: string | null;
 colorShadeId?: string | null;
+
+fitData?: {
+  fitType?: string | null;
+  silhouette?: string | null;
+  lengthType?: string | null;
+  stretchLevel?: string | null;
+  supportLevel?: string | null;
+  closureType?: string | null;
+  neckline?: string | null;
+  sleeveLength?: string | null;
+  waistline?: string | null;
+  fitNotes?: string | null;
+  sizeRecommendationNote?: string | null;
+  modelInfo?: {
+    height?: string | null;
+    wearingSize?: string | null;
+    bust?: number | null;
+    waist?: number | null;
+    hips?: number | null;
+  } | null;
+  measurementGuide?: {
+    bust?: string | null;
+    waist?: string | null;
+    hips?: string | null;
+    length?: string | null;
+  } | null;
+  sizeChart?: {
+    size: string;
+    bust?: number | null;
+    waist?: number | null;
+    hips?: number | null;
+    length?: number | null;
+  }[];
+  alterationAllowed?: boolean;
+  customSizingAvailable?: boolean;
+  recommendedForBodyTypes?: string[];
+  notRecommendedForBodyTypes?: string[];
+  isActive?: boolean;
+} | null;
 
 
 
@@ -1265,6 +1305,17 @@ setSuccessMessage(
     onSaved={() => loadProduct({ silent: true })}
   />
 ) : null}
+
+
+{product ? (
+  <ProductFitDataSection
+    productId={productId}
+    product={product}
+    token={getToken()}
+    onSaved={() => loadProduct({ silent: true })}
+  />
+) : null}
+
 
 <ProductForm
   key={formKey}

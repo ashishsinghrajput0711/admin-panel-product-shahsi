@@ -1,75 +1,42 @@
 export type FitDataScope = "PRODUCT" | "VARIANT";
 
-export type FitDataStatus =
-  | "DRAFT"
-  | "ACTIVE"
-  | "INACTIVE"
-  | "ARCHIVED";
-
-export type BusinessType = "SHAHSI" | "GOWNLOOP";
-
-export type FitType =
-  | "RELAXED"
-  | "REGULAR"
-  | "FITTED"
-  | "BODYCON"
-  | "OVERSIZED";
-
-export type StretchLevel =
-  | "NONE"
-  | "LOW"
-  | "MEDIUM"
-  | "HIGH";
-
-export type Silhouette =
-  | "A_LINE"
-  | "MERMAID"
-  | "SHEATH"
-  | "BALL_GOWN"
-  | "EMPIRE"
-  | "STRAIGHT"
-  | "FIT_AND_FLARE";
+export type FitDataStatus = "ACTIVE" | "DRAFT" | "INACTIVE" | "ARCHIVED";
 
 export type FitData = {
   id: string;
-
-  scope: FitDataScope;
-
-  productId?: string | null;
+  productId: string;
   productName?: string | null;
+  productSlug?: string | null;
+  productSku?: string | null;
+  productImage?: string | null;
 
+  businessType?: string | null;
+  scope?: FitDataScope | string | null;
   variantId?: string | null;
   variantSku?: string | null;
 
-  businessType: BusinessType;
+  fitType?: string | null;
+  silhouette?: string | null;
+  lengthType?: string | null;
+  stretchLevel?: string | null;
+  supportLevel?: string | null;
+  closureType?: string | null;
+  neckline?: string | null;
+  sleeveLength?: string | null;
+  waistline?: string | null;
 
-  sizeLabel?: string | null;
+  hasSizeChart?: boolean;
+  sizeChartCount?: number;
 
-  bustMeasurement?: number | null;
-  waistMeasurement?: number | null;
-  hipMeasurement?: number | null;
-  shoulderMeasurement?: number | null;
-  sleeveLength?: number | null;
-  garmentLength?: number | null;
-  inseamLength?: number | null;
+  alterationAllowed?: boolean;
+  customSizingAvailable?: boolean;
 
-  minBust?: number | null;
-  maxBust?: number | null;
-  minWaist?: number | null;
-  maxWaist?: number | null;
-  minHip?: number | null;
-  maxHip?: number | null;
+  recommendedForBodyTypes?: string[];
+  notRecommendedForBodyTypes?: string[];
 
-  fitType: FitType;
-  stretchLevel: StretchLevel;
-  silhouette: Silhouette;
+  status?: FitDataStatus | string;
+  isActive?: boolean;
 
-  customLengthAllowed: boolean;
-  alterationAllowed: boolean;
-
-  fitNotes?: string | null;
-
-  status: FitDataStatus;
-
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 };

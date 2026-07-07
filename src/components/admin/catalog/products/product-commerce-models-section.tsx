@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, RefreshCcw, Save } from "lucide-react";
+
+import {
+  getActiveCommerceTypes,
+  type CommerceTypeMaster,
+} from "@/lib/admin/commerce-types-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -174,6 +179,8 @@ function getInitialSelectedTypes(product: CommerceProduct): ProductCommerceType[
   if (mapped.length) return Array.from(new Set(mapped));
 
   const modeType = normalizeProductCommerceType(product.mode);
+
+  
 
   if (modeType) return [modeType];
 
@@ -370,6 +377,34 @@ export function ProductCommerceModelsSection({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [activeCommerceTypes, setActiveCommerceTypes] = useState<
+  CommerceTypeMaster[]
+>([]);
+const [isLoadingCommerceTypes, setIsLoadingCommerceTypes] = useState(true);
+
+
+const activeCommerceTypeCodes = useMemo(() => {
+  return new Set(
+    activeCommerceTypes
+      .map((item) => String(item.code || "").trim().toUpperCase())
+      .filter(Boolean) as ProductCommerceType[],
+  );
+}, [activeCommerceTypes]);
+
+const visibleCommerceOptions = useMemo(() => {
+  if (isLoadingCommerceTypes) return [];
+
+  return commerceOptions.filter((option) =>
+    activeCommerceTypeCodes.has(option.code),
+  );
+}, [activeCommerceTypeCodes, isLoadingCommerceTypes]);
+
+const allowedSelectedTypes = useMemo(() => {
+  return values.selectedTypes.filter((item) =>
+    activeCommerceTypeCodes.has(item),
+  );
+}, [values.selectedTypes, activeCommerceTypeCodes]);
+
   const [openConfigSections, setOpenConfigSections] = useState<
   Record<ProductCommerceType, boolean>
 >({
@@ -380,17 +415,76 @@ export function ProductCommerceModelsSection({
   SUBSCRIPTION: initialState.selectedTypes.includes("SUBSCRIPTION"),
 });
 
+
 useEffect(() => {
-  setValues(initialState);
+  let isMounted = true;
+
+  async function loadActiveCommerceTypes() {
+    try {
+      setIsLoadingCommerceTypes(true);
+
+      const items = await getActiveCommerceTypes();
+
+      if (!isMounted) return;
+
+      setActiveCommerceTypes(items.filter((item) => item.isActive));
+    } catch (error) {
+      console.warn("ACTIVE_COMMERCE_TYPES_LOAD_FAILED:", error);
+
+      if (!isMounted) return;
+
+      setActiveCommerceTypes([]);
+    } finally {
+      if (isMounted) {
+        setIsLoadingCommerceTypes(false);
+      }
+    }
+  }
+
+  loadActiveCommerceTypes();
+
+  return () => {
+    isMounted = false;
+  };
+}, []);
+
+useEffect(() => {
+  if (isLoadingCommerceTypes) return;
+
+  const filteredSelectedTypes = initialState.selectedTypes.filter((item) =>
+    activeCommerceTypeCodes.has(item),
+  );
+
+  const selectedTypes: ProductCommerceType[] = filteredSelectedTypes.length
+    ? filteredSelectedTypes
+    : visibleCommerceOptions[0]
+      ? [visibleCommerceOptions[0].code]
+      : [];
+
+  const defaultCommerceType: ProductCommerceType =
+    selectedTypes.includes(initialState.defaultCommerceType)
+      ? initialState.defaultCommerceType
+      : selectedTypes[0] || initialState.defaultCommerceType;
+
+  setValues({
+    ...initialState,
+    selectedTypes,
+    defaultCommerceType,
+  });
 
   setOpenConfigSections({
-    SHOP: initialState.selectedTypes.includes("SHOP"),
-    RENTAL: initialState.selectedTypes.includes("RENTAL"),
-    RESALE: initialState.selectedTypes.includes("RESALE"),
-    MTO: initialState.selectedTypes.includes("MTO"),
-    SUBSCRIPTION: initialState.selectedTypes.includes("SUBSCRIPTION"),
+    SHOP: selectedTypes.includes("SHOP"),
+    RENTAL: selectedTypes.includes("RENTAL"),
+    RESALE: selectedTypes.includes("RESALE"),
+    MTO: selectedTypes.includes("MTO"),
+    SUBSCRIPTION: selectedTypes.includes("SUBSCRIPTION"),
   });
-}, [initialState]);
+}, [
+  initialState,
+  activeCommerceTypeCodes,
+  visibleCommerceOptions,
+  isLoadingCommerceTypes,
+]);
 
   function updateValue<K extends keyof CommerceFormState>(
     key: K,
@@ -409,6 +503,13 @@ useEffect(() => {
   }));
 }
 function toggleCommerceType(code: ProductCommerceType) {
+  if (!activeCommerceTypeCodes.has(code)) {
+    setError(
+      `${code} global Commerce Models master me active nahi hai. Pehle master me create/activate karo.`,
+    );
+    return;
+  }
+
   setValues((current) => {
     const exists = current.selectedTypes.includes(code);
 
@@ -416,15 +517,14 @@ function toggleCommerceType(code: ProductCommerceType) {
       ? current.selectedTypes.filter((item) => item !== code)
       : [...current.selectedTypes, code];
 
-    const safeSelected: ProductCommerceType[] = nextSelected.length
-      ? nextSelected
-      : ["SHOP"];
+    const safeSelected: ProductCommerceType[] = nextSelected.filter((item) =>
+      activeCommerceTypeCodes.has(item),
+    );
 
-    const safeDefault: ProductCommerceType = safeSelected.includes(
-      current.defaultCommerceType,
-    )
-      ? current.defaultCommerceType
-      : safeSelected[0];
+    const safeDefault: ProductCommerceType =
+      safeSelected.length && safeSelected.includes(current.defaultCommerceType)
+        ? current.defaultCommerceType
+        : safeSelected[0] || code;
 
     if (!exists) {
       setOpenConfigSections((sectionState) => ({
@@ -447,9 +547,15 @@ function toggleCommerceType(code: ProductCommerceType) {
       setError(null);
       setMessage(null);
 
-     const selectedTypes: ProductCommerceType[] = values.selectedTypes.length
-  ? values.selectedTypes
-  : ["SHOP"];
+const selectedTypes: ProductCommerceType[] = values.selectedTypes.filter(
+  (item) => activeCommerceTypeCodes.has(item),
+);
+
+if (!selectedTypes.length) {
+  throw new Error(
+    "Koi active commerce model selected nahi hai. Pehle Commerce Models master me commerce type create/activate karo.",
+  );
+}
 
 const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
   values.defaultCommerceType,
@@ -646,8 +752,18 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-3 md:grid-cols-5">
-        {commerceOptions.map((option) => {
+     {isLoadingCommerceTypes ? (
+  <div className="mt-5 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-600">
+    Active commerce models load ho rahe hain...
+  </div>
+) : !visibleCommerceOptions.length ? (
+  <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+    Koi active Commerce Model master me available nahi hai. Pehle Catalog
+    Management &gt; Commerce Models me commerce type create/activate karo.
+  </div>
+) : (
+  <div className="mt-5 grid gap-3 md:grid-cols-5">
+    {visibleCommerceOptions.map((option) => {
           const checked = values.selectedTypes.includes(option.code);
 
           return (
@@ -676,8 +792,9 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
               </p>
             </button>
           );
-        })}
-      </div>
+         })}
+  </div>
+)}
 
       <div className="mt-5 grid gap-4 md:grid-cols-4">
         <SelectField
@@ -686,10 +803,10 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
           onChange={(value) =>
             updateValue("defaultCommerceType", value as ProductCommerceType)
           }
-          options={values.selectedTypes.map((item) => ({
-            label: item,
-            value: item,
-          }))}
+       options={allowedSelectedTypes.map((item) => ({
+  label: item,
+  value: item,
+}))}
         />
 
         <CheckboxField
@@ -706,7 +823,7 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
       </div>
 
       <div className="mt-6 space-y-5">
-        {values.selectedTypes.includes("SHOP") ? (
+     {allowedSelectedTypes.includes("SHOP") ? (
          <ConfigCard
   title="Shop Config"
   code="SHOP"
@@ -741,7 +858,7 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
           </ConfigCard>
         ) : null}
 
-        {values.selectedTypes.includes("RENTAL") ? (
+        {allowedSelectedTypes.includes("RENTAL") ? (
          <ConfigCard
   title="Rental Config"
   code="RENTAL"
@@ -807,7 +924,7 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
           </ConfigCard>
         ) : null}
 
-        {values.selectedTypes.includes("RESALE") ? (
+        {allowedSelectedTypes.includes("RESALE") ? (
         <ConfigCard
   title="Resale Config"
   code="RESALE"
@@ -859,7 +976,7 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
           </ConfigCard>
         ) : null}
 
-        {values.selectedTypes.includes("MTO") ? (
+        {allowedSelectedTypes.includes("MTO") ? (
         <ConfigCard
   title="Made To Order Config"
   code="MTO"
@@ -922,7 +1039,7 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
           </ConfigCard>
         ) : null}
 
-        {values.selectedTypes.includes("SUBSCRIPTION") ? (
+        {allowedSelectedTypes.includes("SUBSCRIPTION") ? (
       <ConfigCard
   title="Subscription Config"
   code="SUBSCRIPTION"

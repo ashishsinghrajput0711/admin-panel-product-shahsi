@@ -1,37 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { useCreate } from "@refinedev/core";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
+
 import { FitDataForm } from "@/components/admin/catalog/fit-data/fit-data-form";
-import type { FitDataFormValues } from "@/components/admin/catalog/fit-data/fit-data-schema";
+import {
+  createCatalogFitData,
+  type ProductFitDataPayload,
+} from "@/lib/admin/catalog-fit-data-api";
 
 export default function NewFitDataPage() {
-  const createMutation = useCreate();
-  const { mutate } = createMutation;
+  const router = useRouter();
 
-  const isSubmitting =
-    "isLoading" in createMutation
-      ? Boolean(createMutation.isLoading)
-      : "isPending" in createMutation
-        ? Boolean(createMutation.isPending)
-        : false;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  function handleSubmit(values: FitDataFormValues) {
-    mutate({
-      resource: "fit-data",
-      values,
-      successNotification: {
-        message: "Fit data created successfully",
-        description: "The fit data record has been saved in catalog.",
-        type: "success",
-      },
-      errorNotification: {
-        message: "Fit data create failed",
-        description: "Please check backend API and submitted fields.",
-        type: "error",
-      },
-    });
+  async function handleSubmit(values: ProductFitDataPayload) {
+    try {
+      setIsSubmitting(true);
+      setMessage(null);
+      setErrorMessage(null);
+
+      await createCatalogFitData(values);
+
+      setMessage("Fit data create ho gaya.");
+      router.push("/admin/catalog/fit-data");
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Fit data create failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -54,10 +58,22 @@ export default function NewFitDataPage() {
         </h1>
 
         <p className="mt-3 max-w-2xl text-neutral-500">
-          Add garment measurements, fit classification, recommended body ranges
-          and alteration rules.
+          Add product fit classification, model info, size chart and body type
+          recommendations.
         </p>
       </div>
+
+      {message ? (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {message}
+        </div>
+      ) : null}
+
+      {errorMessage ? (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {errorMessage}
+        </div>
+      ) : null}
 
       <FitDataForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
     </main>

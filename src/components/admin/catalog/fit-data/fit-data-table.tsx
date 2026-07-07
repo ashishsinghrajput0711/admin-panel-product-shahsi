@@ -5,35 +5,25 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { FitData } from "./fit-data-types";
 
-const scopeLabels = {
-  PRODUCT: "Product",
-  VARIANT: "Variant",
-} as const;
+function formatLabel(value?: string | null) {
+  if (!value) return "—";
 
-const fitTypeLabels = {
-  RELAXED: "Relaxed",
-  REGULAR: "Regular",
-  FITTED: "Fitted",
-  BODYCON: "Bodycon",
-  OVERSIZED: "Oversized",
-} as const;
+  return value
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
-const stretchLabels = {
-  NONE: "None",
-  LOW: "Low",
-  MEDIUM: "Medium",
-  HIGH: "High",
-} as const;
+function statusClass(status?: string | null) {
+  const normalized = String(status || "").toUpperCase();
 
-const silhouetteLabels = {
-  A_LINE: "A-Line",
-  MERMAID: "Mermaid",
-  SHEATH: "Sheath",
-  BALL_GOWN: "Ball Gown",
-  EMPIRE: "Empire",
-  STRAIGHT: "Straight",
-  FIT_AND_FLARE: "Fit and Flare",
-} as const;
+  if (normalized === "ACTIVE") return "bg-emerald-50 text-emerald-700";
+  if (normalized === "DRAFT") return "bg-amber-50 text-amber-700";
+  if (normalized === "INACTIVE") return "bg-neutral-100 text-neutral-700";
+  if (normalized === "ARCHIVED") return "bg-red-50 text-red-700";
+
+  return "bg-neutral-100 text-neutral-700";
+}
 
 export function FitDataTable({
   fitDataItems,
@@ -63,16 +53,16 @@ export function FitDataTable({
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-neutral-200">
-      <table className="w-full min-w-[1250px] text-sm">
+      <table className="w-full min-w-[1100px] text-sm">
         <thead className="bg-[#f7f2ea] text-left">
           <tr>
-            <th className="p-4 font-medium">Target</th>
+            <th className="p-4 font-medium">Product</th>
             <th className="p-4 font-medium">Scope</th>
             <th className="p-4 font-medium">Business</th>
-            <th className="p-4 font-medium">Size</th>
-            <th className="p-4 font-medium">Measurements</th>
-            <th className="p-4 font-medium">Body Range</th>
             <th className="p-4 font-medium">Fit</th>
+            <th className="p-4 font-medium">Stretch</th>
+            <th className="p-4 font-medium">Size Chart</th>
+            <th className="p-4 font-medium">Body Types</th>
             <th className="p-4 font-medium">Rules</th>
             <th className="p-4 font-medium">Status</th>
             <th className="p-4 text-right font-medium">Actions</th>
@@ -84,71 +74,77 @@ export function FitDataTable({
             <tr key={item.id} className="border-t border-neutral-200">
               <td className="p-4">
                 <p className="font-medium text-neutral-950">
-                  {item.productName || item.variantSku || "Fit Data"}
+                  {item.productName || item.productSku || "Fit Data"}
                 </p>
                 <p className="text-xs text-neutral-500">
-                  {item.variantId || item.productId || item.id}
+                  SKU: {item.productSku || "—"}
+                </p>
+                <p className="max-w-[240px] truncate text-xs text-neutral-400">
+                  {item.productSlug || item.productId || item.id}
                 </p>
               </td>
 
               <td className="p-4">
-                <Badge variant="outline">
-                  {scopeLabels[item.scope] ?? item.scope}
-                </Badge>
+                <Badge variant="outline">{formatLabel(item.scope)}</Badge>
               </td>
 
-              <td className="p-4">{item.businessType}</td>
-
-              <td className="p-4">{item.sizeLabel || "—"}</td>
+              <td className="p-4">{item.businessType || "—"}</td>
 
               <td className="p-4">
+                <p>{formatLabel(item.fitType)}</p>
                 <p className="text-xs text-neutral-500">
-                  Bust: {item.bustMeasurement ?? "—"}
+                  {formatLabel(item.silhouette)}
                 </p>
                 <p className="text-xs text-neutral-500">
-                  Waist: {item.waistMeasurement ?? "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Hip: {item.hipMeasurement ?? "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Length: {item.garmentLength ?? "—"}
+                  {formatLabel(item.lengthType)}
                 </p>
               </td>
 
               <td className="p-4">
+                <p>{formatLabel(item.stretchLevel)}</p>
                 <p className="text-xs text-neutral-500">
-                  Bust: {item.minBust ?? "—"} - {item.maxBust ?? "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Waist: {item.minWaist ?? "—"} - {item.maxWaist ?? "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Hip: {item.minHip ?? "—"} - {item.maxHip ?? "—"}
+                  Support: {formatLabel(item.supportLevel)}
                 </p>
               </td>
 
               <td className="p-4">
-                <p>{fitTypeLabels[item.fitType] ?? item.fitType}</p>
-                <p className="text-xs text-neutral-500">
-                  Stretch: {stretchLabels[item.stretchLevel] ?? item.stretchLevel}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  {silhouetteLabels[item.silhouette] ?? item.silhouette}
-                </p>
+                {item.hasSizeChart ? (
+                  <Badge variant="outline">
+                    {item.sizeChartCount || 0} row
+                    {(item.sizeChartCount || 0) === 1 ? "" : "s"}
+                  </Badge>
+                ) : (
+                  <span className="text-neutral-400">Missing</span>
+                )}
+              </td>
+
+              <td className="p-4">
+                <div className="flex max-w-[220px] flex-wrap gap-1">
+                  {(item.recommendedForBodyTypes || []).length ? (
+                    item.recommendedForBodyTypes?.map((type) => (
+                      <Badge key={type} variant="outline">
+                        {formatLabel(type)}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-neutral-400">—</span>
+                  )}
+                </div>
               </td>
 
               <td className="p-4">
                 <div className="flex flex-wrap gap-1">
-                  {item.customLengthAllowed && (
-                    <Badge variant="outline">Custom Length</Badge>
-                  )}
-                  {item.alterationAllowed && (
+                  {item.alterationAllowed ? (
                     <Badge variant="outline">Alteration</Badge>
-                  )}
-                  {!item.customLengthAllowed && !item.alterationAllowed && (
+                  ) : null}
+
+                  {item.customSizingAvailable ? (
+                    <Badge variant="outline">Custom Sizing</Badge>
+                  ) : null}
+
+                  {!item.alterationAllowed && !item.customSizingAvailable ? (
                     <span className="text-neutral-400">—</span>
-                  )}
+                  ) : null}
                 </div>
               </td>
 
@@ -168,14 +164,6 @@ export function FitDataTable({
                       Edit
                     </Link>
                   </Button>
-
-                  <Button size="sm" variant="outline" className="rounded-full">
-                    Test Fit
-                  </Button>
-
-                  <Button size="sm" variant="outline" className="rounded-full">
-                    More
-                  </Button>
                 </div>
               </td>
             </tr>
@@ -186,19 +174,14 @@ export function FitDataTable({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const className =
-    status === "ACTIVE"
-      ? "bg-emerald-50 text-emerald-700"
-      : status === "DRAFT"
-        ? "bg-amber-50 text-amber-700"
-        : status === "INACTIVE"
-          ? "bg-neutral-100 text-neutral-700"
-          : "bg-red-50 text-red-700";
-
+function StatusBadge({ status }: { status?: string | null }) {
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-medium ${className}`}>
-      {status}
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-medium ${statusClass(
+        status,
+      )}`}
+    >
+      {formatLabel(status)}
     </span>
   );
 }
