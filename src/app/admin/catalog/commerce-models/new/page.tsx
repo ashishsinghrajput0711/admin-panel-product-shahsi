@@ -1,37 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import { useCreate } from "@refinedev/core";
+import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { CommerceModelForm } from "@/components/admin/catalog/commerce-models/commerce-model-form";
+import { useState } from "react";
+import {
+  CommerceModelForm,
+  parseCommerceModelConfig,
+} from "@/components/admin/catalog/commerce-models/commerce-model-form";
 import type { CommerceModelFormValues } from "@/components/admin/catalog/commerce-models/commerce-model-schema";
+import { saveCommerceType } from "@/lib/admin/commerce-types-api";
 
 export default function NewCommerceModelPage() {
-  const createMutation = useCreate();
-  const { mutate } = createMutation;
+  const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  const isSubmitting =
-    "isLoading" in createMutation
-      ? Boolean(createMutation.isLoading)
-      : "isPending" in createMutation
-        ? Boolean(createMutation.isPending)
-        : false;
+  async function handleSubmit(values: CommerceModelFormValues) {
+    try {
+      setIsSubmitting(true);
+      setApiError(null);
 
-  function handleSubmit(values: CommerceModelFormValues) {
-    mutate({
-      resource: "commerce-models",
-      values,
-      successNotification: {
-        message: "Commerce model created successfully",
-        description: "The commerce model has been saved in catalog.",
-        type: "success",
-      },
-      errorNotification: {
-        message: "Commerce model create failed",
-        description: "Please check backend API and submitted fields.",
-        type: "error",
-      },
-    });
+      await saveCommerceType({
+        name: values.name,
+        code: values.code,
+        description: values.description || "",
+        isActive: Boolean(values.isActive),
+        sortOrder: Number(values.sortOrder || 0),
+        config: parseCommerceModelConfig(values),
+      });
+
+      router.push("/admin/catalog/commerce-models");
+    } catch (error) {
+      setApiError(
+        error instanceof Error ? error.message : "Commerce type save failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -50,19 +56,22 @@ export default function NewCommerceModelPage() {
         </p>
 
         <h1 className="mt-2 text-5xl font-medium tracking-tight">
-          Create Commerce Model
+          Create Commerce Type
         </h1>
 
         <p className="mt-3 max-w-2xl text-neutral-500">
-          Add retail, made-to-order, rental or resale rules for products,
-          variants or categories.
+          Add SHOP, RENTAL, RESALE, MTO or SUBSCRIPTION commerce type master.
         </p>
       </div>
 
-      <CommerceModelForm
-        onSubmit={handleSubmit}
-        isSubmitting={isSubmitting}
-      />
+      {apiError ? (
+        <section className="mb-6 rounded-[1.5rem] border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+          <p className="font-semibold">Commerce Type API error</p>
+          <p className="mt-3 rounded-xl bg-white/70 p-3 text-xs">{apiError}</p>
+        </section>
+      ) : null}
+
+      <CommerceModelForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
     </main>
   );
 }

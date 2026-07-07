@@ -17,30 +17,10 @@ type ApiSuccessResponse<T> = {
   error?: unknown;
 };
 
-const allowedProductMetafieldKeys = [
-  "productFaqs",
-  "careInstructions",
-  "compositionOrigin",
-  "customBadge",
-  "seeMoreFrom",
-  "primaryCollection",
-  "secondaryCollection",
-  "similarColorProducts",
-  "matchWithAccessories",
-  "completeTheLook",
-  "advancedProductTitle",
-  "similarStyleProduct",
-  "style",
-  "fabric",
-  "print",
-  "printSwatch",
-  "similarPrintTitle",
-  "similarPrintProducts",
-] as const;
-
 function getHeaders(token?: string | null): HeadersInit {
   return {
     "Content-Type": "application/json",
+    Accept: "*/*",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
@@ -69,6 +49,10 @@ function getApiError(data: unknown, fallback: string) {
     return record.message;
   }
 
+  if (Array.isArray(record.message)) {
+    return record.message.join(", ");
+  }
+
   if (typeof record.error === "string" && record.error.trim()) {
     return record.error;
   }
@@ -84,7 +68,6 @@ function getApiError(data: unknown, fallback: string) {
   return fallback;
 }
 
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -98,22 +81,79 @@ function normalizeTextValue(value: MetafieldValue) {
     return String(value);
   }
 
+  if (isPlainObject(value)) {
+    return String(
+      value.value ||
+        value.label ||
+        value.title ||
+        value.name ||
+        value.slug ||
+        value.handle ||
+        value.id ||
+        "",
+    ).trim();
+  }
+
+  return "";
+}
+function normalizeSingleTextFromValue(value: MetafieldValue) {
+  if (Array.isArray(value)) {
+    const firstValue = value
+      .map((item) => {
+        if (typeof item === "string") return item.trim();
+
+        if (isPlainObject(item)) {
+          return String(
+            item.value ||
+              item.label ||
+              item.title ||
+              item.name ||
+              item.slug ||
+              item.handle ||
+              item.id ||
+              "",
+          ).trim();
+        }
+
+        return "";
+      })
+      .find(Boolean);
+
+    return firstValue || "";
+  }
+
+  return normalizeTextValue(value);
+}
+
+function normalizeReferenceId(value: unknown) {
+  if (typeof value === "string") return value.trim();
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+
+  if (isPlainObject(value)) {
+    return String(
+      value.productId ||
+        value.catalogProductId ||
+        value.id ||
+        value.value ||
+        value.slug ||
+        value.handle ||
+        value.title ||
+        value.name ||
+        "",
+    ).trim();
+  }
+
   return "";
 }
 
 function normalizeStringListValue(value: MetafieldValue) {
   if (Array.isArray(value)) {
     return value
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (typeof item === "number" || typeof item === "boolean") {
-          return String(item);
-        }
-        if (isPlainObject(item)) {
-          return String(item.id || item.slug || item.handle || item.title || "");
-        }
-        return "";
-      })
+      .map(normalizeReferenceId)
+      .map((item) => item.trim())
       .filter(Boolean);
   }
 
@@ -124,29 +164,63 @@ function normalizeStringListValue(value: MetafieldValue) {
       .filter(Boolean);
   }
 
+  if (isPlainObject(value)) {
+    const singleValue = normalizeReferenceId(value);
+    return singleValue ? [singleValue] : [];
+  }
+
   return [];
 }
 
 function normalizePageReferenceValue(value: MetafieldValue) {
   if (isPlainObject(value)) {
-    return value;
+    return String(
+      value.slug ||
+        value.handle ||
+        value.id ||
+        value.value ||
+        value.title ||
+        value.name ||
+        "",
+    ).trim();
   }
 
   return normalizeTextValue(value);
 }
 
-function normalizeSeeMoreFromValue(value: MetafieldValue) {
+function normalizeMediaReferenceValue(value: MetafieldValue) {
+  if (isPlainObject(value)) {
+    return String(
+      value.url ||
+        value.secureUrl ||
+        value.imageUrl ||
+        value.thumbnailUrl ||
+        value.src ||
+        value.id ||
+        value.value ||
+        "",
+    ).trim();
+  }
+
+  return normalizeTextValue(value);
+}
+
+function normalizeCategoryReferenceValue(value: MetafieldValue) {
   if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (typeof item === "string") return item.trim();
-        if (isPlainObject(item)) {
-          return String(item.slug || item.handle || item.id || "").trim();
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join(",");
+    return value.map(normalizeReferenceId).filter(Boolean).join(",");
+  }
+
+  if (isPlainObject(value)) {
+    return String(
+      value.slug ||
+        value.path ||
+        value.fullPath ||
+        value.value ||
+        value.id ||
+        value.title ||
+        value.name ||
+        "",
+    ).trim();
   }
 
   return normalizeTextValue(value);
@@ -161,21 +235,28 @@ function cleanAllowedProductMetafields(values?: MetafieldRecord | null) {
     compositionOrigin: normalizePageReferenceValue(source.compositionOrigin),
 
     customBadge: normalizeTextValue(source.customBadge),
-    seeMoreFrom: normalizeSeeMoreFromValue(source.seeMoreFrom),
-    primaryCollection: normalizeTextValue(source.primaryCollection),
-    secondaryCollection: normalizeTextValue(source.secondaryCollection),
+
+    seeMoreFrom: normalizeCategoryReferenceValue(source.seeMoreFrom),
+    primaryCollection: normalizeCategoryReferenceValue(source.primaryCollection),
+    secondaryCollection: normalizeCategoryReferenceValue(
+      source.secondaryCollection,
+    ),
 
     similarColorProducts: normalizeStringListValue(source.similarColorProducts),
-    matchWithAccessories: normalizeStringListValue(source.matchWithAccessories),
+    matchWithAccessories: normalizeStringListValue(
+      source.matchWithAccessories,
+    ),
     completeTheLook: normalizeStringListValue(source.completeTheLook),
 
     advancedProductTitle: normalizeTextValue(source.advancedProductTitle),
     similarStyleProduct: normalizeStringListValue(source.similarStyleProduct),
 
-    style: normalizeTextValue(source.style),
+ style: normalizeStringListValue(source.style).join(","),
     fabric: normalizeTextValue(source.fabric),
     print: normalizeTextValue(source.print),
-    printSwatch: normalizeTextValue(source.printSwatch),
+
+    printSwatch: normalizeMediaReferenceValue(source.printSwatch),
+
     similarPrintTitle: normalizeTextValue(source.similarPrintTitle),
     similarPrintProducts: normalizeStringListValue(source.similarPrintProducts),
   };
@@ -190,7 +271,6 @@ export async function saveProductMetafields({
   apiRootUrl: string;
   productId: string;
   productMetafields?: MetafieldRecord | null;
-  categoryMetafields?: MetafieldRecord | null;
   token?: string | null;
 }) {
   const payload = cleanAllowedProductMetafields(productMetafields);
@@ -203,14 +283,16 @@ export async function saveProductMetafields({
       method: "PATCH",
       headers: getHeaders(token),
       body: JSON.stringify(payload),
-    }
+    },
   );
 
   const data = await readJson<ApiSuccessResponse<MetafieldRecord>>(response);
 
+  console.log("PRODUCT_METAFIELDS_RESPONSE:", data);
+
   if (!response.ok) {
     throw new Error(
-      getApiError(data, `Product metafields save failed: ${response.status}`)
+      getApiError(data, `Product metafields save failed: ${response.status}`),
     );
   }
 
@@ -249,13 +331,13 @@ export async function saveCategoryMetafields({
     }),
   });
 
-  const data = await readJson<ApiSuccessResponse<{ metafields?: MetafieldRecord }>>(
-    response
-  );
+  const data = await readJson<
+    ApiSuccessResponse<{ metafields?: MetafieldRecord }>
+  >(response);
 
   if (!response.ok) {
     throw new Error(
-      getApiError(data, `Category metafields save failed: ${response.status}`)
+      getApiError(data, `Category metafields save failed: ${response.status}`),
     );
   }
 

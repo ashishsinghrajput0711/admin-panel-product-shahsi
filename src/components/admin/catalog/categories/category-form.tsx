@@ -1,8 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Plus, Trash2, Upload } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Grid2X2,
+  ImagePlus,
+  List,
+  Loader2,
+  Plus,
+  Search,
+  SortAsc,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
+
+import {
+  fetchMediaLibrary,
+  type MediaLibraryFilterType,
+  type ProductMediaItem,
+} from "@/lib/admin/product-media-upload";
 
 import { RichTextEditor } from "@/components/admin/catalog/products/rich-text-editor";
 
@@ -26,6 +46,254 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+
+
+function getMediaApiRootUrl() {
+  const rawUrl =
+    process.env.NEXT_PUBLIC_ADMIN_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_API_URL;
+
+  if (!rawUrl) {
+    throw new Error(
+      "API base URL missing hai. .env.local me NEXT_PUBLIC_ADMIN_API_URL add karo.",
+    );
+  }
+
+  const cleanUrl = rawUrl.replace(/\/$/, "");
+
+  if (cleanUrl.endsWith("/admin/catalog")) {
+    return cleanUrl.replace(/\/admin\/catalog$/, "");
+  }
+
+  return cleanUrl;
+}
+
+function getMediaToken() {
+  if (typeof window === "undefined") return null;
+
+  const token =
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("access_token");
+
+  return token?.replace(/^Bearer\s+/i, "").trim() || null;
+}
+
+function getCategoryMediaSrc(item: ProductMediaItem) {
+  return item.thumbnailUrl || item.secureUrl || item.url || "";
+}
+
+function getCategoryMediaTitle(item: ProductMediaItem) {
+  const mediaRecord = item as ProductMediaItem & {
+    originalFilename?: string | null;
+    publicId?: string | null;
+  };
+
+  return (
+    mediaRecord.name ||
+    mediaRecord.title ||
+    mediaRecord.altText ||
+    mediaRecord.originalFilename ||
+    mediaRecord.publicId ||
+    "Untitled image"
+  );
+}
+
+function getCategoryMediaFileName(item: ProductMediaItem) {
+  const mediaRecord = item as ProductMediaItem & {
+    originalFilename?: string | null;
+    publicId?: string | null;
+  };
+
+  return (
+    mediaRecord.name ||
+    mediaRecord.originalFilename ||
+    mediaRecord.publicId ||
+    mediaRecord.title ||
+    "category-image"
+  );
+}
+
+
+type CategoryMediaProductPickerItem = {
+  id: string;
+  title: string;
+  name?: string | null;
+  slug?: string | null;
+  sku?: string | null;
+  imageUrl?: string | null;
+  thumbnail?: string | null;
+};
+
+function getMediaSizeBytes(item: ProductMediaItem) {
+  const record = item as ProductMediaItem & {
+    fileSize?: number | null;
+    fileSizeBytes?: number | null;
+    size?: number | null;
+  };
+
+  return Number(record.fileSizeBytes || record.fileSize || record.size || 0) || 0;
+}
+
+function getMediaUsedInProductId(item: ProductMediaItem) {
+  const record = item as ProductMediaItem & {
+    productId?: string | null;
+    usedInProductId?: string | null;
+    ownerProductId?: string | null;
+  };
+
+  return record.productId || record.usedInProductId || record.ownerProductId || "";
+}
+
+async function fetchCategoryProductMedia(productId: string) {
+  const response = await fetch(
+    `${getMediaApiRootUrl()}/admin/catalog/${encodeURIComponent(productId)}/media`,
+    {
+      method: "GET",
+      headers: {
+        ...(getMediaToken()
+          ? { Authorization: `Bearer ${getMediaToken()}` }
+          : {}),
+      },
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      data?.message ||
+      data?.error ||
+      `Product media load failed: ${response.status}`;
+
+    throw new Error(Array.isArray(message) ? message.join(", ") : message);
+  }
+
+  const rawItems =
+    data?.data?.items ||
+    data?.data?.media ||
+    data?.data?.images ||
+    data?.items ||
+    data?.media ||
+    data?.images ||
+    data?.data ||
+    [];
+
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .map((item: any) => ({
+    id: String(
+  item.id ||
+    item.mediaId ||
+    item.imageId ||
+    item.url ||
+    item.secureUrl ||
+    item.imageUrl ||
+    `${productId}-${item.position || item.name || item.title || "media"}`
+),
+      url: item.url || item.secureUrl || item.imageUrl || item.src || "",
+      secureUrl: item.secureUrl || item.url || item.imageUrl || "",
+      thumbnailUrl:
+        item.thumbnailUrl ||
+        item.thumbnail ||
+        item.url ||
+        item.secureUrl ||
+        item.imageUrl ||
+        "",
+      name:
+        item.name ||
+        item.title ||
+        item.originalFilename ||
+        item.fileName ||
+        "Product image",
+      title:
+        item.title ||
+        item.name ||
+        item.originalFilename ||
+        item.fileName ||
+        "Product image",
+      altText: item.altText || item.alt || item.name || item.title || "",
+      type: item.type || item.mediaType || "IMAGE",
+      productId,
+      createdAt: item.createdAt || item.updatedAt || null,
+      fileSizeBytes: item.fileSizeBytes || item.fileSize || item.size || 0,
+    }))
+    .filter((item: ProductMediaItem) => getCategoryMediaSrc(item));
+}
+
+function isMediaUsedInProduct(item: ProductMediaItem) {
+  const record = item as ProductMediaItem & {
+    productId?: string | null;
+    usedIn?: string[] | null;
+    usageType?: string | null;
+    attachedTo?: string | null;
+  };
+
+  return Boolean(
+    record.productId ||
+      record.usageType === "PRODUCT" ||
+      record.attachedTo === "PRODUCT" ||
+      record.usedIn?.some((value) =>
+        String(value).toLowerCase().includes("product"),
+      ),
+  );
+}
+
+async function fetchCategoryMediaProducts(search = "") {
+  const params = new URLSearchParams({
+    page: "1",
+    limit: "50",
+  });
+
+  if (search.trim()) {
+    params.set("search", search.trim());
+  }
+
+  const response = await fetch(
+    `${getMediaApiRootUrl()}/admin/catalog/products/picker?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        ...(getMediaToken() ? { Authorization: `Bearer ${getMediaToken()}` } : {}),
+      },
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      data?.message ||
+      data?.error ||
+      `Products load failed: ${response.status}`;
+    throw new Error(Array.isArray(message) ? message.join(", ") : message);
+  }
+
+  const rawItems =
+    data?.data?.items ||
+    data?.data?.products ||
+    data?.items ||
+    data?.products ||
+    data?.data ||
+    [];
+
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems.map((item: any) => ({
+    id: String(item.id || item.productId || ""),
+    title: String(item.title || item.name || "Untitled product"),
+    name: item.name || null,
+    slug: item.slug || null,
+    sku: item.sku || null,
+    imageUrl: item.imageUrl || item.thumbnail || item.thumbnailUrl || null,
+    thumbnail: item.thumbnail || item.thumbnailUrl || item.imageUrl || null,
+  })) as CategoryMediaProductPickerItem[];
+}
+
 
 function InputLabel({ children }: { children: ReactNode }) {
   return (
@@ -222,6 +490,839 @@ function CategoryReferenceSelect({
   );
 }
 
+
+function CategoryImageMediaPicker({
+  open,
+  selectedUrl,
+  onClose,
+  onSelect,
+  onLocalFileSelect,
+}: {
+  open: boolean;
+  selectedUrl?: string;
+  onClose: () => void;
+  onSelect: (item: ProductMediaItem) => void;
+  onLocalFileSelect: (file: File) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [items, setItems] = useState<ProductMediaItem[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [sortLabel, setSortLabel] = useState("Date added (newest first)");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [openFilter, setOpenFilter] = useState<
+  "fileSize" | "usedIn" | "product" | null
+>(null);
+
+const [minSizeMb, setMinSizeMb] = useState("");
+const [maxSizeMb, setMaxSizeMb] = useState("");
+const [usedInFilter, setUsedInFilter] = useState<"PRODUCT" | "OTHER" | "">("");
+
+const [productSearch, setProductSearch] = useState("");
+const [productItems, setProductItems] = useState<CategoryMediaProductPickerItem[]>(
+  [],
+);
+const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+const [isProductsLoading, setIsProductsLoading] = useState(false);
+
+const [productMediaItems, setProductMediaItems] = useState<ProductMediaItem[]>(
+  [],
+);
+const [isProductMediaLoading, setIsProductMediaLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const [localPreviewUrl, setLocalPreviewUrl] = useState("");
+
+function handleLocalFile(file: File | null) {
+  if (!file) return;
+
+  const previewUrl = URL.createObjectURL(file);
+  setLocalPreviewUrl(previewUrl);
+  setSelectedId("__local__");
+  onLocalFileSelect(file);
+}
+
+  async function loadMedia(options: { nextPage?: number; append?: boolean } = {}) {
+    const nextPage = options.nextPage || 1;
+    const append = Boolean(options.append);
+
+    try {
+      append ? setIsLoadingMore(true) : setIsLoading(true);
+      setError("");
+
+      const result = await fetchMediaLibrary({
+        apiRootUrl: getMediaApiRootUrl(),
+        token: getMediaToken(),
+        page: nextPage,
+        limit: 30,
+        search,
+        type: "IMAGE" as MediaLibraryFilterType,
+      });
+
+      setItems((current) => {
+        if (!append) return result.items;
+
+        const existingIds = new Set(current.map((item) => item.id));
+        return [
+          ...current,
+          ...result.items.filter((item) => !existingIds.has(item.id)),
+        ];
+      });
+
+      setPage(result.meta.page || nextPage);
+      setTotalPages(result.meta.totalPages || 1);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Media library load karte time error aa gaya.",
+      );
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+
+    setSelectedId("");
+    setIsSortOpen(false);
+    setIsViewMenuOpen(false);
+    void loadMedia({ nextPage: 1, append: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+  if (!open) return;
+
+  let cancelled = false;
+
+  async function loadSelectedProductMedia() {
+    if (!selectedProductIds.length) {
+      setProductMediaItems([]);
+      return;
+    }
+
+    try {
+      setIsProductMediaLoading(true);
+
+      const results = await Promise.all(
+        selectedProductIds.map((productId) => fetchCategoryProductMedia(productId)),
+      );
+
+      if (cancelled) return;
+
+      const merged = results.flat();
+      const seen = new Set<string>();
+
+      const uniqueItems = merged.filter((item) => {
+        const key = item.id || getCategoryMediaSrc(item);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      setProductMediaItems(uniqueItems);
+    } catch (err) {
+      if (!cancelled) {
+        setProductMediaItems([]);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Selected product media load karte time error aa gaya.",
+        );
+      }
+    } finally {
+      if (!cancelled) {
+        setIsProductMediaLoading(false);
+      }
+    }
+  }
+
+  void loadSelectedProductMedia();
+
+  return () => {
+    cancelled = true;
+  };
+}, [open, selectedProductIds]);
+
+
+  useEffect(() => {
+  if (!open || openFilter !== "product") return;
+
+  let cancelled = false;
+
+  async function loadProducts() {
+    try {
+      setIsProductsLoading(true);
+      const products = await fetchCategoryMediaProducts(productSearch);
+
+      if (!cancelled) {
+        setProductItems(products);
+      }
+    } catch (err) {
+      if (!cancelled) {
+        setProductItems([]);
+      }
+    } finally {
+      if (!cancelled) {
+        setIsProductsLoading(false);
+      }
+    }
+  }
+
+  const timer = window.setTimeout(() => {
+    void loadProducts();
+  }, 250);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timer);
+  };
+}, [open, openFilter, productSearch]);
+
+  if (!open) return null;
+
+  const baseMediaItems = selectedProductIds.length ? productMediaItems : items;
+
+const filteredItems = baseMediaItems.filter((item) => {
+  const sizeBytes = getMediaSizeBytes(item);
+  const sizeMb = sizeBytes / (1024 * 1024);
+
+  const min = Number(minSizeMb || 0);
+  const max = Number(maxSizeMb || 0);
+
+  if (minSizeMb.trim() && sizeMb < min) return false;
+  if (maxSizeMb.trim() && sizeMb > max) return false;
+
+  if (usedInFilter === "PRODUCT" && !isMediaUsedInProduct(item)) {
+    return false;
+  }
+
+  if (usedInFilter === "OTHER" && isMediaUsedInProduct(item)) {
+    return false;
+  }
+
+
+
+  return true;
+});
+
+const sortedItems = [...filteredItems].sort((a, b) => {
+  const titleA = getCategoryMediaTitle(a).toLowerCase();
+  const titleB = getCategoryMediaTitle(b).toLowerCase();
+
+  const sizeA = getMediaSizeBytes(a);
+  const sizeB = getMediaSizeBytes(b);
+
+  const dateA = new Date(
+    String((a as ProductMediaItem & { createdAt?: string | null }).createdAt || ""),
+  ).getTime();
+
+  const dateB = new Date(
+    String((b as ProductMediaItem & { createdAt?: string | null }).createdAt || ""),
+  ).getTime();
+
+  if (sortLabel === "Date added (oldest first)") return dateA - dateB;
+  if (sortLabel === "File name (A-Z)") return titleA.localeCompare(titleB);
+  if (sortLabel === "File name (Z-A)") return titleB.localeCompare(titleA);
+  if (sortLabel === "File size (smallest first)") return sizeA - sizeB;
+  if (sortLabel === "File size (largest first)") return sizeB - sizeA;
+
+  return dateB - dateA;
+});
+
+const selectedItem = sortedItems.find((item) => {
+  const itemKey = item.id || getCategoryMediaSrc(item);
+  return itemKey === selectedId;
+});
+const hasLocalSelection = selectedId === "__local__" && Boolean(localPreviewUrl);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4 py-6">
+      <input
+  id="category-image-local-upload"
+  type="file"
+  accept="image/*"
+  className="hidden"
+  onChange={(event) => {
+    const file = event.target.files?.[0] || null;
+    handleLocalFile(file);
+    event.currentTarget.value = "";
+  }}
+/>
+      <div className="flex h-[88vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-5">
+          <h2 className="text-xl font-semibold text-neutral-950">
+            Select image
+          </h2>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="border-b border-neutral-200 bg-white px-6 py-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="relative max-w-[620px]">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void loadMedia({ nextPage: 1, append: false });
+                    }
+                  }}
+                  placeholder="Search files"
+                  className="h-12 w-full rounded-xl border border-neutral-400 bg-white pl-12 pr-4 text-base outline-none transition focus:border-neutral-950"
+                />
+              </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+  <div className="relative">
+    <button
+      type="button"
+      onClick={() =>
+        setOpenFilter((current) =>
+          current === "fileSize" ? null : "fileSize",
+        )
+      }
+      className="inline-flex h-9 items-center gap-2 rounded-full border border-dashed border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
+    >
+      File size
+      <ChevronDown className="h-4 w-4" />
+    </button>
+
+    {openFilter === "fileSize" ? (
+      <div className="absolute left-0 top-11 z-30 w-[300px] rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl">
+        <label className="block text-sm font-medium text-neutral-700">
+          Min size (MB)
+        </label>
+        <input
+          value={minSizeMb}
+          onChange={(event) => setMinSizeMb(event.target.value)}
+          inputMode="decimal"
+          className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-950"
+        />
+
+        <label className="mt-4 block text-sm font-medium text-neutral-700">
+          Max size (MB)
+        </label>
+        <input
+          value={maxSizeMb}
+          onChange={(event) => setMaxSizeMb(event.target.value)}
+          inputMode="decimal"
+          className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-950"
+        />
+
+        <button
+          type="button"
+          onClick={() => {
+            setMinSizeMb("");
+            setMaxSizeMb("");
+          }}
+          disabled={!minSizeMb && !maxSizeMb}
+          className="mt-3 text-sm font-semibold text-neutral-500 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Clear
+        </button>
+      </div>
+    ) : null}
+  </div>
+
+  <div className="relative">
+    <button
+      type="button"
+      onClick={() =>
+        setOpenFilter((current) => (current === "usedIn" ? null : "usedIn"))
+      }
+      className="inline-flex h-9 items-center gap-2 rounded-full border border-dashed border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
+    >
+      Used in
+      <ChevronDown className="h-4 w-4" />
+    </button>
+
+    {openFilter === "usedIn" ? (
+      <div className="absolute left-0 top-11 z-30 w-[260px] rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl">
+        {[
+          { label: "Product media", value: "PRODUCT" },
+          { label: "Other", value: "OTHER" },
+        ].map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() =>
+              setUsedInFilter((current) =>
+                current === option.value ? "" : (option.value as "PRODUCT" | "OTHER"),
+              )
+            }
+            className="flex w-full items-center gap-3 rounded-xl px-1 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50"
+          >
+            <span
+              className={`h-5 w-5 rounded-full border ${
+                usedInFilter === option.value
+                  ? "border-neutral-950 bg-neutral-950 shadow-[inset_0_0_0_5px_white]"
+                  : "border-neutral-300"
+              }`}
+            />
+            {option.label}
+          </button>
+        ))}
+
+        <button
+          type="button"
+          onClick={() => setUsedInFilter("")}
+          disabled={!usedInFilter}
+          className="mt-2 text-sm font-semibold text-neutral-500 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Clear
+        </button>
+      </div>
+    ) : null}
+  </div>
+
+  <div className="relative">
+    <button
+      type="button"
+      onClick={() =>
+        setOpenFilter((current) => (current === "product" ? null : "product"))
+      }
+      className="inline-flex h-9 items-center gap-2 rounded-full border border-dashed border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
+    >
+      Product
+      <ChevronDown className="h-4 w-4" />
+    </button>
+
+    {openFilter === "product" ? (
+      <div className="absolute left-0 top-11 z-30 max-h-[430px] w-[360px] overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <input
+            value={productSearch}
+            onChange={(event) => setProductSearch(event.target.value)}
+            placeholder="Search for products"
+            className="h-11 w-full rounded-xl border border-neutral-300 pl-9 pr-3 text-sm outline-none focus:border-neutral-950"
+          />
+        </div>
+
+        <div className="mt-3 space-y-1">
+          {isProductsLoading ? (
+            <div className="flex items-center justify-center py-6 text-sm text-neutral-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading products...
+            </div>
+          ) : productItems.length ? (
+            productItems.map((product) => {
+              const checked = selectedProductIds.includes(product.id);
+
+              return (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedProductIds((current) =>
+                      current.includes(product.id)
+                        ? current.filter((id) => id !== product.id)
+                        : [...current, product.id],
+                    );
+                  }}
+                  className="flex w-full items-start gap-3 rounded-xl px-1 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50"
+                >
+                  <span
+                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
+                      checked
+                        ? "border-neutral-950 bg-neutral-950 text-white"
+                        : "border-neutral-300 bg-white text-transparent"
+                    }`}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </span>
+
+                  <span>
+                    <span className="block font-medium">
+                      {product.title || product.name}
+                    </span>
+                    {product.sku ? (
+                      <span className="mt-0.5 block text-xs text-neutral-500">
+                        {product.sku}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <div className="py-6 text-center text-sm text-neutral-500">
+              No products found.
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+          setSelectedProductIds([]);
+setProductMediaItems([]);
+setProductSearch("");
+          }}
+          disabled={!selectedProductIds.length && !productSearch}
+          className="mt-3 text-sm font-semibold text-neutral-500 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Clear
+        </button>
+      </div>
+    ) : null}
+  </div>
+</div>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsSortOpen((current) => !current)}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50"
+                >
+                  <SortAsc className="h-4 w-4" />
+                  Sort
+                </button>
+
+                {isSortOpen ? (
+                  <div className="absolute right-0 top-12 z-20 w-[270px] rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl">
+                    {[
+                      "Date added (newest first)",
+                      "Date added (oldest first)",
+                      "File name (A-Z)",
+                      "File name (Z-A)",
+                      "File size (smallest first)",
+                      "File size (largest first)",
+                    ].map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          setSortLabel(label);
+                          setIsSortOpen(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50"
+                      >
+                        <span
+                          className={`h-5 w-5 rounded-full border ${
+                            sortLabel === label
+                              ? "border-neutral-950 bg-neutral-950 shadow-[inset_0_0_0_5px_white]"
+                              : "border-neutral-300"
+                          }`}
+                        />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsViewMenuOpen((current) => !current)}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50"
+                >
+                  {viewMode === "grid" ? (
+                    <Grid2X2 className="h-5 w-5" />
+                  ) : (
+                    <List className="h-5 w-5" />
+                  )}
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+
+                {isViewMenuOpen ? (
+                  <div className="absolute right-0 top-12 z-20 w-[180px] rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewMode("list");
+                        setIsViewMenuOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm text-neutral-800 hover:bg-neutral-50"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <List className="h-4 w-4" />
+                        List view
+                      </span>
+                      {viewMode === "list" ? (
+                        <Check className="h-4 w-4" />
+                      ) : null}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewMode("grid");
+                        setIsViewMenuOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm text-neutral-800 hover:bg-neutral-50"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Grid2X2 className="h-4 w-4" />
+                        Grid view
+                      </span>
+                      {viewMode === "grid" ? (
+                        <Check className="h-4 w-4" />
+                      ) : null}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+           <label
+  htmlFor="category-image-local-upload"
+  className="inline-flex h-11 cursor-pointer items-center rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50"
+>
+  Upload image
+</label>
+
+              <button
+                type="button"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-purple-100 bg-white text-purple-600 shadow-sm hover:bg-purple-50"
+              >
+                <ImagePlus className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="mb-6 flex h-[150px] items-center justify-center rounded-xl border border-dashed border-neutral-400 bg-white">
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-3">
+              <label
+  htmlFor="category-image-local-upload"
+  className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50"
+>
+  <Plus className="h-4 w-4" />
+  Add files
+</label>
+
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-purple-100 bg-white px-4 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-purple-50"
+                >
+                  <ImagePlus className="h-4 w-4 text-purple-600" />
+                  Generate image
+                </button>
+              </div>
+
+              <p className="mt-3 text-sm text-neutral-500">
+                Drag and drop images
+              </p>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              {error}
+            </div>
+          ) : null}
+
+      {isLoading || isProductMediaLoading ? (
+            <div className="flex min-h-[260px] items-center justify-center text-sm text-neutral-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      {isProductMediaLoading ? "Loading product images..." : "Loading media library..."}
+            </div>
+         ) : sortedItems.length ? (
+            viewMode === "grid" ? (
+              <div className="grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+
+                {hasLocalSelection ? (
+  <button type="button" className="group relative text-center">
+    <div className="relative mx-auto aspect-[4/5] w-full max-w-[132px] overflow-hidden rounded-xl border border-neutral-950 bg-neutral-100 p-1 ring-2 ring-neutral-950/10">
+      <img
+        src={localPreviewUrl}
+        alt="Selected local image"
+        className="h-full w-full rounded-lg object-contain"
+      />
+
+      <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-md border border-neutral-950 bg-white text-neutral-950">
+        <Check className="h-4 w-4" />
+      </span>
+    </div>
+
+    <p className="mx-auto mt-3 line-clamp-2 max-w-[150px] text-sm font-medium leading-tight text-neutral-800">
+      Selected image
+    </p>
+    <p className="mt-1 text-sm text-neutral-500">LOCAL</p>
+  </button>
+) : null}
+            {sortedItems.map((item) => {
+                  const src = getCategoryMediaSrc(item);
+                  const title = getCategoryMediaTitle(item);
+              const itemKey = item.id || src;
+const isSelected =
+  selectedId === itemKey ||
+  (!selectedId && selectedUrl === src);
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                  onClick={() => setSelectedId(item.id || getCategoryMediaSrc(item))}
+                      className="group relative text-center"
+                    >
+                      <div
+                        className={`relative mx-auto aspect-[4/5] w-full max-w-[132px] overflow-hidden rounded-xl border bg-neutral-100 p-1 transition ${
+                          isSelected
+                            ? "border-neutral-950 ring-2 ring-neutral-950/10"
+                            : "border-neutral-200"
+                        }`}
+                      >
+                        {src ? (
+                          <img
+                            src={src}
+                            alt={item.altText || title}
+                            className="h-full w-full rounded-lg object-contain"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-neutral-400">
+                            No preview
+                          </div>
+                        )}
+
+                        <span
+                          className={`absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-md border bg-white ${
+                            isSelected
+                              ? "border-neutral-950 text-neutral-950"
+                              : "border-neutral-300 text-transparent"
+                          }`}
+                        >
+                          <Check className="h-4 w-4" />
+                        </span>
+                      </div>
+
+                      <p className="mx-auto mt-3 line-clamp-2 max-w-[150px] text-sm font-medium leading-tight text-neutral-800">
+                        {title}
+                      </p>
+                      <p className="mt-1 text-sm text-neutral-500">JPG</p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-neutral-200">
+             {sortedItems.map((item) => {
+                  const src = getCategoryMediaSrc(item);
+                  const title = getCategoryMediaTitle(item);
+                 const itemKey = item.id || src;
+const isSelected =
+  selectedId === itemKey ||
+  (!selectedId && selectedUrl === src);
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                   onClick={() => setSelectedId(item.id || getCategoryMediaSrc(item))}
+                      className={`flex w-full items-center gap-4 border-b border-neutral-100 px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50 ${
+                        isSelected ? "bg-neutral-50" : "bg-white"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-6 w-6 items-center justify-center rounded-md border bg-white ${
+                          isSelected
+                            ? "border-neutral-950 text-neutral-950"
+                            : "border-neutral-300 text-transparent"
+                        }`}
+                      >
+                        <Check className="h-4 w-4" />
+                      </span>
+
+                      <div className="h-16 w-16 overflow-hidden rounded-xl bg-neutral-100">
+                        {src ? (
+                          <img
+                            src={src}
+                            alt={item.altText || title}
+                            className="h-full w-full object-contain"
+                          />
+                        ) : null}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-neutral-950">
+                          {title}
+                        </p>
+                        <p className="mt-1 text-xs text-neutral-500">
+                          {item.altText || "No alt text"}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            <div className="flex min-h-[260px] items-center justify-center rounded-2xl border border-dashed border-neutral-200 text-sm text-neutral-500">
+         No images found for selected filters.
+            </div>
+          )}
+
+          {!isLoading && page < totalPages ? (
+            <div className="mt-8 flex justify-center">
+              <button
+                type="button"
+                onClick={() => loadMedia({ nextPage: page + 1, append: true })}
+                disabled={isLoadingMore}
+                className="rounded-full border border-neutral-200 px-5 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-60"
+              >
+                {isLoadingMore ? "Loading..." : "Load more"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-neutral-200 bg-white px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-200 bg-white px-5 py-2.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            disabled={!selectedItem && !hasLocalSelection}
+           onClick={() => {
+  if (hasLocalSelection) {
+    onClose();
+    return;
+  }
+
+  if (!selectedItem) return;
+  onSelect(selectedItem);
+  onClose();
+}}
+            className="rounded-xl bg-neutral-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CategoryForm({
   mode,
   initialValues,
@@ -241,9 +1342,10 @@ export function CategoryForm({
   error?: string | null;
   onSubmit: (values: CategoryFormValues, imageFile: File | null) => void;
 }) {
-  const [values, setValues] = useState<CategoryFormValues>(initialValues);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [autoSlug, setAutoSlug] = useState(mode === "create");
+const [values, setValues] = useState<CategoryFormValues>(initialValues);
+const [imageFile, setImageFile] = useState<File | null>(null);
+const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
+const [autoSlug, setAutoSlug] = useState(mode === "create");
 
   const parentOptions = useMemo(() => {
     return flattenCategoryTree(categoryTree, {
@@ -366,10 +1468,10 @@ export function CategoryForm({
     }));
   }
 
-  function handleSlugChange(slug: string) {
-    setAutoSlug(false);
-    updateValue("slug", slugify(slug));
-  }
+function handleSlugChange(slug: string) {
+  setAutoSlug(false);
+  updateValue("slug", slug);
+}
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -377,18 +1479,18 @@ export function CategoryForm({
     if (!values.name.trim()) return;
     if (!values.slug.trim()) return;
 
-    onSubmit(
-      {
-        ...values,
-        slug: slugify(values.slug),
-        seoSlug: values.seoSlug.trim() || slugify(values.slug),
-        conditions:
-          values.productSourceType === "AUTOMATED"
-            ? values.conditions
-            : [],
-      },
-      imageFile,
-    );
+   onSubmit(
+  {
+    ...values,
+    slug: values.slug.trim(),
+    seoSlug: values.seoSlug.trim() || values.slug.trim(),
+    conditions:
+      values.productSourceType === "AUTOMATED"
+        ? values.conditions
+        : [],
+  },
+  imageFile,
+);
   }
 
   return (
@@ -503,206 +1605,180 @@ export function CategoryForm({
             </div>
           </section>
 
-          <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-neutral-950">
-                  Product source
-                </h2>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Category manual products se chalegi ya automated conditions
-                  se, yahan select karo.
-                </p>
-              </div>
+       <section className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-neutral-200">
+  <h2 className="text-base font-semibold text-neutral-950">
+    Category type
+  </h2>
 
-              <span className="w-fit rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-700">
-                {values.productSourceType}
-              </span>
-            </div>
+  <div className="mt-5 space-y-4">
+    <label className="flex cursor-pointer items-start gap-4">
+      <input
+        type="radio"
+        name="categoryType"
+        checked={values.productSourceType === "MANUAL"}
+        onChange={() =>
+          setValues((current) => ({
+            ...current,
+            productSourceType: "MANUAL",
+            conditions: [],
+          }))
+        }
+        className="mt-1 h-5 w-5 accent-neutral-950"
+      />
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <span>
+        <span className="block text-sm font-semibold text-neutral-950">
+          Manual
+        </span>
+        <span className="mt-1 block text-sm leading-6 text-neutral-500">
+          Add products to this category one by one.
+        </span>
+      </span>
+    </label>
+
+    <label className="flex cursor-pointer items-start gap-4">
+      <input
+        type="radio"
+        name="categoryType"
+        checked={values.productSourceType === "AUTOMATED"}
+        onChange={() =>
+          setValues((current) => ({
+            ...current,
+            productSourceType: "AUTOMATED",
+            conditions: current.conditions.length
+              ? current.conditions
+              : [getDefaultCondition()],
+          }))
+        }
+        className="mt-1 h-5 w-5 accent-neutral-950"
+      />
+
+      <span>
+        <span className="block text-sm font-semibold text-neutral-950">
+          Smart
+        </span>
+        <span className="mt-1 block text-sm leading-6 text-neutral-500">
+          Existing and future products that match the conditions you set will
+          automatically be added to this category.
+        </span>
+      </span>
+    </label>
+  </div>
+</section>
+
+{values.productSourceType === "AUTOMATED" ? (
+  <>
+    <section className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-neutral-200">
+      <h2 className="text-base font-semibold text-neutral-950">
+        Conditions
+      </h2>
+
+      <div className="mt-5 flex flex-wrap items-center gap-6">
+        <span className="text-sm text-neutral-700">
+          Products must match:
+        </span>
+
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
+          <input
+            type="radio"
+            name="smartMatchType"
+            checked={values.matchType === "ALL"}
+            onChange={() => updateValue("matchType", "ALL")}
+            className="h-5 w-5 accent-neutral-950"
+          />
+          all conditions
+        </label>
+
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
+          <input
+            type="radio"
+            name="smartMatchType"
+            checked={values.matchType === "ANY"}
+            onChange={() => updateValue("matchType", "ANY")}
+            className="h-5 w-5 accent-neutral-950"
+          />
+          any condition
+        </label>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {values.conditions.map((condition, index) => (
+          <div
+            key={index}
+            className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+          >
+            <select
+              value={condition.field}
+              onChange={(event) =>
+                updateCondition(index, "field", event.target.value)
+              }
+              className="h-12 rounded-xl border border-neutral-300 bg-white px-4 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
+            >
+              <option value="tag">Tag</option>
+              <option value="title">Product title</option>
+              <option value="productType">Product type</option>
+              <option value="vendor">Vendor</option>
+              <option value="category">Category</option>
+              <option value="price">Price</option>
+              <option value="status">Status</option>
+              <option value="sku">SKU</option>
+            </select>
+
+            <select
+              value={condition.operator}
+              onChange={(event) =>
+                updateCondition(index, "operator", event.target.value)
+              }
+              className="h-12 rounded-xl border border-neutral-300 bg-white px-4 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
+            >
+              <option value="EQUALS">is equal to</option>
+              <option value="NOT_EQUALS">is not equal to</option>
+              <option value="CONTAINS">contains</option>
+              <option value="NOT_CONTAINS">does not contain</option>
+              <option value="GREATER_THAN">is greater than</option>
+              <option value="LESS_THAN">is less than</option>
+              <option value="IS_EMPTY">is empty</option>
+              <option value="IS_NOT_EMPTY">is not empty</option>
+            </select>
+
+            <input
+              value={String(condition.value ?? "")}
+              onChange={(event) =>
+                updateCondition(index, "value", event.target.value)
+              }
+              className="h-12 rounded-xl border border-neutral-300 bg-white px-4 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
+            />
+
+            {values.conditions.length > 1 ? (
               <button
                 type="button"
-                onClick={() =>
-                  setValues((current) => ({
-                    ...current,
-                    productSourceType: "MANUAL",
-                    conditions: [],
-                  }))
-                }
-                className={[
-                  "rounded-2xl border p-4 text-left transition",
-                  values.productSourceType === "MANUAL"
-                    ? "border-neutral-950 bg-neutral-950 text-white"
-                    : "border-neutral-200 bg-white text-neutral-950 hover:border-neutral-400",
-                ].join(" ")}
+                onClick={() => removeCondition(index)}
+                className="flex h-12 w-12 items-center justify-center rounded-xl border border-red-200 text-red-500 hover:bg-red-50"
+                title="Remove condition"
               >
-                <p className="text-sm font-semibold">Manual category</p>
-                <p
-                  className={[
-                    "mt-1 text-xs leading-5",
-                    values.productSourceType === "MANUAL"
-                      ? "text-white/70"
-                      : "text-neutral-500",
-                  ].join(" ")}
-                >
-                  Admin manually products assign/reorder karega. Storefront
-                  saved order me products show karega.
-                </p>
+                <Trash2 className="h-4 w-4" />
               </button>
+            ) : null}
+          </div>
+        ))}
 
-              <button
-                type="button"
-                onClick={() =>
-                  setValues((current) => ({
-                    ...current,
-                    productSourceType: "AUTOMATED",
-                    conditions: current.conditions.length
-                      ? current.conditions
-                      : [getDefaultCondition()],
-                  }))
-                }
-                className={[
-                  "rounded-2xl border p-4 text-left transition",
-                  values.productSourceType === "AUTOMATED"
-                    ? "border-neutral-950 bg-neutral-950 text-white"
-                    : "border-neutral-200 bg-white text-neutral-950 hover:border-neutral-400",
-                ].join(" ")}
-              >
-                <p className="text-sm font-semibold">Automated category</p>
-                <p
-                  className={[
-                    "mt-1 text-xs leading-5",
-                    values.productSourceType === "AUTOMATED"
-                      ? "text-white/70"
-                      : "text-neutral-500",
-                  ].join(" ")}
-                >
-                  Products saved conditions ke basis par automatically match
-                  honge.
-                </p>
-              </button>
-            </div>
+        <button
+          type="button"
+          onClick={addCondition}
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-800 hover:bg-neutral-50"
+        >
+          <Plus className="h-4 w-4" />
+          Add another condition
+        </button>
+      </div>
+    </section>
 
-            {values.productSourceType === "AUTOMATED" ? (
-              <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-950">
-                      Automated conditions
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      Conditions save hone ke baad storefront products
-                      automatically matching logic se aayenge.
-                    </p>
-                  </div>
-
-                  <select
-                    value={values.matchType}
-                    onChange={(event) =>
-                      updateValue(
-                        "matchType",
-                        event.target.value === "ANY" ? "ANY" : "ALL",
-                      )
-                    }
-                    className="w-fit rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 outline-none"
-                  >
-                    <option value="ALL">Match all conditions</option>
-                    <option value="ANY">Match any condition</option>
-                  </select>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  {values.conditions.map((condition, index) => (
-                    <div
-                      key={index}
-                      className="grid gap-3 rounded-2xl border border-neutral-200 bg-white p-4 sm:grid-cols-[1fr_1fr_1fr_auto]"
-                    >
-                      <div>
-                        <InputLabel>Field</InputLabel>
-                        <select
-                          value={condition.field}
-                          onChange={(event) =>
-                            updateCondition(index, "field", event.target.value)
-                          }
-                          className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
-                        >
-                          <option value="status">Status</option>
-                          <option value="price">Price</option>
-                          <option value="title">Title</option>
-                          <option value="tag">Tag</option>
-                          <option value="category">Category</option>
-                          <option value="color">Color</option>
-                          <option value="fabric">Fabric</option>
-                          <option value="size">Size</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <InputLabel>Operator</InputLabel>
-                        <select
-                          value={condition.operator}
-                          onChange={(event) =>
-                            updateCondition(
-                              index,
-                              "operator",
-                              event.target.value,
-                            )
-                          }
-                          className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
-                        >
-                          <option value="EQUALS">Equals</option>
-                          <option value="NOT_EQUALS">Not equals</option>
-                          <option value="CONTAINS">Contains</option>
-                          <option value="GREATER_THAN">Greater than</option>
-                          <option value="LESS_THAN">Less than</option>
-                          <option value="IS_EMPTY">Is empty</option>
-                          <option value="IS_NOT_EMPTY">Is not empty</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <InputLabel>Value</InputLabel>
-                        <TextInput
-                          value={String(condition.value ?? "")}
-                          onChange={(value) =>
-                            updateCondition(index, "value", value)
-                          }
-                          placeholder="ACTIVE"
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => removeCondition(index)}
-                        className="mt-6 flex h-10 w-10 items-center justify-center rounded-full border border-red-200 text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={addCondition}
-                    className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add condition
-                  </button>
-                </div>
-                <AutomatedCategoryPreview
-  matchType={values.matchType}
-  conditions={values.conditions}
-/>
-              </div>
-              
-            ) : (
-            <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">
-  Manual category selected hai. Products section neeche show hoga.
-</div>
-            )}
-          </section>
+    <AutomatedCategoryPreview
+      matchType={values.matchType}
+      conditions={values.conditions}
+    />
+  </>
+) : null}
 
           <CategoryProductsSection
   categorySlug={values.slug}
@@ -725,10 +1801,10 @@ export function CategoryForm({
               <div>
                 <InputLabel>SEO slug</InputLabel>
                 <TextInput
-                  value={values.seoSlug}
-                  onChange={(value) => updateValue("seoSlug", slugify(value))}
-                  placeholder="bridesmaid"
-                />
+  value={values.seoSlug}
+  onChange={(value) => updateValue("seoSlug", value)}
+  placeholder="bridesmaid"
+/>
               </div>
             </div>
 
@@ -916,23 +1992,7 @@ export function CategoryForm({
               </div>
             ) : null}
 
-            <div className="mt-5">
-              <InputLabel>Image URL</InputLabel>
-              <TextInput
-                value={values.imageUrl}
-                onChange={(value) => updateValue("imageUrl", value)}
-                placeholder="https://..."
-              />
-            </div>
-
-            <div className="mt-4">
-              <InputLabel>Image name</InputLabel>
-              <TextInput
-                value={values.imageName}
-                onChange={(value) => updateValue("imageName", value)}
-                placeholder="lehenga-cover"
-              />
-            </div>
+          
 
             <div className="mt-4">
               <InputLabel>Alt text</InputLabel>
@@ -943,24 +2003,19 @@ export function CategoryForm({
               />
             </div>
 
-            <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-500 hover:bg-neutral-100">
-              <Upload className="h-6 w-6" />
-              <span className="mt-2 font-medium text-neutral-700">
-                {imageFile ? imageFile.name : "Upload category image"}
-              </span>
-              <span className="mt-1 text-xs">
-                Save ke baad image backend API par upload hogi.
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] || null;
-                  setImageFile(file);
-                }}
-              />
-            </label>
+           <button
+  type="button"
+  onClick={() => setIsImagePickerOpen(true)}
+  className="mt-4 flex w-full cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-500 hover:bg-neutral-100"
+>
+  <Upload className="h-6 w-6" />
+  <span className="mt-2 font-medium text-neutral-700">
+    Select category image
+  </span>
+  <span className="mt-1 text-xs">
+    Media library se Cloudinary image select hogi.
+  </span>
+</button>
           </section>
 
           <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-neutral-200">
@@ -978,7 +2033,32 @@ export function CategoryForm({
             </div>
           </section>
         </aside>
-      </div>
+           </div>
+
+      <CategoryImageMediaPicker
+        open={isImagePickerOpen}
+        selectedUrl={values.imageUrl}
+        onClose={() => setIsImagePickerOpen(false)}
+        onLocalFileSelect={(file) => {
+  const previewUrl = URL.createObjectURL(file);
+
+  setImageFile(file);
+  updateValue("imageUrl", previewUrl);
+  updateValue("imageName", file.name);
+  updateValue("imageAltText", values.imageAltText || values.name || file.name);
+}}
+        onSelect={(item) => {
+          const imageUrl = getCategoryMediaSrc(item);
+          const imageName = getCategoryMediaFileName(item);
+          const imageAltText =
+            item.altText || item.title || imageName || values.name;
+
+          updateValue("imageUrl", imageUrl);
+          updateValue("imageName", imageName);
+          updateValue("imageAltText", imageAltText);
+          setImageFile(null);
+        }}
+      />
     </form>
   );
 }

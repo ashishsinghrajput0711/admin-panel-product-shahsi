@@ -312,7 +312,7 @@ const GOOGLE_MERCHANT_SAVE_RULE_KEYS = new Set([
   "pattern",
   "condition",
   "availability",
-  "identifier_exists",
+ 
   "gtin",
   "mpn",
 ]);
@@ -342,7 +342,7 @@ function getGoogleMerchantFieldValue(
     age_group: ["ageGroup", "age_group"],
     size_type: ["sizeType", "size_type"],
     size_system: ["sizeSystem", "size_system"],
-    identifier_exists: ["identifierExists", "identifier_exists"],
+    
   };
 
   const keys = [key, ...(aliases[key] || [])];
@@ -721,6 +721,15 @@ googleMerchantData: {},
   };
 }
 
+function hasRecordValue(value: unknown) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value as Record<string, unknown>).length > 0,
+  );
+}
+
 function extractCategoryTree(response: unknown): CategoryNode[] {
   const data = response as {
     data?: { data?: CategoryNode[]; categories?: CategoryNode[] };
@@ -1075,9 +1084,37 @@ function clearProductColor() {
 
 
 
-  useEffect(() => {
-    form.reset(getDefaultFormValues(defaultValues));
-  }, [defaultValues, form]);
+ useEffect(() => {
+  const currentValues = form.getValues();
+  const nextValues = getDefaultFormValues(defaultValues);
+
+  form.reset(
+    {
+      ...nextValues,
+
+      productMetafields: hasRecordValue(nextValues.productMetafields)
+        ? nextValues.productMetafields
+        : currentValues.productMetafields || {},
+
+      categoryMetafields: hasRecordValue(nextValues.categoryMetafields)
+        ? nextValues.categoryMetafields
+        : currentValues.categoryMetafields || {},
+
+      taxonomyId:
+        nextValues.taxonomyId ||
+        currentValues.taxonomyId ||
+        "",
+
+      taxonomy:
+        nextValues.taxonomy ??
+        currentValues.taxonomy ??
+        null,
+    },
+    {
+      keepDirtyValues: true,
+    },
+  );
+}, [defaultValues, form]);
 
   useEffect(() => {
     let ignore = false;
@@ -1308,6 +1345,8 @@ function handleDynamicAttributesChange(nextValue: Record<string, unknown>) {
 
 const payload: ProductFormValues = {
   ...values,
+  productMetafields: values.productMetafields || {},
+  categoryMetafields: values.categoryMetafields || {},
   dynamicAttributes: cleanedDynamicAttributes as any,
 };
 
@@ -1768,6 +1807,8 @@ onSubmit(payload);
 }
 
 function cleanGoogleMerchantData(data: Record<string, unknown>) {
+  const cleaned: Record<string, unknown> = {};
+
   const readValue = (...keys: string[]) => {
     for (const key of keys) {
       const value = data?.[key];
@@ -1792,7 +1833,7 @@ function cleanGoogleMerchantData(data: Record<string, unknown>) {
       if (["false", "no", "0"].includes(normalized)) return false;
     }
 
-    return false;
+    return undefined;
   };
 
   const googleCategoryId = readValue(
@@ -1814,38 +1855,23 @@ function cleanGoogleMerchantData(data: Record<string, unknown>) {
   const condition = readValue("condition");
   const availability = readValue("availability");
 
-  const requiredReady =
-    googleCategoryId &&
-    googleProductCategory &&
-    ageGroup &&
-    gender &&
-    color &&
-    size &&
-    condition &&
-    availability;
-
-  if (!requiredReady) {
-    return {};
-  }
-
-  const cleaned: Record<string, unknown> = {
-    googleCategoryId,
-    googleProductCategory,
-    ageGroup,
-    gender,
-    color,
-    size,
-    condition,
-    availability,
-    identifierExists: readBoolean("identifierExists", "identifier_exists"),
-  };
-
   const sizeType = readValue("sizeType", "size_type");
   const sizeSystem = readValue("sizeSystem", "size_system");
   const material = readValue("material");
   const pattern = readValue("pattern");
   const gtin = readValue("gtin");
   const mpn = readValue("mpn");
+  
+
+  if (googleCategoryId) cleaned.googleCategoryId = googleCategoryId;
+  if (googleProductCategory) cleaned.googleProductCategory = googleProductCategory;
+
+  if (ageGroup) cleaned.ageGroup = ageGroup;
+  if (gender) cleaned.gender = gender;
+  if (color) cleaned.color = color;
+  if (size) cleaned.size = size;
+  if (condition) cleaned.condition = condition;
+  if (availability) cleaned.availability = availability;
 
   if (sizeType) cleaned.sizeType = sizeType;
   if (sizeSystem) cleaned.sizeSystem = sizeSystem;
@@ -1853,6 +1879,8 @@ function cleanGoogleMerchantData(data: Record<string, unknown>) {
   if (pattern) cleaned.pattern = pattern;
   if (gtin) cleaned.gtin = gtin;
   if (mpn) cleaned.mpn = mpn;
+
+
 
   return cleaned;
 }

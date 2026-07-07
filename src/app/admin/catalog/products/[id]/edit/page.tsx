@@ -7,6 +7,8 @@ import { useParams, useRouter } from "next/navigation";
 
 import { ProductPricingSection } from "@/components/admin/catalog/products/product-pricing-section";
 
+import { ProductCommerceModelsSection } from "@/components/admin/catalog/products/product-commerce-models-section";
+
 
 import {
   Archive,
@@ -31,7 +33,10 @@ import {
   saveProductSeo,
 } from "@/lib/admin/product-seo-api";
 
-import { saveProductCategoryMetafields } from "@/lib/admin/product-taxonomy-metafields-api";
+import {
+  saveProductCategoryMetafields,
+  type CategoryMetafieldRecord,
+} from "@/lib/admin/product-taxonomy-metafields-api";
 import { buildCatalogProductPayload } from "@/lib/admin/product-payload";
 
 type ProductFormRecordValue =
@@ -172,76 +177,65 @@ function normalizePrimitiveFormRecord(value: unknown) {
 }
 
 
-function cleanCategoryMetafieldsForTaxonomySave(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
+function cleanCategoryMetafieldsForTaxonomySave(
+  values?: Record<string, unknown> | null,
+): CategoryMetafieldRecord {
+  const source = values || {};
 
-  const cleaned: Record<
-    string,
-    string | number | boolean | string[] | null | undefined
-  > = {};
+  const blockedKeys = new Set([
+    "taxonomyId",
+    "taxonomyCategoryId",
+    "taxonomy",
+    "id",
+    "createdAt",
+    "updatedAt",
+  ]);
 
-  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
-    if (!key) return;
+  const allowedKeys = new Set([
+    "color",
+    "colorHex",
+    "size",
+    "fabric",
+    "age_group",
+    "back_design",
+    "care_instructions",
+    "clothing_features",
+    "dress_occasion",
+    "dress_style",
+    "fit_silhouette",
+    "hemline_style",
+    "material",
+    "neckline",
+    "pattern_print",
+    "skirt_dress_length_type",
+    "sleeve_length_type",
+    "target_gender",
+    "top_length_type",
+  ]);
 
-    if (
-      item === undefined ||
-      item === null ||
-      typeof item === "string" ||
-      typeof item === "number" ||
-      typeof item === "boolean"
-    ) {
-      cleaned[key] = item;
-      return;
-    }
+const cleaned: CategoryMetafieldRecord = {};
 
-    if (Array.isArray(item)) {
-      cleaned[key] = item
-        .map((entry) => {
-          if (
-            entry === null ||
-            entry === undefined ||
-            typeof entry === "string" ||
-            typeof entry === "number" ||
-            typeof entry === "boolean"
-          ) {
-            return String(entry);
-          }
+  Object.entries(source).forEach(([key, value]) => {
+    if (blockedKeys.has(key)) return;
+    if (!allowedKeys.has(key)) return;
+    if (value === null || value === undefined) return;
 
-          if (entry && typeof entry === "object") {
-            const record = entry as Record<string, unknown>;
-
-            return String(
-              record.value ||
-                record.label ||
-                record.name ||
-                record.slug ||
-                record.code ||
-                record.id ||
-                ""
-            );
-          }
-
-          return "";
-        })
+    if (Array.isArray(value)) {
+      const listValue = value
+        .map((item) => String(item || "").trim())
         .filter(Boolean);
 
+      if (listValue.length) {
+        cleaned[key] = listValue;
+      }
+
       return;
     }
 
-    if (item && typeof item === "object") {
-      const record = item as Record<string, unknown>;
+    const stringValue = String(value).trim();
 
-      cleaned[key] = String(
-        record.value ||
-          record.label ||
-          record.name ||
-          record.slug ||
-          record.code ||
-          record.id ||
-          ""
-      );
+    if (stringValue) {
+      cleaned[key] = stringValue;
     }
   });
 
@@ -1018,6 +1012,11 @@ try {
   ...(values.productMetafields || {}),
 };
 
+const categoryMetafieldsForSave: Record<string, ProductFormRecordValue> = {
+  ...(defaultValues?.categoryMetafields || {}),
+  ...(values.categoryMetafields || {}),
+};
+
 const pageReferenceKeys = [
   "productFaqs",
   "careInstructions",
@@ -1060,17 +1059,14 @@ pageReferenceKeys.forEach((key) => {
 console.log("PRODUCT_METAFIELDS_BEFORE_SAVE:", productMetafieldsForSave);
 console.log(
   "CATEGORY_METAFIELDS_BEFORE_SAVE:",
-  cleanCategoryMetafieldsForSave(values.categoryMetafields),
+  cleanCategoryMetafieldsForTaxonomySave(categoryMetafieldsForSave),
 );
 
 try {
 await saveProductMetafields({
   apiRootUrl,
   productId,
-  productMetafields: values.productMetafields,
-categoryMetafields: cleanCategoryMetafieldsForTaxonomySave(
-  values.categoryMetafields,
-),
+  productMetafields: productMetafieldsForSave,
   token,
 });
 } catch (metafieldsError) {
@@ -1089,9 +1085,12 @@ await saveProductCategoryMetafields({
   apiRootUrl,
   productId,
   taxonomyId: values.taxonomyId,
- categoryMetafields: cleanCategoryMetafieldsForTaxonomySave(
-  values.categoryMetafields,
-),
+ taxonomyCategoryId:
+  values.taxonomy?.taxonomyId ||
+  values.taxonomyId,
+  categoryMetafields: cleanCategoryMetafieldsForTaxonomySave(
+    categoryMetafieldsForSave,
+  ),
   token,
 });
   }
@@ -1251,21 +1250,31 @@ setSuccessMessage(
 
       {defaultValues ? (
   <div className="space-y-5">
-    <ProductPricingSection
-      productId={productId}
-      values={product ?? defaultValues}
-      onSaved={() => loadProduct({ silent: true })}
-    />
+   <ProductPricingSection
+  productId={productId}
+  values={product ?? defaultValues}
+  onSaved={() => loadProduct({ silent: true })}
+/>
 
-    <ProductForm
-      key={formKey}
-      productId={productId}
-      mediaItems={product?.media ?? product?.images ?? []}
-      defaultValues={defaultValues}
-      onSubmit={handleSubmit}
-      isSubmitting={isSubmitting}
-      onMediaChanged={() => loadProduct({ silent: true })}
-    />
+{product ? (
+  <ProductCommerceModelsSection
+    productId={productId}
+    product={product}
+    apiRootUrl={getApiRootUrl()}
+    token={getToken()}
+    onSaved={() => loadProduct({ silent: true })}
+  />
+) : null}
+
+<ProductForm
+  key={formKey}
+  productId={productId}
+  mediaItems={product?.media ?? product?.images ?? []}
+  defaultValues={defaultValues}
+  onSubmit={handleSubmit}
+  isSubmitting={isSubmitting}
+  onMediaChanged={() => loadProduct({ silent: true })}
+/>
   </div>
 ) : (
   <div className="rounded-2xl bg-white p-6 ring-1 ring-neutral-200">

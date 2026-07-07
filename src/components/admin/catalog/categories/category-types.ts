@@ -119,3 +119,5 @@ export type CategoryUpsertResponse = {
   error?: unknown;
   message?: string;
 };
+
+export type CategoryMatchType = "ALL" | "ANY";

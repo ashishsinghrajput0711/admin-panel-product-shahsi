@@ -67,6 +67,7 @@ type ProductMetafieldField = {
   placeholder?: string;
   options?: string[];
   attributeKey?: string;
+  multiple?: boolean;
 };
 
 type ProductPickerItem = {
@@ -354,13 +355,14 @@ const productMetafieldFields: ProductMetafieldField[] = [
     type: "product_picker",
     placeholder: "Select similar style products",
   },
-    {
-    key: "style",
-    label: "Style",
-    type: "attribute_option_picker",
-    attributeKey: "style",
-    placeholder: "Select style",
-  },
+  {
+  key: "style",
+  label: "Style",
+  type: "attribute_option_picker",
+  attributeKey: "style",
+  placeholder: "Select style",
+  multiple: true,
+},
   {
     key: "fabric",
     label: "Fabric",
@@ -483,7 +485,9 @@ function getValue(
 
 function getStringArrayValue(value: MetafieldValue) {
   if (Array.isArray(value)) {
-    return value.map((item) => String(item)).filter(Boolean);
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
   }
 
   if (typeof value === "string" && value.trim()) {
@@ -808,6 +812,117 @@ function normalizePageReference(page: CmsPagePickerItem): PageReferenceValue {
     publishedAt: readText(page.publishedAt) || null,
     updatedAt: readText(page.updatedAt) || null,
   };
+}
+
+function createSlugFromTitle(value: string) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getPageReferenceGroup(fieldKey: string) {
+  if (fieldKey === "productFaqs") return "productFaqs";
+  if (fieldKey === "careInstructions") return "careInstructions";
+  if (fieldKey === "compositionOrigin") return "compositionOrigin";
+
+  return fieldKey;
+}
+
+function extractCreatedCmsPage(data: unknown): CmsPagePickerItem | null {
+  if (!data || typeof data !== "object") return null;
+
+  const record = data as Record<string, unknown>;
+
+  const possiblePage =
+    record.data ||
+    record.page ||
+    record.item ||
+    record.cmsPage ||
+    record;
+
+  if (!possiblePage || typeof possiblePage !== "object" || Array.isArray(possiblePage)) {
+    return null;
+  }
+
+  const pageRecord = possiblePage as Record<string, unknown>;
+
+  return {
+    id: readText(pageRecord.id),
+    title: readText(pageRecord.title),
+    slug: readText(pageRecord.slug),
+    handle: readText(pageRecord.handle),
+    description: readText(pageRecord.description),
+    status: readText(pageRecord.status),
+    type: readText(pageRecord.type) || "PAGE",
+    isHidden:
+      typeof pageRecord.isHidden === "boolean" ? pageRecord.isHidden : null,
+    isActive:
+      typeof pageRecord.isActive === "boolean" ? pageRecord.isActive : null,
+    publishedAt: readText(pageRecord.publishedAt),
+    updatedAt: readText(pageRecord.updatedAt),
+  };
+}
+
+async function createCmsPageForReference({
+  fieldKey,
+  title,
+  content,
+  isHidden,
+  seoTitle,
+  seoDescription,
+}: {
+  fieldKey: string;
+  title: string;
+  content: string;
+  isHidden: boolean;
+  seoTitle: string;
+  seoDescription: string;
+}) {
+  const slug = createSlugFromTitle(title);
+
+  const response = await fetch(`${getApiRootUrl()}/admin/cms/pages`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    body: JSON.stringify({
+      title: title.trim(),
+      slug,
+      handle: slug,
+      description: seoDescription.trim(),
+      content: content.trim() || "<p></p>",
+      status: isHidden ? "HIDDEN" : "PUBLISHED",
+      type: "PAGE",
+      isHidden,
+      isActive: true,
+      seoTitle: seoTitle.trim() || `${title.trim()} | Shahsi`,
+      seoDescription: seoDescription.trim(),
+      metadata: {
+        source: "admin",
+        pageReferenceGroup: getPageReferenceGroup(fieldKey),
+      },
+      updatedBy: "admin",
+    }),
+  });
+
+  const text = await response.text();
+  const data = text.trim() ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data, `CMS page create failed: ${response.status}`)
+    );
+  }
+
+  const createdPage = extractCreatedCmsPage(data);
+
+  if (!createdPage?.id) {
+    throw new Error("CMS page created but response me page id nahi mila.");
+  }
+
+  return createdPage;
 }
 
 function isPageReferenceObject(value: MetafieldValue): value is PageReferenceValue {
@@ -2560,6 +2675,222 @@ function getDefaultPageSearch(fieldKey: string) {
   return "";
 }
 
+
+function AddCmsPageModal({
+  fieldKey,
+  onCreate,
+  onClose,
+}: {
+  fieldKey: string;
+  onCreate: (page: CmsPagePickerItem) => void;
+  onClose: () => void;
+}) {
+  const defaultTitle =
+    fieldKey === "productFaqs"
+      ? "Product FAQs"
+      : fieldKey === "careInstructions"
+        ? "Care Instructions"
+        : fieldKey === "compositionOrigin"
+          ? "Composition & Origin"
+          : "New Page";
+
+  const [title, setTitle] = useState(defaultTitle);
+  const [content, setContent] = useState("");
+  const [isHidden, setIsHidden] = useState(true);
+  const [seoTitle, setSeoTitle] = useState(`${defaultTitle} | Shahsi`);
+  const [seoDescription, setSeoDescription] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function handleSave() {
+    if (!title.trim()) {
+      setSaveError("Title required hai.");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      setSaveError(null);
+
+      const page = await createCmsPageForReference({
+        fieldKey,
+        title,
+        content,
+        isHidden,
+        seoTitle,
+        seoDescription,
+      });
+
+      onCreate(page);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Page create failed."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[1.4rem] bg-neutral-100 shadow-2xl ring-1 ring-black/10">
+        <div className="flex h-16 shrink-0 items-center justify-between px-5">
+          <div>
+            <h3 className="text-lg font-semibold text-neutral-950">
+              Add page
+            </h3>
+            <p className="text-xs text-neutral-500">
+              New CMS page create karke current metafield me select hoga.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            className="rounded-xl bg-white"
+          >
+            Close
+          </Button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-5">
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-neutral-200">
+              <label className="text-sm font-medium text-neutral-800">
+                Title
+              </label>
+
+              <input
+                value={title}
+                onChange={(event) => {
+                  const nextTitle = event.target.value;
+                  setTitle(nextTitle);
+
+                  if (!seoTitle.trim() || seoTitle === `${title} | Shahsi`) {
+                    setSeoTitle(`${nextTitle} | Shahsi`);
+                  }
+                }}
+                placeholder="e.g. about us, sizing chart, FAQ"
+                className="mt-2 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-950"
+              />
+
+              <label className="mt-5 block text-sm font-medium text-neutral-800">
+                Content
+              </label>
+
+              <textarea
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                placeholder="<p>Write page content here...</p>"
+                rows={10}
+                className="mt-2 min-h-[220px] w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm outline-none focus:border-neutral-950"
+              />
+
+              <p className="mt-2 text-xs text-neutral-400">
+                HTML content allowed hai, jaise &lt;p&gt;Care instructions&lt;/p&gt;.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-neutral-200">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-neutral-900">
+                    Search engine listing
+                  </h4>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Page SEO title aur description.
+                  </p>
+                </div>
+              </div>
+
+              <input
+                value={seoTitle}
+                onChange={(event) => setSeoTitle(event.target.value)}
+                placeholder="SEO title"
+                className="mt-4 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-950"
+              />
+
+              <textarea
+                value={seoDescription}
+                onChange={(event) => setSeoDescription(event.target.value)}
+                placeholder="SEO description"
+                rows={3}
+                className="mt-3 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-950"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-5">
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-neutral-200">
+              <h4 className="text-sm font-semibold text-neutral-900">
+                Visibility
+              </h4>
+
+              <div className="mt-4 space-y-3">
+                <label className="flex cursor-pointer items-center gap-3 text-sm text-neutral-800">
+                  <input
+                    type="radio"
+                    checked={!isHidden}
+                    onChange={() => setIsHidden(false)}
+                    className="h-4 w-4"
+                  />
+                  Visible
+                </label>
+
+                <label className="flex cursor-pointer items-center gap-3 text-sm text-neutral-800">
+                  <input
+                    type="radio"
+                    checked={isHidden}
+                    onChange={() => setIsHidden(true)}
+                    className="h-4 w-4"
+                  />
+                  Hidden
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-neutral-200">
+              <h4 className="text-sm font-semibold text-neutral-900">
+                Template
+              </h4>
+
+              <select
+                disabled
+                className="mt-4 h-11 w-full rounded-xl border border-neutral-300 bg-neutral-50 px-3 text-sm text-neutral-600"
+              >
+                <option>Default page</option>
+              </select>
+            </div>
+
+            {saveError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {saveError}
+              </div>
+            ) : null}
+
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="h-11 w-full rounded-xl bg-neutral-950 text-white hover:bg-neutral-800 disabled:opacity-60"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save page"
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PageReferenceInput({
   fieldKey,
   value,
@@ -2574,6 +2905,8 @@ function PageReferenceInput({
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState(getDefaultPageSearch(fieldKey));
   const [items, setItems] = useState<CmsPagePickerItem[]>([]);
+
+  const [isAddPageOpen, setIsAddPageOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
 
@@ -2635,6 +2968,20 @@ const selectedTitle = selectedPage
     setIsOpen(false);
   }
 
+  function handleCreatedPage(page: CmsPagePickerItem) {
+  setItems((previous) => {
+    const exists = previous.some((item) => item.id === page.id);
+
+    if (exists) return previous;
+
+    return [page, ...previous];
+  });
+
+  onChange(normalizePageReference(page));
+  setIsAddPageOpen(false);
+  setIsOpen(false);
+}
+
   return (
   <div className="rounded-xl border border-neutral-200 bg-white shadow-[inset_0_1px_0_rgba(0,0,0,0.02)]">
       <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-2">
@@ -2682,7 +3029,7 @@ const selectedTitle = selectedPage
         </div>
       </div>
 
-      {isOpen ? (
+          {isOpen ? (
         <div className="border-t border-neutral-100 p-3">
           <div className="flex h-10 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3">
             <Search className="h-4 w-4 text-neutral-400" />
@@ -2758,7 +3105,26 @@ const selectedTitle = selectedPage
               </div>
             </div>
           ) : null}
+
+          <div className="mt-3 border-t border-neutral-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setIsAddPageOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-100"
+            >
+              <Plus className="h-4 w-4" />
+              Add page
+            </button>
+          </div>
         </div>
+      ) : null}
+
+      {isAddPageOpen ? (
+        <AddCmsPageModal
+          fieldKey={fieldKey}
+          onCreate={handleCreatedPage}
+          onClose={() => setIsAddPageOpen(false)}
+        />
       ) : null}
     </div>
   );
@@ -2768,11 +3134,13 @@ function AttributeOptionPickerInput({
   attributeKey,
   value,
   placeholder,
+  multiple = false,
   onChange,
 }: {
   attributeKey: string;
   value: MetafieldValue;
   placeholder?: string | null;
+  multiple?: boolean;
   onChange: (value: MetafieldValue) => void;
 }) {
   const [attribute, setAttribute] = useState<CatalogAttributeItem | null>(null);
@@ -2781,8 +3149,23 @@ function AttributeOptionPickerInput({
   const [isAdding, setIsAdding] = useState(false);
   const [newOptionLabel, setNewOptionLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [isListEditorOpen, setIsListEditorOpen] = useState(false);
 
   const textValue = stringifyValue(value);
+
+const selectedValues = multiple
+  ? Array.isArray(value)
+    ? value.map((item) => String(item || ""))
+    : textValue
+      ? parseTags(textValue)
+      : []
+  : textValue
+    ? [textValue]
+    : [];
+
+  const selectedPreview = selectedValues.filter(Boolean).join(" • ");
 
   async function loadOptions() {
     try {
@@ -2799,7 +3182,7 @@ function AttributeOptionPickerInput({
       setError(
         loadError instanceof Error
           ? loadError.message
-          : `${attributeKey} options load failed.`
+          : `${attributeKey} options load failed.`,
       );
     } finally {
       setIsLoading(false);
@@ -2811,7 +3194,66 @@ function AttributeOptionPickerInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attributeKey]);
 
-  async function handleAddItem() {
+ function updateSelectedValues(nextValues: string[]) {
+  onChange(
+    nextValues
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+  );
+}
+
+  function handleSingleSelect(nextValue: string) {
+    onChange(nextValue);
+  }
+
+  function handleListSelect(index: number, nextValue: string) {
+    const nextValues = [...selectedValues];
+    nextValues[index] = nextValue;
+    updateSelectedValues(nextValues);
+  }
+
+function addBlankListItem() {
+  setIsListEditorOpen(true);
+
+  if (selectedValues.some((item) => !String(item || "").trim())) {
+    return;
+  }
+
+  onChange([...selectedValues, ""]);
+}
+
+  function removeListItem(index: number) {
+    updateSelectedValues(selectedValues.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  function clearAllListItems() {
+    onChange([]);
+  }
+
+  function handleDragStart(index: number) {
+    setDraggedIndex(index);
+  }
+
+  function handleDragEnter(targetIndex: number) {
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    setDragOverIndex(targetIndex);
+
+    const nextValues = [...selectedValues];
+    const [removed] = nextValues.splice(draggedIndex, 1);
+
+    nextValues.splice(targetIndex, 0, removed);
+
+    setDraggedIndex(targetIndex);
+    updateSelectedValues(nextValues);
+  }
+
+  function handleDragEnd() {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }
+
+  async function handleAddOption() {
     const label = newOptionLabel.trim();
 
     if (!label) return;
@@ -2832,81 +3274,273 @@ function AttributeOptionPickerInput({
 
       setNewOptionLabel("");
       await loadOptions();
+
+      if (multiple) {
+        updateSelectedValues([...selectedValues.filter(Boolean), label]);
+        setIsListEditorOpen(true);
+        return;
+      }
+
       onChange(label);
     } catch (addError) {
       setError(
         addError instanceof Error
           ? addError.message
-          : "Option add karte time error aa gaya."
+          : "Option add karte time error aa gaya.",
       );
     } finally {
       setIsAdding(false);
     }
   }
 
-  return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-2">
-      <div className="flex gap-2">
-        <select
-          value={textValue}
-          onChange={(event) => onChange(event.target.value)}
-          disabled={isLoading}
-          className="h-10 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-[13px] text-neutral-950 outline-none transition hover:bg-white focus:border-neutral-950 focus:bg-white disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
-        >
-          <option value="">
-            {isLoading ? "Loading..." : placeholder || "Select option"}
-          </option>
-
-          {textValue && !options.some((option) => option.label === textValue || option.value === textValue) ? (
-            <option value={textValue}>Current saved: {textValue}</option>
-          ) : null}
-
-          {options.map((option) => (
-            <option key={option.id} value={option.label}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-
-        {textValue ? (
+  if (multiple) {
+    return (
+      <div className="rounded-xl border border-neutral-200 bg-white p-2">
+        {!isListEditorOpen ? (
           <button
             type="button"
-            onClick={() => onChange("")}
-            className="h-10 rounded-xl px-3 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+            onClick={() => setIsListEditorOpen(true)}
+            className="flex h-10 w-full items-center rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-left text-[13px] text-neutral-950 outline-none transition hover:bg-white focus:border-neutral-950"
           >
-            Clear
+            <span className={selectedPreview ? "truncate" : "text-neutral-400"}>
+              {selectedPreview || placeholder || "Select option"}
+            </span>
           </button>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {selectedValues.length > 0 ? (
+                selectedValues.map((itemValue, index) => (
+                  <div
+                    key={`${itemValue || "blank"}-${index}`}
+                    draggable
+                    onDragStart={() => handleDragStart(index)}
+                    onDragEnter={() => handleDragEnter(index)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDragEnd={handleDragEnd}
+                    className={[
+                      "grid grid-cols-[28px_1fr_32px] items-center gap-2 transition",
+                      draggedIndex === index
+                        ? "scale-[0.99] opacity-60"
+                        : dragOverIndex === index
+                          ? "rounded-xl bg-neutral-50"
+                          : "",
+                    ].join(" ")}
+                  >
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={() => handleDragStart(index)}
+                      onDragEnd={handleDragEnd}
+                      className="flex h-9 w-7 cursor-grab items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 active:cursor-grabbing"
+                      aria-label="Drag option"
+                    >
+                      <span className="text-lg leading-none">⋮⋮</span>
+                    </button>
+
+                    <select
+                      value={itemValue}
+                      onChange={(event) => handleListSelect(index, event.target.value)}
+                      disabled={isLoading}
+                      className="h-10 min-w-0 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-[13px] text-neutral-950 outline-none transition hover:bg-white focus:border-neutral-950 focus:bg-white disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
+                    >
+                      <option value="">
+                        {isLoading ? "Loading..." : placeholder || "Select option"}
+                      </option>
+
+                      {itemValue &&
+                      !options.some(
+                        (option) =>
+                          option.label === itemValue || option.value === itemValue,
+                      ) ? (
+                        <option value={itemValue}>Current saved: {itemValue}</option>
+                      ) : null}
+
+                      {options.map((option) => (
+                        <option key={option.id} value={option.label}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => removeListItem(index)}
+                      className="flex h-9 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
+                      aria-label="Remove option"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="flex h-10 items-center rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-sm text-neutral-400">
+                  {placeholder || "Select option"}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3">
+              <button
+                type="button"
+                onClick={addBlankListItem}
+                className="inline-flex h-9 items-center gap-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-800 shadow-sm transition hover:bg-neutral-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add item
+              </button>
+
+              {selectedValues.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={clearAllListItems}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                >
+                  Clear all
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-2 flex gap-2">
+              <input
+                value={newOptionLabel}
+                onChange={(event) => setNewOptionLabel(event.target.value)}
+                placeholder="Create new option"
+                className="h-9 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none transition focus:border-neutral-950"
+              />
+
+              <button
+                type="button"
+                onClick={handleAddOption}
+                disabled={isAdding || !newOptionLabel.trim()}
+                className="inline-flex h-9 items-center gap-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-800 shadow-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isAdding ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                Create option
+              </button>
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsListEditorOpen(false)}
+                className="h-8 rounded-xl px-3 text-xs"
+              >
+                Done
+              </Button>
+            </div>
+          </>
+        )}
+
+        {error ? (
+          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {error}
+          </p>
         ) : null}
       </div>
+    );
+  }
 
-      <div className="mt-2 flex gap-2">
-        <input
-          value={newOptionLabel}
-          onChange={(event) => setNewOptionLabel(event.target.value)}
-          placeholder="Add item"
-          className="h-9 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none transition focus:border-neutral-950"
-        />
+  return (
+  <div className="rounded-xl border border-neutral-200 bg-white p-2">
+    {!isListEditorOpen ? (
+      <button
+        type="button"
+        onClick={() => setIsListEditorOpen(true)}
+        className="flex h-10 w-full items-center rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-left text-[13px] text-neutral-950 outline-none transition hover:bg-white focus:border-neutral-950"
+      >
+        <span className={textValue ? "truncate" : "text-neutral-400"}>
+          {textValue || placeholder || "Select option"}
+        </span>
+      </button>
+    ) : (
+      <>
+        <div className="flex gap-2">
+          <select
+            value={textValue}
+            onChange={(event) => handleSingleSelect(event.target.value)}
+            disabled={isLoading}
+            className="h-10 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 text-[13px] text-neutral-950 outline-none transition hover:bg-white focus:border-neutral-950 focus:bg-white disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-400"
+          >
+            <option value="">
+              {isLoading ? "Loading..." : placeholder || "Select option"}
+            </option>
 
-        <button
-          type="button"
-          onClick={handleAddItem}
-          disabled={isAdding || !newOptionLabel.trim()}
-          className="inline-flex h-9 items-center gap-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-800 shadow-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isAdding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          Add item
-        </button>
-      </div>
+            {textValue &&
+            !options.some(
+              (option) =>
+                option.label === textValue || option.value === textValue,
+            ) ? (
+              <option value={textValue}>Current saved: {textValue}</option>
+            ) : null}
 
-      {error ? (
-        <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
+            {options.map((option) => (
+              <option key={option.id} value={option.label}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          {textValue ? (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="h-10 rounded-xl px-3 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-2 flex gap-2">
+          <input
+            value={newOptionLabel}
+            onChange={(event) => setNewOptionLabel(event.target.value)}
+            placeholder="Add item"
+            className="h-9 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none transition focus:border-neutral-950"
+          />
+
+          <button
+            type="button"
+            onClick={handleAddOption}
+            disabled={isAdding || !newOptionLabel.trim()}
+            className="inline-flex h-9 items-center gap-1 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-800 shadow-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isAdding ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
+            Add item
+          </button>
+        </div>
+
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsListEditorOpen(false)}
+            className="h-8 rounded-xl px-3 text-xs"
+          >
+            Done
+          </Button>
+        </div>
+      </>
+    )}
+
+    {error ? (
+      <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        {error}
+      </p>
+    ) : null}
+  </div>
+);
 }
-
 function MediaPickerInput({
   value,
   placeholder,
@@ -3136,6 +3770,7 @@ if (field.type === "attribute_option_picker") {
       attributeKey={field.attributeKey || field.key}
       value={value}
       placeholder={field.placeholder}
+      multiple={Boolean(field.multiple)}
       onChange={onChange}
     />
   );

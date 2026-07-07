@@ -1,25 +1,111 @@
 "use client";
 
 import Link from "next/link";
-import { useList } from "@refinedev/core";
+import { useEffect, useState } from "react";
+import {
+  activateCommerceType,
+  deactivateCommerceType,
+  getCommerceTypes,
+} from "@/lib/admin/commerce-types-api";
 import { Archive, Plus, Settings2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CommerceModelFilters } from "@/components/admin/catalog/commerce-models/commerce-model-filters";
+import {
+  CommerceModelFilters,
+  emptyCommerceModelFilters,
+  type CommerceModelFilterState,
+} from "@/components/admin/catalog/commerce-models/commerce-model-filters";
 import { CommerceModelTable } from "@/components/admin/catalog/commerce-models/commerce-model-table";
 import type { CommerceModel } from "@/components/admin/catalog/commerce-models/commerce-model-types";
 
 export default function CommerceModelsPage() {
-  const listResult = useList<CommerceModel>({
-    resource: "commerce-models",
-  });
+  const [models, setModels] = useState<CommerceModel[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const data = listResult.result;
-  const isLoading = listResult.query?.isLoading ?? false;
-  const isError = listResult.query?.isError ?? false;
-  const error = listResult.query?.error;
+  const [filters, setFilters] = useState<CommerceModelFilterState>(
+  emptyCommerceModelFilters,
+);
 
-  const models = data?.data ?? [];
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCommerceTypes() {
+      try {
+        setIsLoading(true);
+        setApiError(null);
+
+        const items = await getCommerceTypes();
+
+        if (!cancelled) {
+          setModels(items);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setApiError(
+            error instanceof Error
+              ? error.message
+              : "Commerce types fetch failed.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadCommerceTypes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleToggleStatus(model: CommerceModel) {
+    if (!model.id) return;
+
+    try {
+      setTogglingId(model.id);
+      setApiError(null);
+
+      if (model.isActive) {
+        await deactivateCommerceType(model.id);
+      } else {
+        await activateCommerceType(model.id);
+      }
+
+      const items = await getCommerceTypes();
+      setModels(items);
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "Commerce type status update failed.",
+      );
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+
+  const filteredModels = models.filter((model) => {
+  const statusMatch =
+    !filters.statuses.length ||
+    filters.statuses.includes(model.isActive ? "active" : "inactive");
+
+  const typeMatch =
+    !filters.types.length || filters.types.includes(model.code);
+
+  const config = model.config || {};
+
+  const configMatch =
+    !filters.configs.length ||
+    filters.configs.every((configKey) => Boolean(config[configKey]));
+
+  return statusMatch && typeMatch && configMatch;
+});
 
   return (
     <main className="min-h-screen bg-[#fbfaf6] p-6">
@@ -70,26 +156,33 @@ export default function CommerceModelsPage() {
         </div>
       </section>
 
-      {isError ? (
+      {apiError ? (
         <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Commerce models API connect nahi ho paayi. Backend ready hone ke baad
-          endpoint check karna:{" "}
+          Commerce types API connect nahi ho paayi. Backend endpoint check
+          karna:{" "}
           <span className="font-semibold">
-            GET /api/proxy/admin/catalog/commerce-models
+            GET /api/proxy/admin/commerce-types
           </span>
-          {error instanceof Error && error.message ? (
-            <p className="mt-1 text-xs">{error.message}</p>
-          ) : null}
+          <p className="mt-1 text-xs">{apiError}</p>
         </div>
       ) : null}
 
-      <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
-        <CommerceModelFilters />
+     <section className="space-y-6">
+  <CommerceModelFilters
+  value={filters}
+  onChange={setFilters}
+  onClear={() => setFilters(emptyCommerceModelFilters)}
+/>
 
-        <Card className="rounded-[1.5rem] border-neutral-200 bg-white p-4">
-          <CommerceModelTable models={models} isLoading={isLoading} />
-        </Card>
-      </section>
+  <Card className="w-full rounded-[1.5rem] border-neutral-200 bg-white p-4">
+   <CommerceModelTable
+  models={filteredModels}
+  isLoading={isLoading}
+  onToggleStatus={handleToggleStatus}
+  togglingId={togglingId}
+/>
+  </Card>
+</section>
     </main>
   );
 }

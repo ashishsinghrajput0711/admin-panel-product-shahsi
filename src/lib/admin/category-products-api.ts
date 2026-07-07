@@ -48,12 +48,20 @@ type ApiResponse<T> = {
   error?: unknown;
 };
 
+export type CategoryProductSearchFilters = {
+  categories: string[];
+  types: string[];
+  vendors: string[];
+  tags: string[];
+};
+
 export type PaginatedResult<T> = {
   items: T[];
   total: number;
   page: number;
   limit: number;
   totalPages: number;
+  filters: CategoryProductSearchFilters;
 };
 
 function getHeaders(): HeadersInit {
@@ -110,13 +118,19 @@ function getApiError(data: unknown, fallback: string) {
 }
 
 function extractItems<T>(data: unknown): PaginatedResult<T> {
-  const empty: PaginatedResult<T> = {
-    items: [],
-    total: 0,
-    page: 1,
-    limit: 20,
-    totalPages: 1,
-  };
+const empty: PaginatedResult<T> = {
+  items: [],
+  total: 0,
+  page: 1,
+  limit: 20,
+  totalPages: 1,
+  filters: {
+    categories: [],
+    types: [],
+    vendors: [],
+    tags: [],
+  },
+};
 
   if (!data || typeof data !== "object") return empty;
 
@@ -172,13 +186,28 @@ function extractItems<T>(data: unknown): PaginatedResult<T> {
         0,
     ) || Math.max(1, Math.ceil(total / Math.max(1, limit)));
 
-  return {
-    items: items as T[],
-    total,
-    page,
-    limit,
-    totalPages,
-  };
+const filtersSource =
+  payload.filters && typeof payload.filters === "object"
+    ? payload.filters
+    : root.filters && typeof root.filters === "object"
+      ? root.filters
+      : {};
+
+return {
+  items: items as T[],
+  total,
+  page,
+  limit,
+  totalPages,
+  filters: {
+    categories: Array.isArray(filtersSource.categories)
+      ? filtersSource.categories
+      : [],
+    types: Array.isArray(filtersSource.types) ? filtersSource.types : [],
+    vendors: Array.isArray(filtersSource.vendors) ? filtersSource.vendors : [],
+    tags: Array.isArray(filtersSource.tags) ? filtersSource.tags : [],
+  },
+};
 }
 
 export function getCategoryProductId(product: CategoryProductItem) {
@@ -270,12 +299,22 @@ export async function getCategoryProducts({
 
 export async function searchProductsForCategory({
   search = "",
+  searchBy = "all",
+  category = "",
+  type = "",
+  tags = "",
+  vendor = "",
   page = 1,
   limit = 20,
   status = "ACTIVE",
   excludeCategorySlug = "",
 }: {
   search?: string;
+  searchBy?: "all" | "title" | "productId" | "barcode" | "sku";
+  category?: string;
+  type?: string;
+  tags?: string;
+  vendor?: string;
   page?: number;
   limit?: number;
   status?: string;
@@ -290,6 +329,26 @@ export async function searchProductsForCategory({
   if (search.trim()) {
     params.set("search", search.trim());
   }
+
+ if (searchBy && searchBy !== "all") {
+  params.set("searchBy", searchBy);
+}
+
+if (category.trim()) {
+  params.set("category", category.trim());
+}
+
+if (type.trim()) {
+  params.set("type", type.trim());
+}
+
+if (tags.trim()) {
+  params.set("tags", tags.trim());
+}
+
+if (vendor.trim()) {
+  params.set("vendor", vendor.trim());
+}
 
   if (status.trim()) {
     params.set("status", status.trim());

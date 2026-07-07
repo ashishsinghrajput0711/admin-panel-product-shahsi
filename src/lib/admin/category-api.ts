@@ -251,17 +251,31 @@ export function buildCategoryPayload(values: CategoryFormValues) {
   };
 }
 
-export async function upsertCategory(values: CategoryFormValues) {
+export async function upsertCategory(
+  values: CategoryFormValues,
+  idOrSlug?: string,
+) {
   const apiRootUrl = getAdminApiRootUrl();
   const payload = buildCategoryPayload(values);
 
+  const isEdit = Boolean(idOrSlug?.trim());
+
+  console.log("CATEGORY_SAVE_MODE:", isEdit ? "PATCH" : "POST");
+  console.log("CATEGORY_SAVE_ID_OR_SLUG:", idOrSlug);
   console.log("CATEGORY_SAVE_PAYLOAD:", payload);
 
-  const response = await fetch(`${apiRootUrl}/admin/catalog/categories`, {
-    method: "POST",
-    headers: getJsonHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    isEdit
+      ? `${apiRootUrl}/admin/catalog/categories/${encodeURIComponent(
+          idOrSlug!.trim(),
+        )}`
+      : `${apiRootUrl}/admin/catalog/categories`,
+    {
+      method: isEdit ? "PATCH" : "POST",
+      headers: getJsonHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
 
   const data = await readJson<CategoryUpsertResponse>(response);
 

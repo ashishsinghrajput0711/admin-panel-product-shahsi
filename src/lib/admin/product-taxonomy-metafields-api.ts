@@ -394,12 +394,14 @@ export async function saveProductCategoryMetafields({
   apiRootUrl,
   productId,
   taxonomyId,
+  taxonomyCategoryId,
   categoryMetafields,
   token,
 }: {
   apiRootUrl: string;
   productId: string;
   taxonomyId: string;
+  taxonomyCategoryId?: string | null;
   categoryMetafields: CategoryMetafieldRecord;
   token?: string | null;
 }) {
@@ -410,10 +412,11 @@ export async function saveProductCategoryMetafields({
     {
       method: "PATCH",
       headers: getHeaders(token),
-      body: JSON.stringify({
-        taxonomyId,
-        categoryMetafields,
-      }),
+   body: JSON.stringify({
+  taxonomyId,
+  taxonomyCategoryId: taxonomyCategoryId || taxonomyId,
+  categoryMetafields,
+}),
     }
   );
 

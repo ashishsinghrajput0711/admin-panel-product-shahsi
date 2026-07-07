@@ -64,7 +64,10 @@ export default function EditCategoryPage() {
       setIsSubmitting(true);
       setPageError(null);
 
-      const savedCategory = await upsertCategory(values);
+const savedCategory = await upsertCategory(
+  values,
+  category?.id || category?.slug || slug,
+);
       const savedSlug = savedCategory.slug || values.slug;
 
       if (imageFile && savedSlug) {
