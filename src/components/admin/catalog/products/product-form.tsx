@@ -1,8 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { Editor } from "@tiptap/core";
+import { useEffect, useMemo, useState } from "react";
+import { RichTextEditor } from "@/components/admin/catalog/products/rich-text-editor";
+
 
 import { ProductTagsSection } from "@/components/admin/catalog/products/product-tags-section";
 
@@ -11,58 +12,60 @@ import { ProductShopifyMetafieldsSection } from "@/components/admin/catalog/prod
 import { ProductMediaSection } from "@/components/admin/catalog/products/product-media-section";
 import type { ProductMediaItem } from "@/lib/admin/product-media-upload";
 import {
-  AlignCenter,
-  AlignLeft,
-  AlignRight,
-  Bold,
+  // AlignCenter,
+  // AlignLeft,
+  // AlignRight,
+  // Bold,
   ChevronDown,
-  Code2,
-  Eraser,
-  Eye,
-  ImageIcon,
-  Italic,
-  Link2,
-  List,
-  ListOrdered,
-  Minus,
-  PaintBucket,
-  Pilcrow,
-  Quote,
-  Redo2,
+  // Code2,
+  // Eraser,
+  // Eye,
+  // ImageIcon,
+  // Italic,
+  // Link2,
+  // List,
+  // ListOrdered,
+  // Minus,
+  // PaintBucket,
+  // Pilcrow,
+  // Quote,
+  // Redo2,
   Search,
   Settings2,
   Sparkles,
-  Strikethrough,
+  // Strikethrough,
   Table2,
   Tag,
-  Type,
-  UnderlineIcon,
-  Undo2,
-  Unlink,
-  Upload,
-  Video,
+  // Type,
+  // UnderlineIcon,
+  // Undo2,
+  // Unlink,
+  // Upload,
+  // Video,
    ShoppingBag,
 } from "lucide-react";
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import { Link } from "@tiptap/extension-link";
-import { Image } from "@tiptap/extension-image";
-import { TextAlign } from "@tiptap/extension-text-align";
-import { Underline } from "@tiptap/extension-underline";
-import { Color } from "@tiptap/extension-color";
-import { TextStyle } from "@tiptap/extension-text-style";
-import { Highlight } from "@tiptap/extension-highlight";
-import {
-  Table,
-  TableRow,
-  TableCell,
-  TableHeader,
-} from "@tiptap/extension-table";
-import { Placeholder } from "@tiptap/extension-placeholder";
-import { Youtube } from "@tiptap/extension-youtube";
+// import type { Editor } from "@tiptap/core";
+// import { EditorContent, useEditor } from "@tiptap/react";
+// import StarterKit from "@tiptap/starter-kit";
+// import { Link } from "@tiptap/extension-link";
+// import { Image } from "@tiptap/extension-image";
+// import { TextAlign } from "@tiptap/extension-text-align";
+// import { Underline } from "@tiptap/extension-underline";
+// import { Color } from "@tiptap/extension-color";
+// import { TextStyle } from "@tiptap/extension-text-style";
+// import { Highlight } from "@tiptap/extension-highlight";
+// import {
+//   Table,
+//   TableRow,
+//   TableCell,
+//   TableHeader,
+// } from "@tiptap/extension-table";
+// import { Placeholder } from "@tiptap/extension-placeholder";
+// import { Youtube } from "@tiptap/extension-youtube";
 import { type Resolver, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { productSchema, type ProductFormValues } from "./product-schema";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -1434,15 +1437,18 @@ onSubmit(payload);
 
         <div className="mt-3">
           <Field label="Description" error={form.formState.errors.description?.message}>
-            <RichTextEditor
-              value={descriptionValue}
-              onChange={(html) =>
-                form.setValue("description", html, {
-                  shouldDirty: true,
-                  shouldValidate: true,
-                })
-              }
-            />
+         <RichTextEditor
+  value={descriptionValue}
+  productId={productId}
+  minHeightClass="min-h-[280px]"
+  maxHeightClass="max-h-[520px]"
+  onChange={(html) =>
+    form.setValue("description", html, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+  }
+/>
           </Field>
         </div>
       </FormSection>
@@ -2433,605 +2439,605 @@ function GoogleMerchantField({
   );
 }
 
-function RichTextEditor({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (html: string) => void;
-}) {
-  const [mode, setMode] = useState<"visual" | "html" | "preview">("visual");
-  const [didAutoFormat, setDidAutoFormat] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const colorInputRef = useRef<HTMLInputElement | null>(null);
-  const highlightInputRef = useRef<HTMLInputElement | null>(null);
-
-  const editor = useEditor({
-    immediatelyRender: false,
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3, 4, 5, 6] },
-      }),
-      Underline,
-      TextStyle,
-      Color,
-      Highlight.configure({ multicolor: true }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: "text-blue-700 underline underline-offset-2",
-        },
-      }),
-      Image.configure({
-        HTMLAttributes: {
-          class: "max-w-full rounded-md",
-        },
-      }),
-      Youtube.configure({
-        width: 640,
-        height: 360,
-      }),
-      TextAlign.configure({
-        types: ["heading", "paragraph"],
-      }),
-      Table.configure({
-        resizable: true,
-      }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      Placeholder.configure({
-        placeholder: "Write product description...",
-      }),
-    ],
-    content: value || "",
-    editorProps: {
-      attributes: {
-        class:
-          "min-h-[280px] max-h-[520px] overflow-y-auto px-4 py-4 text-[13px] leading-6 text-neutral-950 outline-none [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-3 [&_blockquote]:text-neutral-700 [&_h1]:mb-3 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:text-2xl [&_h2]:font-bold [&_h3]:mb-2 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mb-2 [&_h4]:text-lg [&_h4]:font-semibold [&_h5]:mb-1.5 [&_h5]:text-base [&_h5]:font-semibold [&_h6]:mb-1.5 [&_h6]:text-sm [&_h6]:font-semibold [&_hr]:my-4 [&_hr]:border-neutral-200 [&_img]:my-3 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-neutral-300 [&_td]:p-2 [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:p-2 [&_ul]:list-disc",
-      },
-    },
-    onUpdate({ editor }) {
-      onChange(editor.getHTML());
-    },
-  });
-
-  useEffect(() => {
-    if (!editor) return;
-
-    const currentHtml = editor.getHTML();
-    const nextHtml = value || "";
-
-    if (currentHtml !== nextHtml) {
-   editor.commands.setContent(nextHtml, {
-  emitUpdate: false,
-});
-    }
-  }, [editor, value]);
-
-  useEffect(() => {
-    if (!editor || didAutoFormat) return;
-
-    const rawValue = value || "";
-    const isLongPlainText = rawValue.length > 500 && !hasHtmlTags(rawValue);
-
-    if (!isLongPlainText) return;
-
-    const timer = window.setTimeout(() => {
-      const html = formatDescriptionHtml(rawValue);
-     editor.commands.setContent(html, {
-  emitUpdate: false,
-});
-      onChange(html);
-      setDidAutoFormat(true);
-    }, 150);
-
-    return () => window.clearTimeout(timer);
-  }, [didAutoFormat, editor, onChange, value]);
-
-  if (!editor) return null;
-
-  async function uploadEditorFile(file: File) {
-    const formData = new FormData();
-
-    formData.append("files", file);
-    formData.append("folder", "product-descriptions");
-
-    const token = getToken();
-
-    const response = await fetch(`${getApiRootUrl()}/admin/editor-media/upload`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: formData,
-    });
-
-    const json = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      throw new Error(json?.message || "Editor media upload failed.");
-    }
-
-    const url = findMediaUrl(json);
-
-    if (!url) {
-      throw new Error("Upload response me media URL nahi mila.");
-    }
-
-    return url;
-  }
-
-  async function handleFileUpload(files: FileList | null) {
-    if (!files?.length) return;
-
-    try {
-      for (const file of Array.from(files)) {
-        const url = await uploadEditorFile(file);
-        if (!editor) {
-  return;
-}
-
-        if (file.type.startsWith("video/")) {
-          editor
-            .chain()
-            .focus()
-            .insertContent(
-              `<video controls src="${url}" style="max-width:100%;border-radius:8px;"></video>`
-            )
-            .run();
-        } else {
-          editor.chain().focus().setImage({ src: url }).run();
-        }
-      }
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Upload failed.");
-    } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  }
-
- function setLink() {
-  if (!editor) {
-    return;
-  }
-
-  const previousUrl = editor.getAttributes("link").href as string | undefined;
-  const url = window.prompt("Enter URL", previousUrl || "");
-
-    if (url === null) return;
-
-    if (!url.trim()) {
-      editor.chain().focus().unsetLink().run();
-      return;
-    }
-
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
-  }
-
- function insertImageUrl() {
-  if (!editor) {
-    return;
-  }
-
-  const url = window.prompt("Image URL");
-
-  if (!url) return;
-
-  editor.chain().focus().setImage({ src: url }).run();
-}
-
-function insertVideoUrl() {
-  if (!editor) {
-    return;
-  }
-
-  const url = window.prompt("Video URL");
-
-  if (!url) return;
-
-  if (url.includes("youtube.com") || url.includes("youtu.be")) {
-    editor.commands.setYoutubeVideo({ src: url });
-    return;
-  }
-
-  editor
-    .chain()
-    .focus()
-    .insertContent(
-      `<video src="${url}" controls style="max-width: 100%; border-radius: 12px;"></video>`
-    )
-    .run();
-}
-
- function smartFormat() {
-  if (!editor) {
-    return;
-  }
-
-  const html = formatDescriptionHtml(editor.getText());
-
-  if (!html) return;
-
-    editor.commands.setContent(html, {
-  emitUpdate: false,
-});
-    onChange(editor.getHTML());
-  }
-
-  return (
-    <div className="relative rounded-md border border-neutral-300 bg-white">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,video/*"
-        multiple
-        className="hidden"
-        onChange={(event) => handleFileUpload(event.target.files)}
-      />
-
-      <input
-        ref={colorInputRef}
-        type="color"
-        className="hidden"
-        onChange={(event) =>
-          editor.chain().focus().setColor(event.target.value).run()
-        }
-      />
-
-      <input
-        ref={highlightInputRef}
-        type="color"
-        className="hidden"
-        onChange={(event) =>
-          editor
-            .chain()
-            .focus()
-            .setHighlight({ color: event.target.value })
-            .run()
-        }
-      />
-
-      <div className="flex flex-wrap items-center gap-1 border-b border-neutral-200 bg-neutral-50 px-2 py-1.5">
-        <BlockStyleDropdown editor={editor} />
-
-        <ToolbarButton
-          active={editor.isActive("bold")}
-          title="Bold"
-          onClick={() => editor.chain().focus().toggleBold().run()}
-        >
-          <Bold className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          active={editor.isActive("italic")}
-          title="Italic"
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          <Italic className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          active={editor.isActive("underline")}
-          title="Underline"
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-        >
-          <UnderlineIcon className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          active={editor.isActive("strike")}
-          title="Strikethrough"
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-        >
-          <Strikethrough className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Text color"
-          onClick={() => colorInputRef.current?.click()}
-        >
-          <Type className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Highlight"
-          onClick={() => highlightInputRef.current?.click()}
-        >
-          <PaintBucket className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Align left"
-          onClick={() => editor.chain().focus().setTextAlign("left").run()}
-        >
-          <AlignLeft className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Align center"
-          onClick={() => editor.chain().focus().setTextAlign("center").run()}
-        >
-          <AlignCenter className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Align right"
-          onClick={() => editor.chain().focus().setTextAlign("right").run()}
-        >
-          <AlignRight className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          active={editor.isActive("bulletList")}
-          title="Bullet list"
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-        >
-          <List className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          active={editor.isActive("orderedList")}
-          title="Number list"
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        >
-          <ListOrdered className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton title="Link" onClick={setLink}>
-          <Link2 className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Unlink"
-          onClick={() => editor.chain().focus().unsetLink().run()}
-        >
-          <Unlink className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Upload image/video"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton title="Image URL" onClick={insertImageUrl}>
-          <ImageIcon className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton title="Video URL" onClick={insertVideoUrl}>
-          <Video className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Table"
-          onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-              .run()
-          }
-        >
-          <Table2 className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Horizontal line"
-          onClick={() => editor.chain().focus().setHorizontalRule().run()}
-        >
-          <Minus className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          active={editor.isActive("blockquote")}
-          title="Quote"
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        >
-          <Quote className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Undo"
-          onClick={() => editor.chain().focus().undo().run()}
-        >
-          <Undo2 className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Redo"
-          onClick={() => editor.chain().focus().redo().run()}
-        >
-          <Redo2 className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Clear format"
-          onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}
-        >
-          <Eraser className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton title="Smart format" onClick={smartFormat}>
-          <Pilcrow className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="HTML"
-          onClick={() => setMode(mode === "html" ? "visual" : "html")}
-        >
-          <Code2 className="h-4 w-4" />
-        </ToolbarButton>
-
-        <ToolbarButton
-          title="Preview"
-          onClick={() => setMode(mode === "preview" ? "visual" : "preview")}
-        >
-          <Eye className="h-4 w-4" />
-        </ToolbarButton>
-      </div>
-
-      {mode === "html" ? (
-        <textarea
-          value={value || ""}
-          onChange={(event) => {
-      onChange(event.target.value);
-
-editor.commands.setContent(event.target.value, {
-  emitUpdate: false,
-});
-          }}
-          className="min-h-[280px] max-h-[520px] w-full overflow-y-auto rounded-b-md bg-neutral-950 p-4 font-mono text-sm leading-6 text-white outline-none"
-          spellCheck={false}
-        />
-      ) : mode === "preview" ? (
-        <div
-          className="min-h-[280px] max-h-[520px] overflow-y-auto px-4 py-4 text-[13px] leading-6 text-neutral-950 [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-3 [&_h1]:mb-3 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:text-2xl [&_h2]:font-bold [&_h3]:mb-2 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mb-2 [&_h4]:text-lg [&_h4]:font-semibold [&_h5]:mb-1.5 [&_h5]:text-base [&_h5]:font-semibold [&_h6]:mb-1.5 [&_h6]:text-sm [&_h6]:font-semibold [&_hr]:my-4 [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_ul]:list-disc"
-          dangerouslySetInnerHTML={{ __html: value || "" }}
-        />
-      ) : (
-        <EditorContent editor={editor} />
-      )}
-    </div>
-  );
-}
-
-function BlockStyleDropdown({ editor }: { editor: Editor }) {
-  const [open, setOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    function closeOnOutsideClick(event: MouseEvent) {
-      if (!dropdownRef.current) return;
-
-      if (!dropdownRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", closeOnOutsideClick);
-
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutsideClick);
-    };
-  }, []);
-
-  const headingItems = ([1, 2, 3, 4, 5, 6] as const).map((level) => ({
-    key: `h${level}`,
-    label: `Heading ${level}`,
-    previewClass:
-      level === 1
-        ? "text-4xl font-bold"
-        : level === 2
-          ? "text-3xl font-bold"
-          : level === 3
-            ? "text-2xl font-semibold"
-            : level === 4
-              ? "text-xl font-semibold"
-              : level === 5
-                ? "text-lg font-semibold"
-                : "text-base font-semibold",
-    active: editor.isActive("heading", { level }),
-    action: () => {
-      if (!editor.isActive("heading", { level })) {
-        editor.chain().focus().toggleHeading({ level }).run();
-      }
-    },
-  }));
-
-  const items = [
-    {
-      key: "paragraph",
-      label: "Paragraph",
-      previewClass: "text-base font-medium",
-      active: editor.isActive("paragraph"),
-      action: () => editor.chain().focus().setParagraph().run(),
-    },
-    ...headingItems,
-    {
-      key: "blockquote",
-      label: "Blockquote",
-      previewClass:
-        "border-l-4 border-neutral-300 pl-4 text-xl font-medium text-neutral-700",
-      active: editor.isActive("blockquote"),
-      action: () => editor.chain().focus().toggleBlockquote().run(),
-    },
-  ];
-
-  const activeItem =
-    items.find((item) => item.active) ||
-    items.find((item) => item.key === "paragraph") ||
-    items[0];
-
-  return (
-    <div ref={dropdownRef} className="relative">
-      <button
-        type="button"
-        onMouseDown={(event) => {
-          event.preventDefault();
-          setOpen((value) => !value);
-        }}
-        className="inline-flex h-8 min-w-[135px] items-center justify-between gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-900 hover:bg-neutral-50"
-      >
-        {activeItem.label}
-        <ChevronDown className="h-3.5 w-3.5 text-neutral-500" />
-      </button>
-
-      {open ? (
-        <div className="absolute left-0 top-9 z-[80] max-h-[420px] w-[300px] overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-2xl">
-          {items.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                item.action();
-                setOpen(false);
-              }}
-              className={`block w-full border-b border-neutral-100 px-5 py-3 text-left text-neutral-900 last:border-b-0 hover:bg-neutral-50 ${
-                item.active ? "bg-neutral-100" : ""
-              }`}
-            >
-              <span className={item.previewClass}>{item.label}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ToolbarButton({
-  title,
-  active,
-  onClick,
-  children,
-}: {
-  title: string;
-  active?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        onClick();
-      }}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition ${
-        active
-          ? "bg-neutral-950 text-white"
-          : "text-neutral-700 hover:bg-white hover:text-neutral-950"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
+// function RichTextEditor({
+//   value,
+//   onChange,
+// }: {
+//   value: string;
+//   onChange: (html: string) => void;
+// }) {
+//   const [mode, setMode] = useState<"visual" | "html" | "preview">("visual");
+//   const [didAutoFormat, setDidAutoFormat] = useState(false);
+//   const fileInputRef = useRef<HTMLInputElement | null>(null);
+//   const colorInputRef = useRef<HTMLInputElement | null>(null);
+//   const highlightInputRef = useRef<HTMLInputElement | null>(null);
+
+//   const editor = useEditor({
+//     immediatelyRender: false,
+//     extensions: [
+//       StarterKit.configure({
+//         heading: { levels: [1, 2, 3, 4, 5, 6] },
+//       }),
+//       Underline,
+//       TextStyle,
+//       Color,
+//       Highlight.configure({ multicolor: true }),
+//       Link.configure({
+//         openOnClick: false,
+//         HTMLAttributes: {
+//           class: "text-blue-700 underline underline-offset-2",
+//         },
+//       }),
+//       Image.configure({
+//         HTMLAttributes: {
+//           class: "max-w-full rounded-md",
+//         },
+//       }),
+//       Youtube.configure({
+//         width: 640,
+//         height: 360,
+//       }),
+//       TextAlign.configure({
+//         types: ["heading", "paragraph"],
+//       }),
+//       Table.configure({
+//         resizable: true,
+//       }),
+//       TableRow,
+//       TableHeader,
+//       TableCell,
+//       Placeholder.configure({
+//         placeholder: "Write product description...",
+//       }),
+//     ],
+//     content: value || "",
+//     editorProps: {
+//       attributes: {
+//         class:
+//           "min-h-[280px] max-h-[520px] overflow-y-auto px-4 py-4 text-[13px] leading-6 text-neutral-950 outline-none [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-3 [&_blockquote]:text-neutral-700 [&_h1]:mb-3 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:text-2xl [&_h2]:font-bold [&_h3]:mb-2 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mb-2 [&_h4]:text-lg [&_h4]:font-semibold [&_h5]:mb-1.5 [&_h5]:text-base [&_h5]:font-semibold [&_h6]:mb-1.5 [&_h6]:text-sm [&_h6]:font-semibold [&_hr]:my-4 [&_hr]:border-neutral-200 [&_img]:my-3 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-neutral-300 [&_td]:p-2 [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:p-2 [&_ul]:list-disc",
+//       },
+//     },
+//     onUpdate({ editor }) {
+//       onChange(editor.getHTML());
+//     },
+//   });
+
+//   useEffect(() => {
+//     if (!editor) return;
+
+//     const currentHtml = editor.getHTML();
+//     const nextHtml = value || "";
+
+//     if (currentHtml !== nextHtml) {
+//    editor.commands.setContent(nextHtml, {
+//   emitUpdate: false,
+// });
+//     }
+//   }, [editor, value]);
+
+//   useEffect(() => {
+//     if (!editor || didAutoFormat) return;
+
+//     const rawValue = value || "";
+//     const isLongPlainText = rawValue.length > 500 && !hasHtmlTags(rawValue);
+
+//     if (!isLongPlainText) return;
+
+//     const timer = window.setTimeout(() => {
+//       const html = formatDescriptionHtml(rawValue);
+//      editor.commands.setContent(html, {
+//   emitUpdate: false,
+// });
+//       onChange(html);
+//       setDidAutoFormat(true);
+//     }, 150);
+
+//     return () => window.clearTimeout(timer);
+//   }, [didAutoFormat, editor, onChange, value]);
+
+//   if (!editor) return null;
+
+//   async function uploadEditorFile(file: File) {
+//     const formData = new FormData();
+
+//     formData.append("files", file);
+//     formData.append("folder", "product-descriptions");
+
+//     const token = getToken();
+
+//     const response = await fetch(`${getApiRootUrl()}/admin/editor-media/upload`, {
+//       method: "POST",
+//       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+//       body: formData,
+//     });
+
+//     const json = await response.json().catch(() => null);
+
+//     if (!response.ok) {
+//       throw new Error(json?.message || "Editor media upload failed.");
+//     }
+
+//     const url = findMediaUrl(json);
+
+//     if (!url) {
+//       throw new Error("Upload response me media URL nahi mila.");
+//     }
+
+//     return url;
+//   }
+
+//   async function handleFileUpload(files: FileList | null) {
+//     if (!files?.length) return;
+
+//     try {
+//       for (const file of Array.from(files)) {
+//         const url = await uploadEditorFile(file);
+//         if (!editor) {
+//   return;
+// }
+
+//         if (file.type.startsWith("video/")) {
+//           editor
+//             .chain()
+//             .focus()
+//             .insertContent(
+//               `<video controls src="${url}" style="max-width:100%;border-radius:8px;"></video>`
+//             )
+//             .run();
+//         } else {
+//           editor.chain().focus().setImage({ src: url }).run();
+//         }
+//       }
+//     } catch (error) {
+//       window.alert(error instanceof Error ? error.message : "Upload failed.");
+//     } finally {
+//       if (fileInputRef.current) {
+//         fileInputRef.current.value = "";
+//       }
+//     }
+//   }
+
+//  function setLink() {
+//   if (!editor) {
+//     return;
+//   }
+
+//   const previousUrl = editor.getAttributes("link").href as string | undefined;
+//   const url = window.prompt("Enter URL", previousUrl || "");
+
+//     if (url === null) return;
+
+//     if (!url.trim()) {
+//       editor.chain().focus().unsetLink().run();
+//       return;
+//     }
+
+//     editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+//   }
+
+//  function insertImageUrl() {
+//   if (!editor) {
+//     return;
+//   }
+
+//   const url = window.prompt("Image URL");
+
+//   if (!url) return;
+
+//   editor.chain().focus().setImage({ src: url }).run();
+// }
+
+// function insertVideoUrl() {
+//   if (!editor) {
+//     return;
+//   }
+
+//   const url = window.prompt("Video URL");
+
+//   if (!url) return;
+
+//   if (url.includes("youtube.com") || url.includes("youtu.be")) {
+//     editor.commands.setYoutubeVideo({ src: url });
+//     return;
+//   }
+
+//   editor
+//     .chain()
+//     .focus()
+//     .insertContent(
+//       `<video src="${url}" controls style="max-width: 100%; border-radius: 12px;"></video>`
+//     )
+//     .run();
+// }
+
+//  function smartFormat() {
+//   if (!editor) {
+//     return;
+//   }
+
+//   const html = formatDescriptionHtml(editor.getText());
+
+//   if (!html) return;
+
+//     editor.commands.setContent(html, {
+//   emitUpdate: false,
+// });
+//     onChange(editor.getHTML());
+//   }
+
+//   return (
+//     <div className="relative rounded-md border border-neutral-300 bg-white">
+//       <input
+//         ref={fileInputRef}
+//         type="file"
+//         accept="image/*,video/*"
+//         multiple
+//         className="hidden"
+//         onChange={(event) => handleFileUpload(event.target.files)}
+//       />
+
+//       <input
+//         ref={colorInputRef}
+//         type="color"
+//         className="hidden"
+//         onChange={(event) =>
+//           editor.chain().focus().setColor(event.target.value).run()
+//         }
+//       />
+
+//       <input
+//         ref={highlightInputRef}
+//         type="color"
+//         className="hidden"
+//         onChange={(event) =>
+//           editor
+//             .chain()
+//             .focus()
+//             .setHighlight({ color: event.target.value })
+//             .run()
+//         }
+//       />
+
+//       <div className="flex flex-wrap items-center gap-1 border-b border-neutral-200 bg-neutral-50 px-2 py-1.5">
+//         <BlockStyleDropdown editor={editor} />
+
+//         <ToolbarButton
+//           active={editor.isActive("bold")}
+//           title="Bold"
+//           onClick={() => editor.chain().focus().toggleBold().run()}
+//         >
+//           <Bold className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           active={editor.isActive("italic")}
+//           title="Italic"
+//           onClick={() => editor.chain().focus().toggleItalic().run()}
+//         >
+//           <Italic className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           active={editor.isActive("underline")}
+//           title="Underline"
+//           onClick={() => editor.chain().focus().toggleUnderline().run()}
+//         >
+//           <UnderlineIcon className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           active={editor.isActive("strike")}
+//           title="Strikethrough"
+//           onClick={() => editor.chain().focus().toggleStrike().run()}
+//         >
+//           <Strikethrough className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Text color"
+//           onClick={() => colorInputRef.current?.click()}
+//         >
+//           <Type className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Highlight"
+//           onClick={() => highlightInputRef.current?.click()}
+//         >
+//           <PaintBucket className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Align left"
+//           onClick={() => editor.chain().focus().setTextAlign("left").run()}
+//         >
+//           <AlignLeft className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Align center"
+//           onClick={() => editor.chain().focus().setTextAlign("center").run()}
+//         >
+//           <AlignCenter className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Align right"
+//           onClick={() => editor.chain().focus().setTextAlign("right").run()}
+//         >
+//           <AlignRight className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           active={editor.isActive("bulletList")}
+//           title="Bullet list"
+//           onClick={() => editor.chain().focus().toggleBulletList().run()}
+//         >
+//           <List className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           active={editor.isActive("orderedList")}
+//           title="Number list"
+//           onClick={() => editor.chain().focus().toggleOrderedList().run()}
+//         >
+//           <ListOrdered className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton title="Link" onClick={setLink}>
+//           <Link2 className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Unlink"
+//           onClick={() => editor.chain().focus().unsetLink().run()}
+//         >
+//           <Unlink className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Upload image/video"
+//           onClick={() => fileInputRef.current?.click()}
+//         >
+//           <Upload className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton title="Image URL" onClick={insertImageUrl}>
+//           <ImageIcon className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton title="Video URL" onClick={insertVideoUrl}>
+//           <Video className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Table"
+//           onClick={() =>
+//             editor
+//               .chain()
+//               .focus()
+//               .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+//               .run()
+//           }
+//         >
+//           <Table2 className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Horizontal line"
+//           onClick={() => editor.chain().focus().setHorizontalRule().run()}
+//         >
+//           <Minus className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           active={editor.isActive("blockquote")}
+//           title="Quote"
+//           onClick={() => editor.chain().focus().toggleBlockquote().run()}
+//         >
+//           <Quote className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Undo"
+//           onClick={() => editor.chain().focus().undo().run()}
+//         >
+//           <Undo2 className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Redo"
+//           onClick={() => editor.chain().focus().redo().run()}
+//         >
+//           <Redo2 className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Clear format"
+//           onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}
+//         >
+//           <Eraser className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton title="Smart format" onClick={smartFormat}>
+//           <Pilcrow className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="HTML"
+//           onClick={() => setMode(mode === "html" ? "visual" : "html")}
+//         >
+//           <Code2 className="h-4 w-4" />
+//         </ToolbarButton>
+
+//         <ToolbarButton
+//           title="Preview"
+//           onClick={() => setMode(mode === "preview" ? "visual" : "preview")}
+//         >
+//           <Eye className="h-4 w-4" />
+//         </ToolbarButton>
+//       </div>
+
+//       {mode === "html" ? (
+//         <textarea
+//           value={value || ""}
+//           onChange={(event) => {
+//       onChange(event.target.value);
+
+// editor.commands.setContent(event.target.value, {
+//   emitUpdate: false,
+// });
+//           }}
+//           className="min-h-[280px] max-h-[520px] w-full overflow-y-auto rounded-b-md bg-neutral-950 p-4 font-mono text-sm leading-6 text-white outline-none"
+//           spellCheck={false}
+//         />
+//       ) : mode === "preview" ? (
+//         <div
+//           className="min-h-[280px] max-h-[520px] overflow-y-auto px-4 py-4 text-[13px] leading-6 text-neutral-950 [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-3 [&_h1]:mb-3 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:text-2xl [&_h2]:font-bold [&_h3]:mb-2 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mb-2 [&_h4]:text-lg [&_h4]:font-semibold [&_h5]:mb-1.5 [&_h5]:text-base [&_h5]:font-semibold [&_h6]:mb-1.5 [&_h6]:text-sm [&_h6]:font-semibold [&_hr]:my-4 [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_ul]:list-disc"
+//           dangerouslySetInnerHTML={{ __html: value || "" }}
+//         />
+//       ) : (
+//         <EditorContent editor={editor} />
+//       )}
+//     </div>
+//   );
+// }
+
+// function BlockStyleDropdown({ editor }: { editor: Editor }) {
+//   const [open, setOpen] = useState(false);
+//   const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+//   useEffect(() => {
+//     function closeOnOutsideClick(event: MouseEvent) {
+//       if (!dropdownRef.current) return;
+
+//       if (!dropdownRef.current.contains(event.target as Node)) {
+//         setOpen(false);
+//       }
+//     }
+
+//     document.addEventListener("mousedown", closeOnOutsideClick);
+
+//     return () => {
+//       document.removeEventListener("mousedown", closeOnOutsideClick);
+//     };
+//   }, []);
+
+//   const headingItems = ([1, 2, 3, 4, 5, 6] as const).map((level) => ({
+//     key: `h${level}`,
+//     label: `Heading ${level}`,
+//     previewClass:
+//       level === 1
+//         ? "text-4xl font-bold"
+//         : level === 2
+//           ? "text-3xl font-bold"
+//           : level === 3
+//             ? "text-2xl font-semibold"
+//             : level === 4
+//               ? "text-xl font-semibold"
+//               : level === 5
+//                 ? "text-lg font-semibold"
+//                 : "text-base font-semibold",
+//     active: editor.isActive("heading", { level }),
+//     action: () => {
+//       if (!editor.isActive("heading", { level })) {
+//         editor.chain().focus().toggleHeading({ level }).run();
+//       }
+//     },
+//   }));
+
+//   const items = [
+//     {
+//       key: "paragraph",
+//       label: "Paragraph",
+//       previewClass: "text-base font-medium",
+//       active: editor.isActive("paragraph"),
+//       action: () => editor.chain().focus().setParagraph().run(),
+//     },
+//     ...headingItems,
+//     {
+//       key: "blockquote",
+//       label: "Blockquote",
+//       previewClass:
+//         "border-l-4 border-neutral-300 pl-4 text-xl font-medium text-neutral-700",
+//       active: editor.isActive("blockquote"),
+//       action: () => editor.chain().focus().toggleBlockquote().run(),
+//     },
+//   ];
+
+//   const activeItem =
+//     items.find((item) => item.active) ||
+//     items.find((item) => item.key === "paragraph") ||
+//     items[0];
+
+//   return (
+//     <div ref={dropdownRef} className="relative">
+//       <button
+//         type="button"
+//         onMouseDown={(event) => {
+//           event.preventDefault();
+//           setOpen((value) => !value);
+//         }}
+//         className="inline-flex h-8 min-w-[135px] items-center justify-between gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-900 hover:bg-neutral-50"
+//       >
+//         {activeItem.label}
+//         <ChevronDown className="h-3.5 w-3.5 text-neutral-500" />
+//       </button>
+
+//       {open ? (
+//         <div className="absolute left-0 top-9 z-[80] max-h-[420px] w-[300px] overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-2xl">
+//           {items.map((item) => (
+//             <button
+//               key={item.key}
+//               type="button"
+//               onMouseDown={(event) => {
+//                 event.preventDefault();
+//                 item.action();
+//                 setOpen(false);
+//               }}
+//               className={`block w-full border-b border-neutral-100 px-5 py-3 text-left text-neutral-900 last:border-b-0 hover:bg-neutral-50 ${
+//                 item.active ? "bg-neutral-100" : ""
+//               }`}
+//             >
+//               <span className={item.previewClass}>{item.label}</span>
+//             </button>
+//           ))}
+//         </div>
+//       ) : null}
+//     </div>
+//   );
+// }
+
+// function ToolbarButton({
+//   title,
+//   active,
+//   onClick,
+//   children,
+// }: {
+//   title: string;
+//   active?: boolean;
+//   onClick: () => void;
+//   children: ReactNode;
+// }) {
+//   return (
+//     <button
+//       type="button"
+//       title={title}
+//       aria-label={title}
+//       onMouseDown={(event) => {
+//         event.preventDefault();
+//         onClick();
+//       }}
+//       className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition ${
+//         active
+//           ? "bg-neutral-950 text-white"
+//           : "text-neutral-700 hover:bg-white hover:text-neutral-950"
+//       }`}
+//     >
+//       {children}
+//     </button>
+//   );
+// }
 
 function FormSection({
   icon,

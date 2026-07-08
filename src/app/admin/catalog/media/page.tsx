@@ -251,7 +251,7 @@ async function searchProductPicker(searchText: string) {
 
   params.set("page", "1");
   params.set("limit", "8");
-  params.set("status", "ACTIVE");
+
 
   const response = await fetch(
     `${getApiRootUrl()}/admin/catalog/products/picker?${params.toString()}`,

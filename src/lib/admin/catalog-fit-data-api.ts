@@ -509,3 +509,111 @@ export async function downloadCatalogFitDataTemplate() {
     filename: match?.[1] || "fit-data-template.csv",
   };
 }
+
+
+
+
+
+export type CatalogFitDataBulkUploadResult = {
+  importedCount?: number;
+  createdCount?: number;
+  updatedCount?: number;
+  failedCount?: number;
+  errors?: Array<{
+    row?: number;
+    productSku?: string;
+    productId?: string;
+    message?: string;
+  }>;
+};
+
+export async function bulkUploadCatalogFitData(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const token = getToken();
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/fit-data/bulk-upload`,
+    {
+      method: "POST",
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : undefined,
+      body: formData,
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+        data?.error?.message ||
+        data?.error ||
+        `Bulk upload failed: ${response.status}`,
+    );
+  }
+
+  return data?.data || data;
+}
+
+
+export async function exportCatalogFitDataRecords(
+  params: CatalogFitDataListParams = {},
+) {
+  const searchParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    searchParams.set(key, String(value));
+  });
+
+  const token = getToken();
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/fit-data/export${
+      searchParams.toString() ? `?${searchParams.toString()}` : ""
+    }`,
+    {
+      method: "GET",
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : undefined,
+    },
+  );
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+
+    throw new Error(
+      data?.message ||
+        data?.error?.message ||
+        data?.error ||
+        `Fit data export failed: ${response.status}`,
+    );
+  }
+
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("content-disposition") || "";
+  const match = contentDisposition.match(/filename="?([^"]+)"?/i);
+
+  const fileName =
+    match?.[1] ||
+    `fit-data-records-${new Date().toISOString().slice(0, 10)}.csv`;
+
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.URL.revokeObjectURL(url);
+}
