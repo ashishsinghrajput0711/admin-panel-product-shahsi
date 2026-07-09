@@ -1,28 +1,10 @@
 "use client";
 
 import Link from "next/link";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { StyleData } from "./style-data-types";
-
-const scopeLabels = {
-  PRODUCT: "Product",
-  VARIANT: "Variant",
-} as const;
-
-const modestyLabels = {
-  LOW: "Low",
-  MEDIUM: "Medium",
-  HIGH: "High",
-} as const;
-
-const seasonLabels = {
-  SPRING: "Spring",
-  SUMMER: "Summer",
-  FALL: "Fall",
-  WINTER: "Winter",
-  ALL_SEASON: "All Season",
-} as const;
 
 export function StyleDataTable({
   styleDataItems,
@@ -44,7 +26,7 @@ export function StyleDataTable({
           No style data records found
         </h3>
         <p className="mt-2 text-sm text-neutral-500">
-          Backend style data ready hone ke baad yahan show hoga.
+          Create style data record ya filters clear karke dobara check karo.
         </p>
       </div>
     );
@@ -52,17 +34,16 @@ export function StyleDataTable({
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-neutral-200">
-      <table className="w-full min-w-[1200px] text-sm">
+      <table className="w-full min-w-[1250px] text-sm">
         <thead className="bg-[#f7f2ea] text-left">
           <tr>
-            <th className="p-4 font-medium">Target</th>
+            <th className="p-4 font-medium">Product</th>
             <th className="p-4 font-medium">Scope</th>
             <th className="p-4 font-medium">Business</th>
             <th className="p-4 font-medium">Occasion</th>
-            <th className="p-4 font-medium">Style Details</th>
+            <th className="p-4 font-medium">Style Attributes</th>
             <th className="p-4 font-medium">Season</th>
-            <th className="p-4 font-medium">Tags</th>
-            <th className="p-4 font-medium">Flags</th>
+            <th className="p-4 font-medium">Tags / Keywords</th>
             <th className="p-4 font-medium">Status</th>
             <th className="p-4 text-right font-medium">Actions</th>
           </tr>
@@ -70,83 +51,93 @@ export function StyleDataTable({
 
         <tbody>
           {styleDataItems.map((item) => (
-            <tr key={item.id} className="border-t border-neutral-200">
+            <tr key={item.id} className="border-t border-neutral-200 align-top">
               <td className="p-4">
-                <p className="font-medium text-neutral-950">
-                  {item.productName || item.variantSku || "Style Data"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  {item.variantId || item.productId || item.id}
-                </p>
-              </td>
+                <div className="flex gap-3">
+                  <ProductImage item={item} />
 
-              <td className="p-4">
-                <Badge variant="outline">
-                  {scopeLabels[item.scope] ?? item.scope}
-                </Badge>
-              </td>
+                  <div className="min-w-0">
+                    <p className="line-clamp-2 font-medium text-neutral-950">
+                      {item.productName || "Untitled product"}
+                    </p>
 
-              <td className="p-4">{item.businessType}</td>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      SKU: {item.productSku || "—"}
+                    </p>
 
-              <td className="p-4">
-                <p>{item.occasion || "—"}</p>
-                <p className="text-xs text-neutral-500">
-                  {item.styleCategory || "No category"}
-                </p>
-              </td>
+                    <p className="mt-1 max-w-[260px] truncate text-xs text-neutral-400">
+                      {item.productSlug || item.productId}
+                    </p>
 
-              <td className="p-4">
-                <p className="text-xs text-neutral-500">
-                  Color: {item.colorFamily || "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Fabric: {item.fabricFeel || "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Neckline: {item.neckline || "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Sleeve: {item.sleeveType || "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Silhouette: {item.silhouette || "—"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Modesty: {modestyLabels[item.modestyLevel] ?? item.modestyLevel}
-                </p>
-              </td>
-
-              <td className="p-4">
-                {seasonLabels[item.season] ?? item.season}
-              </td>
-
-              <td className="p-4">
-                <div className="flex max-w-[220px] flex-wrap gap-1">
-                  {item.styleTags?.slice(0, 3).map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
-
-                  {item.trendTags?.slice(0, 2).map((tag) => (
-                    <Badge key={tag} className="bg-neutral-950 text-white">
-                      {tag}
-                    </Badge>
-                  ))}
-
-                  {!item.styleTags?.length && !item.trendTags?.length && (
-                    <span className="text-neutral-400">—</span>
-                  )}
+                    {item.variantId ? (
+                      <p className="mt-1 text-xs text-neutral-500">
+                        Variant: {item.variantTitle || item.variantSku || item.variantId}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               </td>
 
               <td className="p-4">
-                <div className="flex flex-wrap gap-1">
-                  {item.isFeatured && <Badge variant="outline">Featured</Badge>}
-                  {item.isTrendItem && <Badge variant="outline">Trend</Badge>}
-                  {!item.isFeatured && !item.isTrendItem && (
-                    <span className="text-neutral-400">—</span>
-                  )}
+                <Badge variant="outline">{formatLabel(item.scope)}</Badge>
+              </td>
+
+              <td className="p-4">{formatLabel(item.businessType)}</td>
+
+              <td className="p-4">
+                <ChipList values={item.occasion} emptyText="No occasion" />
+              </td>
+
+              <td className="p-4">
+                <div className="space-y-1 text-xs text-neutral-600">
+                  <p>
+                    <span className="font-medium text-neutral-800">Color:</span>{" "}
+                    {item.colorFamily || "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium text-neutral-800">Fabric:</span>{" "}
+                    {item.fabricFeel || "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium text-neutral-800">Neckline:</span>{" "}
+                    {item.neckline || "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium text-neutral-800">Sleeve:</span>{" "}
+                    {item.sleeveType || "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium text-neutral-800">
+                      Silhouette:
+                    </span>{" "}
+                    {item.silhouette || "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium text-neutral-800">Modesty:</span>{" "}
+                    {item.modestyLevel || "—"}
+                  </p>
+                </div>
+              </td>
+
+              <td className="p-4">
+                <ChipList values={item.season} emptyText="No season" />
+              </td>
+
+              <td className="p-4">
+                <div className="max-w-[260px] space-y-3">
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-neutral-500">
+                      Tags
+                    </p>
+                    <ChipList values={item.tags} emptyText="—" />
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-neutral-500">
+                      Keywords
+                    </p>
+                    <ChipList values={item.stylingKeywords} emptyText="—" />
+                  </div>
                 </div>
               </td>
 
@@ -168,10 +159,6 @@ export function StyleDataTable({
                   </Button>
 
                   <Button size="sm" variant="outline" className="rounded-full">
-                    Feature
-                  </Button>
-
-                  <Button size="sm" variant="outline" className="rounded-full">
                     More
                   </Button>
                 </div>
@@ -180,6 +167,52 @@ export function StyleDataTable({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function ProductImage({ item }: { item: StyleData }) {
+  if (!item.productImage) {
+    return (
+      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-neutral-100 text-xs text-neutral-400">
+        IMG
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={item.productImage}
+      alt={item.productName || "Product"}
+      className="h-14 w-14 shrink-0 rounded-xl object-cover"
+    />
+  );
+}
+
+function ChipList({
+  values,
+  emptyText,
+}: {
+  values?: string[];
+  emptyText: string;
+}) {
+  if (!values?.length) {
+    return <span className="text-neutral-400">{emptyText}</span>;
+  }
+
+  return (
+    <div className="flex max-w-[240px] flex-wrap gap-1">
+      {values.slice(0, 4).map((value) => (
+        <Badge key={value} variant="outline" className="bg-white">
+          {value}
+        </Badge>
+      ))}
+
+      {values.length > 4 ? (
+        <Badge variant="outline" className="bg-white">
+          +{values.length - 4}
+        </Badge>
+      ) : null}
     </div>
   );
 }
@@ -196,7 +229,14 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-medium ${className}`}>
-      {status}
+      {formatLabel(status)}
     </span>
   );
+}
+
+function formatLabel(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }

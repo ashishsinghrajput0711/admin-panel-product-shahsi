@@ -1,37 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useCreate } from "@refinedev/core";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
+
 import { StyleDataForm } from "@/components/admin/catalog/style-data/style-data-form";
 import type { StyleDataFormValues } from "@/components/admin/catalog/style-data/style-data-schema";
+import { createCatalogStyleData } from "@/lib/admin/catalog-style-data-api";
 
 export default function NewStyleDataPage() {
-  const createMutation = useCreate();
-  const { mutate } = createMutation;
+  const router = useRouter();
 
-  const isSubmitting =
-    "isLoading" in createMutation
-      ? Boolean(createMutation.isLoading)
-      : "isPending" in createMutation
-        ? Boolean(createMutation.isPending)
-        : false;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  function handleSubmit(values: StyleDataFormValues) {
-    mutate({
-      resource: "style-data",
-      values,
-      successNotification: {
-        message: "Style data created successfully",
-        description: "The style data record has been saved in catalog.",
-        type: "success",
-      },
-      errorNotification: {
-        message: "Style data create failed",
-        description: "Please check backend API and submitted fields.",
-        type: "error",
-      },
-    });
+  async function handleSubmit(values: StyleDataFormValues) {
+    try {
+      setIsSubmitting(true);
+      setError("");
+      setSuccessMessage("");
+
+      await createCatalogStyleData(values);
+
+      setSuccessMessage("Style data created successfully.");
+
+      router.push("/admin/catalog/style-data");
+      router.refresh();
+    } catch (createError) {
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Style data create failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -54,10 +59,21 @@ export default function NewStyleDataPage() {
         </h1>
 
         <p className="mt-3 max-w-2xl text-neutral-500">
-          Add styling metadata, tags, trend flags and AI styling notes for a
-          product or variant.
+          Add fashion styling metadata for a product or product variant.
         </p>
       </div>
+
+      {error ? (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {successMessage}
+        </div>
+      ) : null}
 
       <StyleDataForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
     </main>

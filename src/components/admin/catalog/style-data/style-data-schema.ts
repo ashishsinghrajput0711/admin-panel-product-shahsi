@@ -1,37 +1,59 @@
 import { z } from "zod";
 
-export const styleDataSchema = z.object({
-  scope: z.enum(["PRODUCT", "VARIANT"]),
+export const styleDataSchema = z
+  .object({
+    productId: z.string().min(1, "Product required hai."),
+    variantId: z.string().optional(),
 
-  productId: z.string().optional(),
-  variantId: z.string().optional(),
+    scope: z.enum(["PRODUCT", "VARIANT"]),
+    businessType: z.enum(["SHAHSI", "GOWNLOOP"]),
+    status: z.enum(["DRAFT", "ACTIVE", "INACTIVE", "ARCHIVED"]),
 
-  businessType: z.enum(["SHAHSI", "GOWNLOOP"]),
+    occasion: z.array(z.string()).default([]),
+    colorFamily: z.string().min(1, "Color family required hai."),
+    fabricFeel: z.string().min(1, "Fabric feel required hai."),
+    neckline: z.string().min(1, "Neckline required hai."),
+    sleeveType: z.string().min(1, "Sleeve type required hai."),
+    silhouette: z.string().min(1, "Silhouette required hai."),
+    modestyLevel: z.string().min(1, "Modesty level required hai."),
+    season: z.array(z.string()).default([]),
 
-  occasion: z.string().optional(),
-  styleCategory: z.string().optional(),
+    tags: z.array(z.string()).default([]),
+    stylingKeywords: z.array(z.string()).default([]),
+    aiStylingNotes: z.string().optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.scope === "PRODUCT" && values.variantId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["variantId"],
+        message: "PRODUCT scope me variantId nahi bhejna hai.",
+      });
+    }
 
-  colorFamily: z.string().optional(),
-  fabricFeel: z.string().optional(),
+    if (values.scope === "VARIANT" && !values.variantId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["variantId"],
+        message: "VARIANT scope ke liye variantId required hai.",
+      });
+    }
 
-  neckline: z.string().optional(),
-  sleeveType: z.string().optional(),
-  silhouette: z.string().optional(),
+    if (!values.occasion.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["occasion"],
+        message: "At least one occasion select karo.",
+      });
+    }
 
-  modestyLevel: z.enum(["LOW", "MEDIUM", "HIGH"]),
-
-  season: z.enum(["SPRING", "SUMMER", "FALL", "WINTER", "ALL_SEASON"]),
-
-  styleTags: z.string().optional(),
-  trendTags: z.string().optional(),
-
-  aiStylingNotes: z.string().optional(),
-  merchandisingNotes: z.string().optional(),
-
-  isFeatured: z.boolean().optional(),
-  isTrendItem: z.boolean().optional(),
-
-  status: z.enum(["DRAFT", "ACTIVE", "INACTIVE", "ARCHIVED"]),
-});
+    if (!values.season.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["season"],
+        message: "At least one season select karo.",
+      });
+    }
+  });
 
 export type StyleDataFormValues = z.infer<typeof styleDataSchema>;

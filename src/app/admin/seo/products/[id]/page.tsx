@@ -596,6 +596,24 @@ function factorIsIssue(factor: SeoScoreFactor) {
   return normalized === "FAIL" || normalized === "WARNING";
 }
 
+function isFaqRichResultFactor(factor: SeoScoreFactor) {
+  const key = `${factor.key || ""}`.toLowerCase();
+  const label = `${factor.label || ""}`.toLowerCase();
+  const message = `${factor.message || ""}`.toLowerCase();
+
+  return (
+    key.includes("faq_rich") ||
+    key.includes("rich_result") ||
+    key.includes("rich_results") ||
+    key.includes("rich_preview") ||
+    key.includes("faq_preview") ||
+    label.includes("faq rich result") ||
+    label.includes("faq rich results") ||
+    label.includes("rich result preview") ||
+    message.includes("faqpage schema")
+  );
+}
+
 function getSeoFactorCategory(factor: SeoScoreFactor) {
   const key = `${factor.key || ""} ${factor.label || ""}`.toLowerCase();
 
@@ -1584,8 +1602,13 @@ const [existingRedirectResolved, setExistingRedirectResolved] = useState(false);
     followLinks: false,
   });
 
-  const seoFactors = seo?.seoScoreBreakdown.factors || [];
-  const score = seo?.seoScoreBreakdown.overallScore || 0;
+  const rawSeoFactors = seo?.seoScoreBreakdown.factors || [];
+  const seoFactors = rawSeoFactors.filter((factor) => !isFaqRichResultFactor(factor));
+  const filteredScoreTotal = seoFactors.reduce((sum, factor) => sum + (Number(factor.score) || 0), 0);
+  const filteredScoreMax = seoFactors.reduce((sum, factor) => sum + (Number(factor.maxScore) || 0), 0);
+  const score = filteredScoreMax
+    ? Math.round((filteredScoreTotal / filteredScoreMax) * 100)
+    : seo?.seoScoreBreakdown.overallScore || 0;
   const passedFactorCount = seoFactors.filter(factorIsFixed).length;
   const issueFactorCount = seoFactors.filter(factorIsIssue).length;
   const optionalFactorCount = seoFactors.filter(
@@ -1594,8 +1617,8 @@ const [existingRedirectResolved, setExistingRedirectResolved] = useState(false);
 
   const scoreRows: [string, number, number][] = seo
     ? [
-        ["Overall Score", seo.seoScoreBreakdown.overallScore, 100],
-        ["PDF Ranking Factors", passedFactorCount * 5, seoFactors.length ? seoFactors.length * 5 : 100],
+        ["Overall Score", score, 100],
+        [ filteredScoreTotal, filteredScoreMax || 100],
       ].filter(
         (row): row is [string, number, number] => typeof row[1] === "number",
       )
@@ -4212,7 +4235,7 @@ if (seoSavedSlug && currentProductSlug && seoSavedSlug !== currentProductSlug) {
                   ) : null}
                 </div>
                 <p className="mt-2 text-xs font-medium text-neutral-500">
-                  {seoHealthLabel} · PDF-based score
+                  {seoHealthLabel} 
                 </p>
               </div>
 

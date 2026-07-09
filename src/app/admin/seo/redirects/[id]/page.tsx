@@ -10,6 +10,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getAdminToken } from "@/lib/admin-auth";
 
+type RedirectModelType = "PRODUCT_URL" | "CATEGORY_URL" | "CUSTOM_URL";
+
 type RedirectRecord = {
   id: string;
   sourceUrl: string;
@@ -17,23 +19,27 @@ type RedirectRecord = {
   destinationUrl: string;
   destinationPath?: string | null;
   redirectType?: string | null;
+  type?: RedirectModelType | string | null;
   status?: string | null;
+  isActive?: boolean | null;
   notes?: string | null;
 };
 
 type RedirectResponse = {
-  data?: RedirectRecord;
+  data?: RedirectRecord | { redirect?: RedirectRecord };
   redirect?: RedirectRecord;
   message?: string | string[];
 } & Partial<RedirectRecord>;
 
 type RedirectFormState = {
+  type: RedirectModelType;
   sourceUrl: string;
   destinationUrl: string;
   notes: string;
 };
 
 const emptyForm: RedirectFormState = {
+  type: "CUSTOM_URL",
   sourceUrl: "",
   destinationUrl: "",
   notes: "",
@@ -48,12 +54,19 @@ function normalizeApiMessage(data: unknown, fallback: string) {
 }
 
 function getRedirectPayload(response: RedirectResponse): RedirectRecord | null {
-  if (response.data) return response.data;
   if (response.redirect) return response.redirect;
 
-  const nestedData = response.data as unknown;
-  if (nestedData && typeof nestedData === "object" && "redirect" in nestedData) {
-    return (nestedData as { redirect?: RedirectRecord }).redirect || null;
+  if (response.data && "id" in response.data) {
+    return response.data as RedirectRecord;
+  }
+
+  if (
+    response.data &&
+    typeof response.data === "object" &&
+    "redirect" in response.data &&
+    response.data.redirect
+  ) {
+    return response.data.redirect;
   }
 
   if (response.id && response.sourceUrl && response.destinationUrl) {
@@ -71,7 +84,7 @@ function getRedirectDestination(redirect: RedirectRecord) {
   return redirect.destinationPath || redirect.destinationUrl || "";
 }
 
-function normalizePath(value: string) {
+function stripFrontendOrigin(value: string) {
   const cleanValue = value.trim();
   if (!cleanValue) return "";
 
@@ -79,9 +92,103 @@ function normalizePath(value: string) {
     const parsed = new URL(cleanValue);
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
-    if (cleanValue.startsWith("/")) return cleanValue;
-    return `/${cleanValue}`;
+    return cleanValue;
   }
+}
+
+function normalizeSlashes(value: string) {
+  const [pathPart, queryAndHash = ""] = value.split(/(?=[?#])/);
+  const cleanPath = pathPart.replace(/\/+/g, "/");
+  return `${cleanPath}${queryAndHash}`;
+}
+
+function ensureLeadingSlash(value: string) {
+  if (!value) return "";
+  return value.startsWith("/") ? value : `/${value}`;
+}
+
+function normalizeProductPath(value: string) {
+  const cleanValue = stripFrontendOrigin(value)
+    .split("#")[0]
+    .trim();
+
+  if (!cleanValue) return "";
+
+  const withoutPrefix = cleanValue
+    .replace(/^\/products(?=\/|$)/i, "")
+    .replace(/^products(?=\/|$)/i, "")
+    .replace(/^\/+/, "");
+
+  return normalizeSlashes(`/products/${withoutPrefix}`).replace(/\/$/, "");
+}
+
+function normalizeCategoryPath(value: string) {
+  const cleanValue = stripFrontendOrigin(value)
+    .split("#")[0]
+    .trim();
+
+  if (!cleanValue) return "";
+
+  const withoutCategoriesPrefix = cleanValue
+    .replace(/^\/categories(?=\/|$)/i, "")
+    .replace(/^categories(?=\/|$)/i, "")
+    .replace(/^\/+/, "");
+
+  return normalizeSlashes(`/${withoutCategoriesPrefix}`).replace(/\/$/, "");
+}
+
+function normalizeCustomPath(value: string) {
+  const cleanValue = stripFrontendOrigin(value).trim();
+  if (!cleanValue) return "";
+  return normalizeSlashes(ensureLeadingSlash(cleanValue)).replace(/\/$/, "");
+}
+
+function normalizePathByType(value: string, type: RedirectModelType) {
+  if (type === "PRODUCT_URL") return normalizeProductPath(value);
+  if (type === "CATEGORY_URL") return normalizeCategoryPath(value);
+  return normalizeCustomPath(value);
+}
+
+function inferRedirectType(redirect: RedirectRecord): RedirectModelType {
+  const explicitType = `${redirect.type || ""}`.toUpperCase();
+  if (["PRODUCT_URL", "CATEGORY_URL", "CUSTOM_URL"].includes(explicitType)) {
+    return explicitType as RedirectModelType;
+  }
+
+  return inferRedirectModelTypeFromPaths(
+    getRedirectSource(redirect),
+    getRedirectDestination(redirect),
+  );
+}
+
+function inferRedirectModelTypeFromPaths(sourceUrl: string, destinationUrl: string): RedirectModelType {
+  const source = normalizeCustomPath(sourceUrl).toLowerCase();
+  const destination = normalizeCustomPath(destinationUrl).toLowerCase();
+
+  if (source.startsWith("/products/") || destination.startsWith("/products/")) {
+    return "PRODUCT_URL";
+  }
+
+  if (source.startsWith("/categories/") || destination.startsWith("/categories/")) {
+    return "CATEGORY_URL";
+  }
+
+  const sourceSegments = source.split("?")[0].split("#")[0].split("/").filter(Boolean);
+  const destinationSegments = destination.split("?")[0].split("#")[0].split("/").filter(Boolean);
+  const systemPrefixes = new Set(["admin", "api", "cart", "checkout", "account", "login", "register", "search", "blogs", "pages"]);
+  const firstSourceSegment = sourceSegments[0] || "";
+  const firstDestinationSegment = destinationSegments[0] || "";
+
+  if (
+    sourceSegments.length > 0 &&
+    destinationSegments.length > 0 &&
+    !systemPrefixes.has(firstSourceSegment) &&
+    !systemPrefixes.has(firstDestinationSegment)
+  ) {
+    return "CATEGORY_URL";
+  }
+
+  return "CUSTOM_URL";
 }
 
 export default function RedirectEditPage() {
@@ -155,9 +262,12 @@ export default function RedirectEditPage() {
         throw new Error("Redirect detail response missing hai.");
       }
 
+      const nextType = inferRedirectType(redirect);
+
       setForm({
-        sourceUrl: getRedirectSource(redirect),
-        destinationUrl: getRedirectDestination(redirect),
+        type: nextType,
+        sourceUrl: normalizePathByType(getRedirectSource(redirect), nextType),
+        destinationUrl: normalizePathByType(getRedirectDestination(redirect), nextType),
         notes: redirect.notes || "",
       });
     } catch (err) {
@@ -168,8 +278,8 @@ export default function RedirectEditPage() {
   }
 
   function buildSaveBody() {
-    const sourceUrl = normalizePath(form.sourceUrl);
-    const destinationUrl = normalizePath(form.destinationUrl);
+    const sourceUrl = normalizeCustomPath(form.sourceUrl);
+    const destinationUrl = normalizeCustomPath(form.destinationUrl);
 
     if (!sourceUrl) throw new Error("Redirect from URL required hai.");
     if (!destinationUrl) throw new Error("Redirect to URL required hai.");
@@ -177,7 +287,10 @@ export default function RedirectEditPage() {
       throw new Error("Redirect from aur redirect to same nahi ho sakte.");
     }
 
+    const type = inferRedirectModelTypeFromPaths(sourceUrl, destinationUrl);
+
     return {
+      type,
       sourceUrl,
       destinationUrl,
       redirectType: "PERMANENT_301",
@@ -205,14 +318,18 @@ export default function RedirectEditPage() {
           });
 
       const savedRedirect = getRedirectPayload(response);
-      const finalSourceUrl = savedRedirect ? getRedirectSource(savedRedirect) : body.sourceUrl;
+      const savedType = savedRedirect ? inferRedirectType(savedRedirect) : body.type;
+      const finalSourceUrl = savedRedirect
+        ? normalizeCustomPath(getRedirectSource(savedRedirect))
+        : body.sourceUrl;
       const finalDestinationUrl = savedRedirect
-        ? getRedirectDestination(savedRedirect)
+        ? normalizeCustomPath(getRedirectDestination(savedRedirect))
         : body.destinationUrl;
       const destinationAdjusted = finalDestinationUrl !== body.destinationUrl;
       const sourceAdjusted = finalSourceUrl !== body.sourceUrl;
 
       setForm({
+        type: savedType,
         sourceUrl: finalSourceUrl,
         destinationUrl: finalDestinationUrl,
         notes: savedRedirect?.notes || form.notes,
@@ -220,7 +337,7 @@ export default function RedirectEditPage() {
 
       setNotice(
         destinationAdjusted || sourceAdjusted
-          ? `${isCreateMode ? "Redirect created" : "Redirect updated"} successfully. Backend adjusted the final URL to ${finalDestinationUrl}.`
+          ? `${isCreateMode ? "Redirect created" : "Redirect updated"} successfully. Backend adjusted final URLs.`
           : `${isCreateMode ? "Redirect created" : "Redirect updated"} successfully.`,
       );
 
@@ -294,7 +411,7 @@ export default function RedirectEditPage() {
 
           <div className="space-y-5">
             {error ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="whitespace-pre-wrap rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </div>
             ) : null}
@@ -317,7 +434,7 @@ export default function RedirectEditPage() {
                         setForm((prev) => ({ ...prev, sourceUrl: event.target.value }))
                       }
                       onBlur={() =>
-                        setForm((prev) => ({ ...prev, sourceUrl: normalizePath(prev.sourceUrl) }))
+                        setForm((prev) => ({ ...prev, sourceUrl: normalizeCustomPath(prev.sourceUrl) }))
                       }
                       className={inputClassName}
                       placeholder="/products/old-product-url"
@@ -333,7 +450,7 @@ export default function RedirectEditPage() {
                       onBlur={() =>
                         setForm((prev) => ({
                           ...prev,
-                          destinationUrl: normalizePath(prev.destinationUrl),
+                          destinationUrl: normalizeCustomPath(prev.destinationUrl),
                         }))
                       }
                       className={inputClassName}
@@ -381,6 +498,7 @@ export default function RedirectEditPage() {
 
 const inputClassName =
   "h-11 w-full rounded-xl border-neutral-200 bg-white text-sm shadow-none focus-visible:ring-1 focus-visible:ring-neutral-950";
+
 
 function Field({
   label,

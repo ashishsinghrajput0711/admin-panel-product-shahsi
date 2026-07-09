@@ -4,51 +4,71 @@ export type StyleDataStatus = "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
 
 export type BusinessType = "SHAHSI" | "GOWNLOOP";
 
-export type ModestyLevel = "LOW" | "MEDIUM" | "HIGH";
-
-export type Season =
-  | "SPRING"
-  | "SUMMER"
-  | "FALL"
-  | "WINTER"
-  | "ALL_SEASON";
+export type CatalogStyleDataOptions = {
+  status: StyleDataStatus[];
+  scope: StyleDataScope[];
+  businessType: BusinessType[];
+  occasion: string[];
+  colorFamily: string[];
+  fabricFeel: string[];
+  neckline: string[];
+  sleeveType: string[];
+  silhouette: string[];
+  modestyLevel: string[];
+  season: string[];
+};
 
 export type StyleData = {
   id: string;
 
+  productId: string;
+  productName: string;
+  productSlug: string;
+  productSku: string;
+  productImage: string | null;
+
+  variantId: string | null;
+  variantTitle: string | null;
+  variantSku: string | null;
+
   scope: StyleDataScope;
-
-  productId?: string | null;
-  productName?: string | null;
-
-  variantId?: string | null;
-  variantSku?: string | null;
-
   businessType: BusinessType;
-
-  occasion?: string | null;
-  styleCategory?: string | null;
-
-  colorFamily?: string | null;
-  fabricFeel?: string | null;
-
-  neckline?: string | null;
-  sleeveType?: string | null;
-  silhouette?: string | null;
-
-  modestyLevel: ModestyLevel;
-  season: Season;
-
-  styleTags: string[];
-  trendTags: string[];
-
-  aiStylingNotes?: string | null;
-  merchandisingNotes?: string | null;
-
-  isFeatured: boolean;
-  isTrendItem: boolean;
-
   status: StyleDataStatus;
 
+  occasion: string[];
+  colorFamily: string;
+  fabricFeel: string;
+  neckline: string;
+  sleeveType: string;
+  silhouette: string;
+  modestyLevel: string;
+  season: string[];
+
+  tags: string[];
+  stylingKeywords: string[];
+  aiStylingNotes: string | null;
+
+  createdAt: string;
   updatedAt: string;
+};
+
+export type StyleDataSummary = {
+  total: number;
+  active: number;
+  draft: number;
+  inactive: number;
+  archived: number;
+};
+
+export type StyleDataMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export type StyleDataListResponse = {
+  items: StyleData[];
+  meta: StyleDataMeta;
+  summary: StyleDataSummary;
 };

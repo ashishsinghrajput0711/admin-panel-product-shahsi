@@ -1,53 +1,90 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useOne, useUpdate } from "@refinedev/core";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
+
 import { StyleDataForm } from "@/components/admin/catalog/style-data/style-data-form";
 import type { StyleDataFormValues } from "@/components/admin/catalog/style-data/style-data-schema";
+import type { StyleData } from "@/components/admin/catalog/style-data/style-data-types";
+import {
+  getCatalogStyleDataById,
+  updateCatalogStyleData,
+} from "@/lib/admin/catalog-style-data-api";
 
 export default function EditStyleDataPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
+
   const id = String(params?.id ?? "");
 
-  const oneResult = useOne<StyleDataFormValues>({
-    resource: "style-data",
-    id,
-    queryOptions: {
-      enabled: Boolean(id),
-    },
-  });
+  const [styleData, setStyleData] = useState<StyleData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  const data = oneResult.result;
-  const isLoading = oneResult.query?.isLoading ?? false;
+  useEffect(() => {
+    let ignore = false;
 
-  const updateMutation = useUpdate();
-  const { mutate } = updateMutation;
+    async function loadStyleData() {
+      if (!id) return;
 
-  const isSubmitting =
-    "isLoading" in updateMutation
-      ? Boolean(updateMutation.isLoading)
-      : "isPending" in updateMutation
-        ? Boolean(updateMutation.isPending)
-        : false;
+      try {
+        setIsLoading(true);
+        setError("");
 
-  function handleSubmit(values: StyleDataFormValues) {
-    mutate({
-      resource: "style-data",
-      id,
-      values,
-      successNotification: {
-        message: "Style data updated successfully",
-        description: "The style data changes have been saved.",
-        type: "success",
-      },
-      errorNotification: {
-        message: "Style data update failed",
-        description: "Please check backend API and submitted fields.",
-        type: "error",
-      },
-    });
+        const result = await getCatalogStyleDataById(id);
+
+        if (!ignore) {
+          setStyleData(result);
+        }
+      } catch (loadError) {
+        if (!ignore) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Style data detail load failed.",
+          );
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadStyleData();
+
+    return () => {
+      ignore = true;
+    };
+  }, [id]);
+
+  async function handleSubmit(values: StyleDataFormValues) {
+    if (!id) return;
+
+    try {
+      setIsSubmitting(true);
+      setError("");
+      setSuccessMessage("");
+
+      await updateCatalogStyleData(id, values);
+
+      setSuccessMessage("Style data updated successfully.");
+
+      router.push("/admin/catalog/style-data");
+      router.refresh();
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Style data update failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   if (isLoading) {
@@ -80,15 +117,33 @@ export default function EditStyleDataPage() {
         </h1>
 
         <p className="mt-3 max-w-2xl text-neutral-500">
-          Update styling metadata, tags, trend flags and AI styling notes.
+          Update fashion styling metadata for selected product or variant.
         </p>
       </div>
 
-      <StyleDataForm
-        defaultValues={data}
-        onSubmit={handleSubmit}
-        isSubmitting={isSubmitting}
-      />
+      {error ? (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {successMessage}
+        </div>
+      ) : null}
+
+      {styleData ? (
+        <StyleDataForm
+          defaultValues={styleData}
+          onSubmit={handleSubmit}
+          isSubmitting={isSubmitting}
+        />
+      ) : (
+        <div className="rounded-[1.5rem] bg-white p-6 ring-1 ring-neutral-200">
+          Style data record nahi mila.
+        </div>
+      )}
     </main>
   );
 }
