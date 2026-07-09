@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AdminAuthGuard } from "@/components/admin/admin-auth-guard";
 import {
-  BarChart3,
   FileText,
+  FolderTree,
   GitBranch,
   LayoutDashboard,
   Link2,
@@ -23,6 +23,11 @@ const seoNavItems = [
     label: "Products SEO",
     href: "/admin/seo/products",
     icon: PackageSearch,
+  },
+  {
+    label: "Categories SEO",
+    href: "/admin/seo/categories",
+    icon: FolderTree,
   },
   {
     label: "Redirects",
@@ -59,7 +64,8 @@ export default function SeoLayout({
                 </h1>
 
                 <p className="mt-2 text-sm text-neutral-500">
-                  Products SEO, redirects, internal links and analytics
+                  Products SEO, category SEO, redirects, internal links and
+                  analytics
                 </p>
               </div>
 
@@ -103,7 +109,8 @@ export default function SeoLayout({
                   </p>
 
                   <p className="mt-2 text-xs leading-5 text-neutral-600">
-                    Manage product SEO, redirects, metadata and internal linking.
+                    Manage product SEO, category SEO, redirects, metadata and
+                    internal linking.
                   </p>
                 </div>
               </div>
