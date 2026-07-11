@@ -2,23 +2,15 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { type Resolver, useForm } from "react-hook-form";
+import { Controller, type Resolver, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Search, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  styleDataSchema,
-  type StyleDataFormValues,
-} from "./style-data-schema";
-import {
-  getCatalogStyleDataOptions,
-} from "@/lib/admin/catalog-style-data-api";
-import type {
-  CatalogStyleDataOptions,
-  StyleData,
-} from "./style-data-types";
+import { getCatalogStyleDataOptions } from "@/lib/admin/catalog-style-data-api";
+import { styleDataSchema, type StyleDataFormValues } from "./style-data-schema";
+import type { CatalogStyleDataOptions, StyleData } from "./style-data-types";
 
 type ProductPickerItem = {
   id: string;
@@ -33,10 +25,19 @@ type ProductPickerItem = {
 
 type VariantPickerItem = {
   id: string;
+  productId?: string | null;
   title?: string | null;
   sku?: string | null;
+  variantSku?: string | null;
   size?: string | null;
   color?: string | null;
+  colorFamily?: string | null;
+  variantType?: string | null;
+  rentalPackageName?: string | null;
+  subscriptionPackageName?: string | null;
+  status?: string | null;
+  isActive?: boolean | null;
+  isAvailable?: boolean | null;
 };
 
 const emptyOptions: CatalogStyleDataOptions = {
@@ -97,36 +98,49 @@ async function readJson<T>(response: Response): Promise<T | null> {
 }
 
 function unwrapItems<T>(json: unknown): T[] {
-  const data = json as {
-    data?: {
-      items?: T[];
-      products?: T[];
-      variants?: T[];
-    };
+  if (!json || typeof json !== "object") {
+    return [];
+  }
+
+  const response = json as {
+    data?:
+      | T[]
+      | {
+          items?: T[];
+          products?: T[];
+          variants?: T[];
+        };
     items?: T[];
     products?: T[];
     variants?: T[];
   };
 
-  return (
-    data?.data?.items ||
-    data?.data?.products ||
-    data?.data?.variants ||
-    data?.items ||
-    data?.products ||
-    data?.variants ||
-    []
-  );
+  if (Array.isArray(response.data)) {
+    return response.data;
+  }
+
+  if (response.data && typeof response.data === "object") {
+    return (
+      response.data.items ||
+      response.data.products ||
+      response.data.variants ||
+      []
+    );
+  }
+
+  return response.items || response.products || response.variants || [];
 }
 
 async function searchProducts(searchText: string) {
   const params = new URLSearchParams();
 
   params.set("page", "1");
-  params.set("limit", "10");
+  params.set("limit", "20");
 
-  if (searchText.trim()) {
-    params.set("search", searchText.trim());
+  const cleanSearch = searchText.trim();
+
+  if (cleanSearch) {
+    params.set("search", cleanSearch);
   }
 
   const response = await fetch(
@@ -141,7 +155,7 @@ async function searchProducts(searchText: string) {
   const json = await readJson<unknown>(response);
 
   if (!response.ok) {
-    throw new Error("Product picker load nahi ho paaya.");
+    throw new Error(`Product picker load nahi ho paaya: ${response.status}`);
   }
 
   return unwrapItems<ProductPickerItem>(json);
@@ -151,9 +165,7 @@ async function searchProductVariants(productId: string) {
   if (!productId) return [];
 
   const response = await fetch(
-    `${getApiRootUrl()}/admin/catalog/products/${encodeURIComponent(
-      productId,
-    )}/variants`,
+    `${getApiRootUrl()}/admin/catalog/${encodeURIComponent(productId)}/variants`,
     {
       method: "GET",
       headers: getHeaders(),
@@ -164,14 +176,17 @@ async function searchProductVariants(productId: string) {
   const json = await readJson<unknown>(response);
 
   if (!response.ok) {
-    return [];
+    throw new Error(`Product variants load nahi ho paaye: ${response.status}`);
   }
 
   return unwrapItems<VariantPickerItem>(json);
 }
 
-function mapDefaultValues(defaultValues?: Partial<StyleData | StyleDataFormValues>) {
-  const raw = defaultValues as Partial<StyleData & StyleDataFormValues> | undefined;
+function mapDefaultValues(
+  defaultValues?: Partial<StyleData | StyleDataFormValues>,
+): StyleDataFormValues {
+  const raw = defaultValues as
+    Partial<StyleData & StyleDataFormValues> | undefined;
 
   return {
     productId: raw?.productId || "",
@@ -179,7 +194,6 @@ function mapDefaultValues(defaultValues?: Partial<StyleData | StyleDataFormValue
     scope: raw?.scope || "PRODUCT",
     businessType: raw?.businessType || "SHAHSI",
     status: raw?.status || "DRAFT",
-
     occasion: Array.isArray(raw?.occasion) ? raw.occasion : [],
     colorFamily: raw?.colorFamily || "",
     fabricFeel: raw?.fabricFeel || "",
@@ -188,13 +202,29 @@ function mapDefaultValues(defaultValues?: Partial<StyleData | StyleDataFormValue
     silhouette: raw?.silhouette || "",
     modestyLevel: raw?.modestyLevel || "",
     season: Array.isArray(raw?.season) ? raw.season : [],
-
     tags: Array.isArray(raw?.tags) ? raw.tags : [],
     stylingKeywords: Array.isArray(raw?.stylingKeywords)
       ? raw.stylingKeywords
       : [],
     aiStylingNotes: raw?.aiStylingNotes || "",
-  } satisfies StyleDataFormValues;
+  };
+}
+
+function getVariantOptionLabel(variant: VariantPickerItem) {
+  const details = [
+    variant.size,
+    variant.color || variant.colorFamily,
+    variant.variantType ? formatLabel(variant.variantType) : "",
+  ].filter(Boolean);
+
+  const sku = variant.variantSku || variant.sku || "";
+  const mainLabel = details.join(" / ");
+
+  if (mainLabel && sku) {
+    return `${mainLabel} - ${sku}`;
+  }
+
+  return mainLabel || sku || variant.title || variant.id;
 }
 
 export function StyleDataForm({
@@ -218,15 +248,18 @@ export function StyleDataForm({
 
   const [variants, setVariants] = useState<VariantPickerItem[]>([]);
   const [variantsLoading, setVariantsLoading] = useState(false);
+  const [variantsError, setVariantsError] = useState("");
 
   const form = useForm<StyleDataFormValues>({
     resolver: zodResolver(styleDataSchema) as Resolver<StyleDataFormValues>,
     defaultValues: mapDefaultValues(defaultValues),
+    mode: "onSubmit",
+    reValidateMode: "onChange",
   });
 
   const scope = form.watch("scope");
   const productId = form.watch("productId");
-
+  const variantId = form.watch("variantId") || "";
   const selectedOccasion = form.watch("occasion") || [];
   const selectedSeason = form.watch("season") || [];
   const selectedTags = form.watch("tags") || [];
@@ -275,7 +308,7 @@ export function StyleDataForm({
       }
     }
 
-    loadOptions();
+    void loadOptions();
 
     return () => {
       ignore = true;
@@ -304,7 +337,9 @@ export function StyleDataForm({
       }
     }
 
-    const timeout = window.setTimeout(loadProducts, 300);
+    const timeout = window.setTimeout(() => {
+      void loadProducts();
+    }, 300);
 
     return () => {
       ignore = true;
@@ -318,19 +353,28 @@ export function StyleDataForm({
     async function loadVariants() {
       if (!productId || scope !== "VARIANT") {
         setVariants([]);
+        setVariantsError("");
+        setVariantsLoading(false);
         return;
       }
 
       try {
         setVariantsLoading(true);
+        setVariantsError("");
+
         const result = await searchProductVariants(productId);
 
         if (!ignore) {
           setVariants(result);
         }
-      } catch {
+      } catch (error) {
         if (!ignore) {
           setVariants([]);
+          setVariantsError(
+            error instanceof Error
+              ? error.message
+              : "Product variants load nahi ho paaye.",
+          );
         }
       } finally {
         if (!ignore) {
@@ -339,53 +383,85 @@ export function StyleDataForm({
       }
     }
 
-    loadVariants();
+    void loadVariants();
 
     return () => {
       ignore = true;
     };
   }, [productId, scope]);
 
-  useEffect(() => {
-    if (scope === "PRODUCT") {
-      form.setValue("variantId", "", {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-    }
-  }, [form, scope]);
-
   function selectProduct(product: ProductPickerItem) {
     setSelectedProduct(product);
     setProductSearch("");
     setProducts([]);
+    setVariants([]);
+    setVariantsError("");
+
     form.setValue("productId", product.id, {
       shouldDirty: true,
+      shouldTouch: true,
       shouldValidate: true,
     });
 
     form.setValue("variantId", "", {
       shouldDirty: true,
-      shouldValidate: true,
+      shouldTouch: false,
+      shouldValidate: false,
     });
+
+    form.clearErrors("variantId");
   }
 
   function removeProduct() {
     setSelectedProduct(null);
+    setVariants([]);
+    setVariantsError("");
+
     form.setValue("productId", "", {
       shouldDirty: true,
+      shouldTouch: true,
       shouldValidate: true,
     });
+
     form.setValue("variantId", "", {
       shouldDirty: true,
+      shouldTouch: true,
       shouldValidate: true,
     });
   }
 
-  function toggleArrayValue(
-    field: "occasion" | "season",
-    value: string,
-  ) {
+  function handleScopeChange(nextScope: StyleDataFormValues["scope"]) {
+    form.setValue("scope", nextScope, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+
+    if (nextScope === "PRODUCT") {
+      form.setValue("variantId", "", {
+        shouldDirty: true,
+        shouldTouch: false,
+        shouldValidate: false,
+      });
+      form.clearErrors("variantId");
+    }
+  }
+
+  function handleVariantChange(nextVariantId: string) {
+    form.setValue("variantId", nextVariantId, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+
+    if (nextVariantId) {
+      form.clearErrors("variantId");
+    }
+
+    void form.trigger("variantId");
+  }
+
+  function toggleArrayValue(field: "occasion" | "season", value: string) {
     const current = form.getValues(field) || [];
 
     const next = current.includes(value)
@@ -394,21 +470,25 @@ export function StyleDataForm({
 
     form.setValue(field, next, {
       shouldDirty: true,
+      shouldTouch: true,
       shouldValidate: true,
     });
   }
 
   function addTag(field: "tags" | "stylingKeywords", value: string) {
-    const cleanValue = value.trim();
+    const cleanValues = value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
 
-    if (!cleanValue) return;
+    if (!cleanValues.length) return;
 
     const current = form.getValues(field) || [];
+    const next = Array.from(new Set([...current, ...cleanValues]));
 
-    if (current.includes(cleanValue)) return;
-
-    form.setValue(field, [...current, cleanValue], {
+    form.setValue(field, next, {
       shouldDirty: true,
+      shouldTouch: true,
       shouldValidate: true,
     });
   }
@@ -421,6 +501,7 @@ export function StyleDataForm({
       current.filter((item) => item !== value),
       {
         shouldDirty: true,
+        shouldTouch: true,
         shouldValidate: true,
       },
     );
@@ -450,27 +531,39 @@ export function StyleDataForm({
         <h2 className="text-2xl font-medium">Style Data Target</h2>
 
         <p className="mt-2 text-sm text-neutral-500">
-          Product scope me variant ID nahi bhejna. Variant scope me valid variant
-          required hoga.
+          Product scope me variant ID nahi bhejna. Variant scope me valid
+          variant required hoga.
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <Field
-            label="Scope"
-            error={form.formState.errors.scope?.message}
-          >
-            <select
-              {...form.register("scope")}
-              className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-            >
-              {(options.scope.length ? options.scope : ["PRODUCT", "VARIANT"]).map(
-                (value) => (
-                  <option key={value} value={value}>
-                    {formatLabel(value)}
-                  </option>
-                ),
+          <Field label="Scope" error={form.formState.errors.scope?.message}>
+            <Controller
+              name="scope"
+              control={form.control}
+              render={({ field }) => (
+                <select
+                  name={field.name}
+                  ref={field.ref}
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChange={(event) =>
+                    handleScopeChange(
+                      event.target.value as StyleDataFormValues["scope"],
+                    )
+                  }
+                  className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
+                >
+                  {(options.scope.length
+                    ? options.scope
+                    : ["PRODUCT", "VARIANT"]
+                  ).map((value) => (
+                    <option key={value} value={value}>
+                      {formatLabel(value)}
+                    </option>
+                  ))}
+                </select>
               )}
-            </select>
+            />
           </Field>
 
           <Field
@@ -492,10 +585,7 @@ export function StyleDataForm({
             </select>
           </Field>
 
-          <Field
-            label="Status"
-            error={form.formState.errors.status?.message}
-          >
+          <Field label="Status" error={form.formState.errors.status?.message}>
             <select
               {...form.register("status")}
               className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
@@ -532,6 +622,7 @@ export function StyleDataForm({
                   type="button"
                   onClick={removeProduct}
                   className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-neutral-500 ring-1 ring-neutral-200 hover:text-red-600"
+                  aria-label="Remove selected product"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -565,17 +656,19 @@ export function StyleDataForm({
 
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium text-neutral-950">
-                            {product.name || product.title || "Untitled product"}
+                            {product.name ||
+                              product.title ||
+                              "Untitled product"}
                           </span>
                           <span className="block truncate text-xs text-neutral-500">
-                            SKU: {product.sku || "—"}
+                            SKU: {product.sku || "-"}
                           </span>
                         </span>
                       </button>
                     ))
                   ) : (
                     <div className="p-4 text-sm text-neutral-500">
-                      Product search karo ya backend picker response check karo.
+                      Search box me product name, SKU ya slug type karo.
                     </div>
                   )}
                 </div>
@@ -588,28 +681,56 @@ export function StyleDataForm({
               label="Variant"
               error={form.formState.errors.variantId?.message}
             >
-              <select
-                {...form.register("variantId")}
-                disabled={!productId || variantsLoading}
-                className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10 disabled:bg-neutral-100"
-              >
-                <option value="">
-                  {variantsLoading
-                    ? "Loading variants..."
-                    : productId
-                      ? "Select variant"
-                      : "Select product first"}
-                </option>
+              <Controller
+                name="variantId"
+                control={form.control}
+                render={({ field }) => (
+                  <select
+                    name={field.name}
+                    ref={field.ref}
+                    value={field.value || ""}
+                    onBlur={field.onBlur}
+                    onChange={(event) =>
+                      handleVariantChange(event.target.value)
+                    }
+                    disabled={!productId || variantsLoading}
+                    className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10 disabled:bg-neutral-100"
+                  >
+                    <option value="">
+                      {variantsLoading
+                        ? "Loading variants..."
+                        : productId
+                          ? "Select variant"
+                          : "Select product first"}
+                    </option>
 
-                {variants.map((variant) => (
-                  <option key={variant.id} value={variant.id}>
-                    {variant.title ||
-                      variant.sku ||
-                      [variant.size, variant.color].filter(Boolean).join(" / ") ||
-                      variant.id}
-                  </option>
-                ))}
-              </select>
+                    {variants.map((variant) => (
+                      <option key={variant.id} value={variant.id}>
+                        {getVariantOptionLabel(variant)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+
+              {variantsError ? (
+                <p className="mt-2 text-sm text-red-600">{variantsError}</p>
+              ) : null}
+
+              {!variantsLoading &&
+              productId &&
+              !variantsError &&
+              !variants.length ? (
+                <p className="mt-2 text-sm text-amber-700">
+                  Is product ke liye koi variant nahi mila.
+                </p>
+              ) : null}
+
+              {variantId ? (
+                <p className="mt-2 break-all text-xs text-neutral-500">
+                  Selected variant ID: {variantId}
+                </p>
+              ) : null}
             </Field>
           ) : (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
@@ -629,10 +750,11 @@ export function StyleDataForm({
             error={form.formState.errors.colorFamily?.message}
           >
             <SelectField
-              value={form.watch("colorFamily")}
+              value={form.watch("colorFamily") || ""}
               onChange={(value) =>
                 form.setValue("colorFamily", value, {
                   shouldDirty: true,
+                  shouldTouch: true,
                   shouldValidate: true,
                 })
               }
@@ -646,10 +768,11 @@ export function StyleDataForm({
             error={form.formState.errors.fabricFeel?.message}
           >
             <SelectField
-              value={form.watch("fabricFeel")}
+              value={form.watch("fabricFeel") || ""}
               onChange={(value) =>
                 form.setValue("fabricFeel", value, {
                   shouldDirty: true,
+                  shouldTouch: true,
                   shouldValidate: true,
                 })
               }
@@ -663,10 +786,11 @@ export function StyleDataForm({
             error={form.formState.errors.neckline?.message}
           >
             <SelectField
-              value={form.watch("neckline")}
+              value={form.watch("neckline") || ""}
               onChange={(value) =>
                 form.setValue("neckline", value, {
                   shouldDirty: true,
+                  shouldTouch: true,
                   shouldValidate: true,
                 })
               }
@@ -680,10 +804,11 @@ export function StyleDataForm({
             error={form.formState.errors.sleeveType?.message}
           >
             <SelectField
-              value={form.watch("sleeveType")}
+              value={form.watch("sleeveType") || ""}
               onChange={(value) =>
                 form.setValue("sleeveType", value, {
                   shouldDirty: true,
+                  shouldTouch: true,
                   shouldValidate: true,
                 })
               }
@@ -697,10 +822,11 @@ export function StyleDataForm({
             error={form.formState.errors.silhouette?.message}
           >
             <SelectField
-              value={form.watch("silhouette")}
+              value={form.watch("silhouette") || ""}
               onChange={(value) =>
                 form.setValue("silhouette", value, {
                   shouldDirty: true,
+                  shouldTouch: true,
                   shouldValidate: true,
                 })
               }
@@ -714,10 +840,11 @@ export function StyleDataForm({
             error={form.formState.errors.modestyLevel?.message}
           >
             <SelectField
-              value={form.watch("modestyLevel")}
+              value={form.watch("modestyLevel") || ""}
               onChange={(value) =>
                 form.setValue("modestyLevel", value, {
                   shouldDirty: true,
+                  shouldTouch: true,
                   shouldValidate: true,
                 })
               }
@@ -740,10 +867,7 @@ export function StyleDataForm({
             />
           </Field>
 
-          <Field
-            label="Season"
-            error={form.formState.errors.season?.message}
-          >
+          <Field label="Season" error={form.formState.errors.season?.message}>
             <CheckboxGroup
               values={options.season}
               selected={selectedSeason}
@@ -905,6 +1029,8 @@ function TagInput({
   const [inputValue, setInputValue] = useState("");
 
   function submitTag() {
+    if (!inputValue.trim()) return;
+
     onAdd(inputValue);
     setInputValue("");
   }
@@ -992,7 +1118,7 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="mb-2 block text-sm font-medium text-neutral-800">
         {label}
       </span>
@@ -1002,6 +1128,6 @@ function Field({
       {error ? (
         <span className="mt-1 block text-sm text-red-600">{error}</span>
       ) : null}
-    </label>
+    </div>
   );
 }

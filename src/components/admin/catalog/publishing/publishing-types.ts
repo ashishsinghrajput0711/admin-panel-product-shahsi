@@ -1,68 +1,248 @@
-export type PublishingScope = "PRODUCT" | "VARIANT" | "CATEGORY";
-
-export type PublishingStatus =
+export type CatalogLifecycleStatus =
   | "DRAFT"
-  | "IN_REVIEW"
-  | "APPROVED"
-  | "SCHEDULED"
-  | "PUBLISHED"
-  | "UNPUBLISHED"
+  | "ACTIVE"
+  | "INACTIVE"
   | "ARCHIVED";
 
-export type ApprovalStatus =
-  | "NOT_SUBMITTED"
-  | "PENDING"
-  | "APPROVED"
-  | "REJECTED";
+export type CatalogPublicationStatus =
+  | "PUBLISHED"
+  | "UNPUBLISHED"
+  | "PUBLISH_BLOCKED";
 
-export type BusinessType = "SHAHSI" | "GOWNLOOP" | "BOTH";
+export type CatalogBusinessType = "SHAHSI" | "GOWNLOOP";
 
-export type SalesChannel =
-  | "WEBSITE"
-  | "MOBILE_APP"
-  | "BRIDAL_PARTY"
-  | "RENTAL"
-  | "RESALE"
-  | "MARKETPLACE";
+export type PublishingIssueSeverity = "ERROR" | "WARNING" | "INFO";
 
-export type ReadinessStatus = "READY" | "WARNING" | "BLOCKED";
+export type PublishingIssue = {
+  productId: string;
+  code: string;
+  field: string;
+  message: string;
+  severity: PublishingIssueSeverity;
+  blocking: boolean;
+};
+
+export type PublishReadiness = {
+  canPublish: boolean;
+  blockingErrorCount: number;
+  warningCount: number;
+  infoCount: number;
+  errors: PublishingIssue[];
+  warnings: PublishingIssue[];
+  info: PublishingIssue[];
+  issues: PublishingIssue[];
+};
+
+export type PublishingPrimaryImage = {
+  id: string;
+  url: string;
+  thumbnailUrl?: string | null;
+  altText?: string | null;
+  name?: string | null;
+  isPrimary?: boolean;
+};
+
+export type PublishingCategorySummary = {
+  id: string;
+  name: string;
+};
 
 export type PublishingRecord = {
   id: string;
+  title: string;
+  sku: string | null;
+  slug: string;
 
-  scope: PublishingScope;
+  status: CatalogLifecycleStatus;
+  businessType: CatalogBusinessType | string | null;
+  productType: string | null;
+  brand: string | null;
 
-  productId?: string | null;
-  productName?: string | null;
+  publicationStatus: CatalogPublicationStatus;
+  isPublished: boolean;
 
-  variantId?: string | null;
-  variantSku?: string | null;
+  publishedAt: string | null;
+  publishedBy: string | null;
+  unpublishedAt: string | null;
 
-  categoryId?: string | null;
-  categoryName?: string | null;
+  thumbnailUrl: string | null;
+  thumbnailAlt: string | null;
+  primaryImage: PublishingPrimaryImage | null;
+  categorySummary: PublishingCategorySummary | null;
 
-  businessType: BusinessType;
+  publishReadiness: PublishReadiness;
 
-  status: PublishingStatus;
-  approvalStatus: ApprovalStatus;
+  createdAt: string;
+  updatedAt: string;
+};
 
-  channels: SalesChannel[];
+export type PublishingListFilters = {
+  search: string;
+  status: CatalogLifecycleStatus | "";
+  publicationStatus: CatalogPublicationStatus | "";
+  businessType: CatalogBusinessType | "";
+  productType: string;
+  brand: string;
+  categoryId: string;
+};
 
-  isVisible: boolean;
-  isFeatured: boolean;
+export type PublishingListParams = PublishingListFilters & {
+  page?: number;
+  limit?: number;
+};
 
-  scheduledPublishAt?: string | null;
-  publishedAt?: string | null;
+export type PublishingListResult = {
+  products: PublishingRecord[];
+  meta: {
+    count: number;
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+};
+
+export type PublishingSummary = {
+  total: number;
+  published: number;
+  unpublished: number;
+  publishBlocked: number;
+  validationErrorProducts: number;
+  warningProducts: number;
+
+  draft: number;
+  active: number;
+  inactive: number;
+  archived: number;
+
+  inStock?: number;
+  lowStock?: number;
+  outOfStock?: number;
+  rentable?: number;
+  sellable?: number;
+  madeToOrder?: number;
+  unlisted?: number;
+};
+
+export type PublishingActionPayload = {
+  reason: string;
+};
+
+export type PublishProductPayload = PublishingActionPayload & {
+  publishedAt: string;
+};
+
+export type PublishingActionResult = {
+  id: string;
+  status: CatalogLifecycleStatus;
+  publicationStatus: CatalogPublicationStatus;
+  isPublished: boolean;
+
+  publishedAt: string | null;
+  publishedBy?: string | null;
   unpublishedAt?: string | null;
 
-  seoReady: ReadinessStatus;
-  mediaReady: ReadinessStatus;
-  inventoryReady: ReadinessStatus;
-  pricingReady: ReadinessStatus;
+  idempotent: boolean;
+};
 
-  reviewerName?: string | null;
-  rejectionReason?: string | null;
-  notes?: string | null;
+export type BulkPublishingResultItem = {
+  id: string;
+  success: boolean;
 
-  updatedAt: string;
+  publicationStatus?: CatalogPublicationStatus;
+  publishedAt?: string | null;
+  unpublishedAt?: string | null;
+  idempotent?: boolean;
+
+  error?: string;
+  statusCode?: number;
+  validationErrors?: PublishingIssue[];
+};
+
+export type BulkPublishingResult = {
+  requested: number;
+  succeeded: number;
+  failed: number;
+  results: BulkPublishingResultItem[];
+};
+
+export type PublishingValidationResult = {
+  totalProductsScanned: number;
+  productsWithBlockingErrors: number;
+  totalErrors: number;
+  totalWarnings: number;
+  errors: PublishingIssue[];
+  warnings: PublishingIssue[];
+};
+
+export type PublishingHistoryActor = {
+  id: string;
+  name: string | null;
+  email: string | null;
+};
+
+export type PublishingHistoryItem = {
+  id: string;
+  action: string;
+  module: string;
+
+  fromStatus: CatalogLifecycleStatus | null;
+  toStatus: CatalogLifecycleStatus | null;
+
+  fromPublicationStatus: CatalogPublicationStatus | null;
+  toPublicationStatus: CatalogPublicationStatus | null;
+
+  reason: string | null;
+  createdBy: PublishingHistoryActor | null;
+  createdAt: string;
+
+  oldValue: Record<string, unknown>;
+  newValue: Record<string, unknown>;
+};
+
+export type PublishingStatusHistory = {
+  product: {
+    id: string;
+    title: string;
+    slug: string;
+    status: CatalogLifecycleStatus;
+    isPublished: boolean;
+    publicationStatus: CatalogPublicationStatus;
+    publishedAt: string | null;
+    publishedBy: string | null;
+    unpublishedAt: string | null;
+    approvedAt: string | null;
+    publishReadiness: PublishReadiness;
+  };
+  history: PublishingHistoryItem[];
+};
+
+export type PublishingReadinessSummary = {
+  variantCount: number;
+  activeVariantCount: number;
+  mediaCount: number;
+  primaryImageAvailable: boolean;
+  categoryAvailable: boolean;
+  canPublish: boolean;
+  blockingErrorCount: number;
+  warningCount: number;
+};
+
+export type PublishingRelations = {
+  product: {
+    id: string;
+    title: string;
+    slug: string;
+    status: CatalogLifecycleStatus;
+    publicationStatus: CatalogPublicationStatus;
+    isPublished: boolean;
+  };
+
+  readinessSummary: PublishingReadinessSummary;
+  publishReadiness: PublishReadiness;
+
+  relatedProducts: unknown[];
+  relatedTo: unknown[];
+  variants: unknown[];
+  images: unknown[];
 };
