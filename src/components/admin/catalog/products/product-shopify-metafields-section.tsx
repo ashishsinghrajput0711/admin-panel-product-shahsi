@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Check,
   ChevronDown,
@@ -4275,6 +4281,203 @@ onColorSelect?.({
   );
 }
 
+function CategoryMultiSelectEditor({
+  options,
+  selected,
+  placeholder,
+  onChange,
+}: {
+  options: string[];
+  selected: string[];
+  placeholder: string;
+  onChange: (values: string[]) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftValues, setDraftValues] = useState<string[]>(
+    selected.length ? selected : [""],
+  );
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftValues(selected.length ? selected : [""]);
+    }
+  }, [selected, isEditing]);
+
+  const availableOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...options, ...selected]
+            .map((item) => String(item || "").trim())
+            .filter(Boolean),
+        ),
+      ),
+    [options, selected],
+  );
+
+  function openEditor() {
+    setDraftValues(selected.length ? [...selected] : [""]);
+    setIsEditing(true);
+  }
+
+  function updateRow(index: number, nextValue: string) {
+    setDraftValues((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index ? nextValue : item,
+      ),
+    );
+  }
+
+  function addRow() {
+    setDraftValues((current) => [...current, ""]);
+  }
+
+  function removeRow(index: number) {
+    setDraftValues((current) => {
+      const nextValues = current.filter(
+        (_, itemIndex) => itemIndex !== index,
+      );
+
+      return nextValues.length ? nextValues : [""];
+    });
+  }
+
+  function handleDone() {
+    const cleanedValues = Array.from(
+      new Set(
+        draftValues
+          .map((item) => String(item || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    onChange(cleanedValues);
+    setIsEditing(false);
+  }
+
+  function handleCancel() {
+    setDraftValues(selected.length ? [...selected] : [""]);
+    setIsEditing(false);
+  }
+
+  if (!isEditing) {
+    return (
+      <button
+        type="button"
+        onClick={openEditor}
+        className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-left text-sm outline-none transition hover:border-neutral-300 focus:border-neutral-950"
+      >
+        <span
+          className={
+            selected.length
+              ? "truncate text-neutral-950"
+              : "truncate text-neutral-500"
+          }
+        >
+          {selected.length ? selected.join(" • ") : placeholder}
+        </span>
+
+        <ChevronDown className="ml-3 h-4 w-4 shrink-0" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white">
+      <div className="divide-y divide-neutral-200">
+        {draftValues.map((currentValue, index) => (
+          <div
+            key={`${index}-${currentValue}`}
+            className="flex items-center gap-3 p-3"
+          >
+            <span className="cursor-grab px-1 text-lg text-neutral-400">
+              ⠿
+            </span>
+
+            <select
+              value={currentValue}
+              onChange={(event) =>
+                updateRow(index, event.target.value)
+              }
+              className="h-11 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+            >
+              <option value="">{placeholder}</option>
+
+              {availableOptions.map((option) => {
+                const alreadySelected = draftValues.some(
+                  (item, itemIndex) =>
+                    itemIndex !== index && item === option,
+                );
+
+                return (
+                  <option
+                    key={option}
+                    value={option}
+                    disabled={alreadySelected}
+                  >
+                    {option}
+                  </option>
+                );
+              })}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => removeRow(index)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-neutral-500 transition hover:bg-red-50 hover:text-red-600"
+              aria-label="Remove selected value"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 p-3">
+        <button
+          type="button"
+          onClick={addRow}
+          disabled={
+            availableOptions.length > 0 &&
+            draftValues.filter(Boolean).length >=
+              availableOptions.length
+          }
+          className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-950 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          + Add item
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setDraftValues([""])}
+          disabled={!draftValues.some(Boolean)}
+          className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Clear all
+        </button>
+      </div>
+
+      <div className="flex justify-end gap-2 border-t border-neutral-200 p-3">
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="rounded-full border border-neutral-200 bg-white px-5 py-2 text-sm font-medium text-neutral-950 hover:bg-neutral-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDone}
+          className="rounded-full bg-neutral-950 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DynamicCategoryMetafieldInput({
   definition,
   value,
@@ -4318,50 +4521,36 @@ function DynamicCategoryMetafieldInput({
     );
   }
 
-  if (definition.type === "multi_select") {
-    const selected = getStringArrayValue(value);
+if (definition.type === "multi_select") {
+  const selected = getStringArrayValue(value);
 
-    if (options.length > 0) {
-      return (
-        <div className="flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white p-2">
-          {options.map((option) => {
-            const checked = selected.includes(option);
-
-            return (
-              <button
-                key={option}
-                type="button"
-                onClick={() => {
-                  if (checked) {
-                    onChange(selected.filter((item) => item !== option));
-                    return;
-                  }
-
-                  onChange([...selected, option]);
-                }}
-                className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${
-                  checked
-                    ? "bg-neutral-950 text-white ring-neutral-950"
-                    : "bg-white text-neutral-700 ring-neutral-200 hover:ring-neutral-400"
-                }`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
-      );
-    }
-
+  if (options.length === 0) {
     return (
       <input
         value={textValue}
-        onChange={(event) => onChange(parseTags(event.target.value))}
-        placeholder={definition.placeholder || "Comma separated values"}
+        onChange={(event) =>
+          onChange(parseTags(event.target.value))
+        }
+        placeholder={
+          definition.placeholder || "Comma separated values"
+        }
         className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
       />
     );
   }
+
+  return (
+    <CategoryMultiSelectEditor
+      options={options}
+      selected={selected}
+      placeholder={
+        definition.placeholder ||
+        `Select ${definition.label || definition.key}`
+      }
+      onChange={onChange}
+    />
+  );
+}
 
   if (definition.type === "number") {
     return (
