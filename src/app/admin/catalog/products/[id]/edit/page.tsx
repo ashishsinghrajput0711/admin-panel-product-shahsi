@@ -1052,6 +1052,40 @@ try {
   ...(values.productMetafields || {}),
 };
 
+
+const commaSeparatedProductMetafieldKeys = [
+  "style",
+  "fabric",
+  "print",
+] as const;
+
+commaSeparatedProductMetafieldKeys.forEach((key) => {
+  const currentValue = productMetafieldsForSave[key];
+
+  if (!Array.isArray(currentValue)) {
+    return;
+  }
+
+  const normalizedValues = Array.from(
+    new Set(
+      currentValue
+        .map((item) => {
+          if (
+            typeof item === "string" ||
+            typeof item === "number"
+          ) {
+            return String(item).trim();
+          }
+
+          return "";
+        })
+        .filter(Boolean),
+    ),
+  );
+
+  productMetafieldsForSave[key] = normalizedValues.join(",");
+});
+
 const categoryMetafieldsForSave: Record<string, ProductFormRecordValue> = {
   ...(defaultValues?.categoryMetafields || {}),
   ...(values.categoryMetafields || {}),

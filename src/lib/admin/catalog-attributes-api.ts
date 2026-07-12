@@ -667,30 +667,54 @@ export async function updateCatalogAttribute(
     );
   }
 
-  const newOptions = originalOptions
-    .filter((option) => !option.id)
-    .map((option, index) => cleanOptionPayload(option, index))
-    .filter(
-      (option) =>
-        String(option.label || "").trim() &&
-        String(option.value || "").trim(),
-    );
+  const existingOptions = originalOptions.filter(
+  (option) => String(option.id || "").trim(),
+);
 
-  if (attributeId && newOptions.length) {
-    await Promise.all(
-      newOptions.map((option, index) =>
-        createCatalogAttributeOption({
-          attributeId,
-          option: {
-            ...option,
-            sortOrder: Number(
-              (option as Record<string, unknown>).sortOrder ?? index + 1,
-            ),
-          },
-        }),
-      ),
-    );
-  }
+const newOptions = originalOptions
+  .filter((option) => !String(option.id || "").trim())
+  .map((option, index) => cleanOptionPayload(option, index))
+  .filter(
+    (option) =>
+      String(option.label || "").trim() &&
+      String(option.value || "").trim(),
+  );
+
+if (attributeId) {
+  await Promise.all([
+    ...existingOptions.map((option, index) => {
+      const optionId = String(option.id || "").trim();
+
+      return updateCatalogAttributeOption({
+        attributeId,
+        optionId,
+        option: {
+          ...option,
+          id: optionId,
+          sortOrder: Number(
+            option.sortOrder ?? option.position ?? index + 1,
+          ),
+          position: Number(
+            option.position ?? option.sortOrder ?? index + 1,
+          ),
+        },
+      });
+    }),
+
+    ...newOptions.map((option, index) =>
+      createCatalogAttributeOption({
+        attributeId,
+        option: {
+          ...option,
+          sortOrder: Number(
+            (option as Record<string, unknown>).sortOrder ??
+              index + 1,
+          ),
+        },
+      }),
+    ),
+  ]);
+}
 
   return extractSingleAttribute(json);
 }

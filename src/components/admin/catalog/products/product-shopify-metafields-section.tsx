@@ -77,6 +77,7 @@ type ProductPickerItem = {
   sku?: string | null;
   slug?: string | null;
   imageUrl?: string | null;
+  image?: string | null;
   thumbnail?: string | null;
   thumbnailUrl?: string | null;
   primaryImage?: string | null;
@@ -106,6 +107,37 @@ type ProductPickerApiResponse = {
   message?: string;
   error?: unknown;
 };
+
+type ProductReferenceDetailApiResponse = {
+  success?: boolean;
+  data?: {
+    id?: string | null;
+    title?: string | null;
+    name?: string | null;
+    sku?: string | null;
+    slug?: string | null;
+
+    thumbnailUrl?: string | null;
+    imageUrl?: string | null;
+    image?: string | null;
+
+    primaryImage?:
+      | string
+      | {
+          url?: string | null;
+          thumbnailUrl?: string | null;
+        }
+      | null;
+
+    status?: string | null;
+    adminStatus?: string | null;
+    statusLabel?: string | null;
+  } | null;
+  message?: string | string[];
+  error?: unknown;
+};
+
+const productReferenceCache = new Map<string, ProductPickerItem>();
 
 type CategoryPickerItem = {
   id?: string | null;
@@ -363,20 +395,22 @@ const productMetafieldFields: ProductMetafieldField[] = [
   placeholder: "Select style",
   multiple: true,
 },
-  {
-    key: "fabric",
-    label: "Fabric",
-    type: "attribute_option_picker",
-    attributeKey: "fabric",
-    placeholder: "Select fabric",
-  },
-  {
-    key: "print",
-    label: "Print",
-    type: "attribute_option_picker",
-    attributeKey: "print",
-    placeholder: "Select print",
-  },
+{
+  key: "fabric",
+  label: "Fabric",
+  type: "attribute_option_picker",
+  attributeKey: "fabric",
+  placeholder: "Select fabric",
+  multiple: true,
+},
+{
+  key: "print",
+  label: "Print",
+  type: "attribute_option_picker",
+  attributeKey: "print",
+  placeholder: "Select print",
+  multiple: true,
+},
   {
     key: "printSwatch",
     label: "Print Swatch",
@@ -582,17 +616,66 @@ function cleanCategoryMetafieldsForDefinitions({
 }
 
 function getProductTitle(product: ProductPickerItem) {
-  return product.title || product.name || product.sku || product.id;
+  const title = String(product.title || product.name || "").trim();
+
+  if (!title) {
+    throw new Error(
+      `Product "${product.id}" ke picker response mein title/name missing hai.`,
+    );
+  }
+
+  return title;
+}
+
+
+function getProductImageValue(product: ProductPickerItem) {
+  return String(
+    product.thumbnailUrl ||
+      product.thumbnail ||
+      product.imageUrl ||
+      product.image ||
+      product.primaryImage ||
+      "",
+  ).trim();
 }
 
 function getProductImage(product: ProductPickerItem) {
-  return (
-    product.thumbnailUrl ||
-    product.thumbnail ||
-    product.imageUrl ||
-    product.primaryImage ||
-    ""
-  );
+  const image = getProductImageValue(product);
+
+  if (!image) {
+    throw new Error(
+      `Product "${product.id}" ke picker response mein image missing hai.`,
+    );
+  }
+
+  return image;
+}
+
+function validateProductPickerItems(
+  items: ProductPickerItem[],
+  source: string,
+  requireImage = false,
+) {
+  return items.map((product, index) => {
+    const id = String(product.id || "").trim();
+
+    if (!id) {
+      throw new Error(
+        `${source}: item ${index + 1} mein product ID missing hai.`,
+      );
+    }
+
+    getProductTitle(product);
+
+    if (requireImage) {
+      getProductImage(product);
+    }
+
+    return {
+      ...product,
+      id,
+    };
+  });
 }
 
 function getProductStatus(product: ProductPickerItem) {
@@ -1434,12 +1517,10 @@ function isColorMetafield(definition: CategoryMetafieldDefinition) {
 
 async function fetchProductPicker({
   search,
-  searchBy,
   page = 1,
   limit = 50,
 }: {
   search: string;
-  searchBy: string;
   page?: number;
   limit?: number;
 }) {
@@ -1447,11 +1528,13 @@ async function fetchProductPicker({
 
   params.set("page", String(page));
   params.set("limit", String(limit));
-  params.set("status", "all");
 
-  if (search.trim()) {
-    params.set("search", search.trim());
-    params.set("searchBy", searchBy || "all");
+  const cleanSearch = search.trim();
+
+  if (cleanSearch) {
+    // Current deployed backend generic search accept karta hai.
+    // searchBy query bilkul nahi bhejni.
+    params.set("search", cleanSearch);
   }
 
   const response = await fetch(
@@ -1460,22 +1543,29 @@ async function fetchProductPicker({
       method: "GET",
       headers: getAuthHeaders(),
       cache: "no-store",
-    }
+    },
   );
 
   const text = await response.text();
+
   const data = text.trim()
     ? (JSON.parse(text) as ProductPickerApiResponse)
     : null;
 
   if (!response.ok) {
     throw new Error(
-      getApiError(data, `Product picker failed: ${response.status}`)
+      getApiError(data, `Product picker failed: ${response.status}`),
     );
   }
 
+  const items = validateProductPickerItems(
+    extractPickerItems(data),
+    "Product picker response",
+    false,
+  );
+
   return {
-    items: extractPickerItems(data),
+    items,
     meta:
       data &&
       typeof data.data === "object" &&
@@ -1486,15 +1576,121 @@ async function fetchProductPicker({
   };
 }
 
-async function fetchSelectedProductById(productId: string) {
-  const result = await fetchProductPicker({
-    search: productId,
-    searchBy: "productId",
-    page: 1,
-    limit: 1,
-  });
+function isValidCatalogProductId(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim(),
+  );
+}
 
-  return result.items.find((item) => item.id === productId) || result.items[0] || null;
+async function fetchProductReferenceDetail(
+  productId: string,
+): Promise<ProductPickerItem> {
+  const cleanId = String(productId || "").trim();
+
+  if (!cleanId) {
+    throw new Error("Product reference ID missing hai.");
+  }
+
+  const cachedProduct = productReferenceCache.get(cleanId);
+
+  if (cachedProduct) {
+    return cachedProduct;
+  }
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/${encodeURIComponent(cleanId)}/detail`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const text = await response.text();
+
+  const json = text.trim()
+    ? (JSON.parse(text) as ProductReferenceDetailApiResponse)
+    : null;
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(
+        json,
+        `Product "${cleanId}" details load failed: ${response.status}`,
+      ),
+    );
+  }
+
+  const detail = json?.data;
+
+  if (!detail) {
+    throw new Error(
+      `Product "${cleanId}" ke detail response mein data missing hai.`,
+    );
+  }
+
+  const responseId = String(detail.id || "").trim();
+
+  if (responseId !== cleanId) {
+    throw new Error(
+      `Product detail response ID mismatch hai. Expected "${cleanId}", received "${responseId}".`,
+    );
+  }
+
+  const primaryImageUrl =
+    typeof detail.primaryImage === "string"
+      ? detail.primaryImage.trim()
+      : String(
+          detail.primaryImage?.thumbnailUrl ||
+            detail.primaryImage?.url ||
+            "",
+        ).trim();
+
+  const product: ProductPickerItem = {
+    id: responseId,
+    title: detail.title,
+    name: detail.name,
+    sku: detail.sku,
+    slug: detail.slug,
+
+    thumbnailUrl: String(detail.thumbnailUrl || "").trim(),
+    imageUrl: String(detail.imageUrl || "").trim(),
+    image: String(detail.image || primaryImageUrl).trim(),
+
+    status: detail.status,
+    adminStatus: detail.adminStatus,
+    statusLabel: detail.statusLabel,
+  };
+
+  // Koi fallback nahi:
+  // real title aur real image dono required hain.
+  getProductTitle(product);
+  getProductImage(product);
+
+  productReferenceCache.set(cleanId, product);
+
+  return product;
+}
+
+async function fetchSelectedProductsByIds(productIds: string[]) {
+  const ids = Array.from(
+    new Set(
+      productIds
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const products = await Promise.all(
+    ids.map((id) => fetchProductReferenceDetail(id)),
+  );
+
+  // Promise.all original saved order preserve karta hai.
+  return products;
 }
 
 function ProductPickerModal({
@@ -1502,16 +1698,18 @@ function ProductPickerModal({
   selectedIds,
   multiple = true,
   onChange,
+  onProductResolved,
   onClose,
 }: {
   fieldLabel: string;
   selectedIds: string[];
   multiple?: boolean;
   onChange: (ids: string[]) => void;
+  onProductResolved: (product: ProductPickerItem) => void;
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
-  const [searchBy, setSearchBy] = useState("all");
+
   const [items, setItems] = useState<ProductPickerItem[]>([]);
   const [selectedProductsById, setSelectedProductsById] = useState<
     Record<string, ProductPickerItem>
@@ -1529,12 +1727,11 @@ function ProductPickerModal({
         setIsLoading(true);
         setPickerError(null);
 
-        const result = await fetchProductPicker({
-          search,
-          searchBy,
-          page: 1,
-          limit: 50,
-        });
+     const result = await fetchProductPicker({
+  search,
+  page: 1,
+  limit: 50,
+});
 
         if (ignore) return;
 
@@ -1570,26 +1767,30 @@ function ProductPickerModal({
       ignore = true;
       window.clearTimeout(timeout);
     };
-  }, [search, searchBy, selectedSet]);
+ }, [search, selectedSet]);
 
   function toggleProduct(product: ProductPickerItem) {
-    setSelectedProductsById((previous) => ({
-      ...previous,
-      [product.id]: product,
-    }));
+  setSelectedProductsById((previous) => ({
+    ...previous,
+    [product.id]: product,
+  }));
 
-    if (selectedSet.has(product.id)) {
-      onChange(selectedIds.filter((id) => id !== product.id));
-      return;
-    }
+  // Product ka full object parent component ko bhi do,
+  // taaki selected list mein UUID ki jagah image, title aur SKU show ho.
+  onProductResolved(product);
 
-    if (!multiple) {
-      onChange([product.id]);
-      return;
-    }
-
-    onChange([...selectedIds, product.id]);
+  if (selectedSet.has(product.id)) {
+    onChange(selectedIds.filter((id) => id !== product.id));
+    return;
   }
+
+  if (!multiple) {
+    onChange([product.id]);
+    return;
+  }
+
+  onChange([...selectedIds, product.id]);
+}
 
   function clearSelection() {
     onChange([]);
@@ -1615,42 +1816,30 @@ function ProductPickerModal({
           </button>
         </div>
 
-        <div className="shrink-0 border-b border-neutral-200 bg-white p-4">
-          <div className="flex flex-col gap-3 md:flex-row">
-            <div className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3">
-              <Search className="h-4 w-4 text-neutral-400" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search products"
-                className="h-full flex-1 bg-transparent text-sm outline-none"
-              />
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
-              ) : null}
-            </div>
+       <div className="shrink-0 border-b border-neutral-200 bg-white p-4">
+  <div className="flex h-11 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3">
+    <Search className="h-4 w-4 text-neutral-400" />
 
-            <select
-              value={searchBy}
-              onChange={(event) => setSearchBy(event.target.value)}
-              className="h-11 rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none md:w-56"
-            >
-              <option value="all">Search by All</option>
-              <option value="title">Search by Title</option>
-              <option value="sku">Search by SKU</option>
-              <option value="productId">Search by Product ID</option>
-              <option value="barcode">Search by Barcode</option>
-            </select>
-          </div>
+    <input
+      value={search}
+      onChange={(event) => setSearch(event.target.value)}
+      placeholder="Search by product name, SKU, slug or product ID"
+      className="h-full flex-1 bg-transparent text-sm outline-none"
+    />
 
-          <button
-            type="button"
-            disabled
-            className="mt-3 rounded-full border border-dashed border-neutral-300 px-3 py-1.5 text-sm text-neutral-500"
-          >
-            Add filter +
-          </button>
-        </div>
+    {isLoading ? (
+      <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+    ) : null}
+  </div>
+
+  <button
+    type="button"
+    disabled
+    className="mt-3 rounded-full border border-dashed border-neutral-300 px-3 py-1.5 text-sm text-neutral-500"
+  >
+    Add filter +
+  </button>
+</div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {pickerError ? (
@@ -1672,70 +1861,109 @@ function ProductPickerModal({
             </div>
           ) : null}
 
-          {items.length > 0 ? (
-            <div className="divide-y divide-neutral-200">
-              {items.map((product) => {
-                const selected = selectedSet.has(product.id);
-                const image = getProductImage(product);
+         
+           
+             {items.length > 0 ? (
+  <div className="divide-y divide-neutral-200">
+    {items.map((product) => {
+      const selected = selectedSet.has(product.id);
 
-                return (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onClick={() => toggleProduct(product)}
-                    className="flex w-full items-center gap-4 px-5 py-3 text-left transition hover:bg-neutral-50"
-                  >
-                    <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
-                        selected
-                          ? "border-neutral-950 bg-neutral-950 text-white"
-                          : "border-neutral-300 bg-white"
-                      }`}
-                    >
-                      {selected ? <Check className="h-3.5 w-3.5" /> : null}
-                    </span>
+      const image = String(
+        product.thumbnailUrl ||
+          product.thumbnail ||
+          product.imageUrl ||
+          product.image ||
+          product.primaryImage ||
+          "",
+      ).trim();
 
-                    <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
-                      {image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={image}
-                          alt={getProductTitle(product)}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <ImageIcon className="h-5 w-5 text-neutral-300" />
-                      )}
-                    </span>
+      const hasImage = Boolean(image);
+      const title = getProductTitle(product);
 
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-neutral-950">
-                        {getProductTitle(product)}
-                      </span>
+      return (
+        <button
+          key={product.id}
+          type="button"
+          disabled={!hasImage}
+          onClick={() => {
+            if (!hasImage) return;
 
-                      <span className="mt-0.5 block truncate text-xs text-neutral-500">
-                        {product.sku || product.slug || product.id}
-                      </span>
-                    </span>
+            toggleProduct(product);
+          }}
+          className={[
+            "flex w-full items-center gap-4 px-5 py-3 text-left transition",
+            hasImage
+              ? "hover:bg-neutral-50"
+              : "cursor-not-allowed bg-red-50/40 opacity-75",
+          ].join(" ")}
+        >
+          {/* Selection checkbox */}
+          <span
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+              selected
+                ? "border-neutral-950 bg-neutral-950 text-white"
+                : "border-neutral-300 bg-white"
+            }`}
+          >
+            {selected ? <Check className="h-3.5 w-3.5" /> : null}
+          </span>
 
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${getProductStatusClass(
-                        product
-                      )}`}
-                    >
-                      {getProductStatusLabel(product)}
-                    </span>
+          {/* Product image */}
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
+            {hasImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={image}
+                alt={title}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="px-1 text-center text-[10px] font-medium leading-3 text-red-600">
+                Image missing
+              </span>
+            )}
+          </span>
 
-                    {product.price !== undefined && product.price !== null ? (
-                      <span className="hidden shrink-0 text-xs text-neutral-500 md:block">
-                        ${product.price}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+          {/* Product title and SKU */}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-neutral-950">
+              {title}
+            </span>
+
+            {product.sku || product.slug ? (
+              <span className="mt-0.5 block truncate text-xs text-neutral-500">
+                {product.sku || product.slug}
+              </span>
+            ) : null}
+          </span>
+
+          {/* Status / image error */}
+          {hasImage ? (
+            <span
+              className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${getProductStatusClass(
+                product,
+              )}`}
+            >
+              {getProductStatusLabel(product)}
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 ring-1 ring-red-200">
+              Cannot select
+            </span>
+          )}
+
+          {/* Price */}
+          {product.price !== undefined && product.price !== null ? (
+            <span className="hidden shrink-0 text-xs text-neutral-500 md:block">
+              ${product.price}
+            </span>
           ) : null}
+        </button>
+      );
+    })}
+  </div>
+) : null}
+            
         </div>
 
         <div className="flex h-16 shrink-0 items-center justify-between border-t border-neutral-200 bg-white px-5">
@@ -1801,10 +2029,29 @@ const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [selectedProductsById, setSelectedProductsById] = useState<
     Record<string, ProductPickerItem>
   >({});
+
+  function rememberSelectedProduct(product: ProductPickerItem) {
+  setSelectedProductsById((previous) => ({
+    ...previous,
+    [product.id]: product,
+  }));
+}
   const [isSelectedLoading, setIsSelectedLoading] = useState(false);
+
+  const [selectedProductsError, setSelectedProductsError] = useState<
+  string | null
+>(null);
 
   const selectedIds = getStringArrayValue(value);
   const activeIds = isEditorOpen ? draftIds : selectedIds;
+
+  const unresolvedSelectedIds = selectedIds.filter(
+  (id) => !selectedProductsById[id],
+);
+
+const unresolvedDraftIds = draftIds.filter(
+  (id) => !selectedProductsById[id],
+);
 
   useEffect(() => {
     if (!isEditorOpen) {
@@ -1812,55 +2059,66 @@ const [dragOverId, setDragOverId] = useState<string | null>(null);
     }
   }, [isEditorOpen, selectedIds.join("|")]);
 
-  useEffect(() => {
-    let ignore = false;
+useEffect(() => {
+  let ignore = false;
 
-    async function loadSelectedProductDetails() {
-      const missingIds = activeIds.filter((id) => !selectedProductsById[id]);
-
-      if (missingIds.length === 0) return;
-
-      try {
-        setIsSelectedLoading(true);
-
-        const products = await Promise.all(
-          missingIds.map((id) => fetchSelectedProductById(id).catch(() => null))
-        );
-
-        if (ignore) return;
-
-        setSelectedProductsById((previous) => {
-          const next = { ...previous };
-
-          products.forEach((product, index) => {
-            const fallbackId = missingIds[index];
-
-            if (product?.id) {
-              next[product.id] = product;
-              return;
-            }
-
-            next[fallbackId] = {
-              id: fallbackId,
-              title: fallbackId,
-            };
-          });
-
-          return next;
-        });
-      } finally {
-        if (!ignore) {
-          setIsSelectedLoading(false);
-        }
-      }
+  async function loadSelectedProductDetails() {
+    if (activeIds.length === 0) {
+      setSelectedProductsError(null);
+      return;
     }
 
-    loadSelectedProductDetails();
+    const missingIds = activeIds.filter(
+      (id) => !selectedProductsById[id],
+    );
 
-    return () => {
-      ignore = true;
-    };
-  }, [activeIds.join("|")]);
+    if (missingIds.length === 0) {
+      setSelectedProductsError(null);
+      return;
+    }
+
+    try {
+      setIsSelectedLoading(true);
+      setSelectedProductsError(null);
+
+      const products = await fetchSelectedProductsByIds(missingIds);
+
+      if (ignore) {
+        return;
+      }
+
+      setSelectedProductsById((previous) => {
+        const next = { ...previous };
+
+        products.forEach((product) => {
+          next[product.id] = product;
+        });
+
+        return next;
+      });
+    } catch (error) {
+      if (ignore) {
+        return;
+      }
+
+      setSelectedProductsError(
+        error instanceof Error
+          ? error.message
+          : "Selected product details load nahi ho paayi.",
+      );
+    } finally {
+      if (!ignore) {
+        setIsSelectedLoading(false);
+      }
+    }
+  }
+
+  void loadSelectedProductDetails();
+
+  return () => {
+    ignore = true;
+  };
+}, [activeIds.join("|")]);
 
   function applyIds(ids: string[]) {
     if (multiple) {
@@ -1932,223 +2190,238 @@ function handleDragEnd() {
 }
 
 return (
-    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-      {!isEditorOpen ? (
-        <button
-          type="button"
-          onClick={openEditor}
-     className="grid w-full grid-cols-1 items-center gap-2 px-3 py-2 text-left transition hover:bg-neutral-50"
-        >
-         
-
-          <div className="min-w-0">
-            {selectedIds.length > 0 ? (
-              <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-2 py-1.5 shadow-[inset_0_1px_0_rgba(0,0,0,0.02)]">
-                {selectedIds.slice(0, 4).map((id) => {
-                  const product = selectedProductsById[id];
-                  const title = product ? getProductTitle(product) : id;
-                  const image = product ? getProductImage(product) : "";
-
-                  return (
-                    <span
-                      key={id}
-                   className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-neutral-100 px-1.5 py-1 text-[13px] text-neutral-900 ring-1 ring-neutral-200/60"
-                    >
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded bg-white ring-1 ring-neutral-200">
-                        {image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={image}
-                            alt={title}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <ImageIcon className="h-3.5 w-3.5 text-neutral-400" />
-                        )}
-                      </span>
-
-                      <span className="truncate">{title}</span>
-                    </span>
-                  );
-                })}
-
-                {selectedIds.length > 4 ? (
-                  <span className="rounded-md bg-neutral-100 px-2 py-1 text-sm text-neutral-600">
-                    +{selectedIds.length - 4} more
-                  </span>
-                ) : null}
-
-                {isSelectedLoading ? (
-                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-500">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Loading
-                  </span>
-                ) : null}
-              </div>
-            ) : (
-              <div className="flex h-10 items-center rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-400">
-                {placeholder || "Select products"}
-              </div>
-            )}
-          </div>
-        </button>
-      ) : (
-        <div className="animate-in slide-in-from-top-1 duration-150">
-          <div className="grid grid-cols-[220px_1fr] gap-4 border-b border-neutral-200 px-4 py-3">
-           
-
-            <div className="flex items-center justify-between gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsPickerOpen(true)}
-                className="h-9 rounded-xl px-4 text-sm"
-              >
-                Select products
-              </Button>
-
-              {draftIds.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={clearDraftProducts}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700"
-                >
-                  Clear all
-                </button>
-              ) : null}
+  <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+    {!isEditorOpen ? (
+      <button
+        type="button"
+        onClick={openEditor}
+        className="grid w-full grid-cols-1 items-center gap-2 px-3 py-2 text-left transition hover:bg-neutral-50"
+      >
+        <div className="min-w-0">
+          {selectedProductsError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {selectedProductsError}
             </div>
-          </div>
-
-          {draftIds.length > 0 ? (
-            <div className="divide-y divide-neutral-100">
-              {draftIds.map((id) => {
+          ) : selectedIds.length === 0 ? (
+            <div className="flex h-10 items-center rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-400">
+              {placeholder || "Select products"}
+            </div>
+          ) : isSelectedLoading || unresolvedSelectedIds.length > 0 ? (
+            <div className="flex h-10 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading selected products...
+            </div>
+          ) : (
+            <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-2 py-1.5 shadow-[inset_0_1px_0_rgba(0,0,0,0.02)]">
+              {selectedIds.slice(0, 4).map((id) => {
                 const product = selectedProductsById[id];
-                const title = product ? getProductTitle(product) : id;
-                const image = product ? getProductImage(product) : "";
+
+                if (!product) {
+                  throw new Error(
+                    `Resolved product data state mein missing hai: ${id}`,
+                  );
+                }
+
+                const title = getProductTitle(product);
+                const image = getProductImage(product);
 
                 return (
-                 <div
-  key={id}
-  draggable
-  onDragStart={() => handleDragStart(id)}
-  onDragEnter={() => handleDragEnter(id)}
-  onDragOver={(event) => event.preventDefault()}
-  onDragEnd={handleDragEnd}
-  className={`grid grid-cols-[220px_1fr_32px] items-center gap-4 px-4 py-3 transition-all duration-200 ease-out ${
-    draggedId === id
-      ? "scale-[0.99] bg-neutral-100 opacity-60"
-      : dragOverId === id
-        ? "bg-neutral-50"
-        : "bg-white"
-  }`}
->
-                    <div className="flex justify-end pr-3">
-                     <button
-  type="button"
-  draggable
-  onDragStart={() => handleDragStart(id)}
-  onDragEnd={handleDragEnd}
-  className="flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700 active:cursor-grabbing"
-  aria-label="Drag product"
->
-  <span className="text-lg leading-none">⋮⋮</span>
-</button>
-                    </div>
+                  <span
+                    key={id}
+                    className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-neutral-100 px-1.5 py-1 text-[13px] text-neutral-900 ring-1 ring-neutral-200/60"
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded bg-white ring-1 ring-neutral-200">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={image}
+                        alt={title}
+                        className="h-full w-full object-cover"
+                      />
+                    </span>
 
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-neutral-200 bg-neutral-50">
-                        {image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={image}
-                            alt={title}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <ImageIcon className="h-4 w-4 text-neutral-400" />
-                        )}
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-neutral-950">
-                          {title}
-                        </p>
-
-                        {product?.sku || product?.slug ? (
-                          <p className="mt-0.5 truncate text-xs text-neutral-500">
-                            {product.sku || product.slug}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => removeDraftProduct(id)}
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
-                      aria-label={`Remove ${title}`}
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
+                    <span className="truncate">{title}</span>
+                  </span>
                 );
               })}
 
-              {isSelectedLoading ? (
-                <div className="flex items-center gap-2 px-4 py-3 text-xs text-neutral-500">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading selected product details...
-                </div>
+              {selectedIds.length > 4 ? (
+                <span className="rounded-md bg-neutral-100 px-2 py-1 text-sm text-neutral-600">
+                  +{selectedIds.length - 4} more
+                </span>
               ) : null}
             </div>
-          ) : (
-            <div className="grid grid-cols-[220px_1fr] gap-4 px-4 py-6">
-              <div />
-              <p className="text-sm text-neutral-500">
-                {placeholder || "No products selected"}
-              </p>
-            </div>
           )}
+        </div>
+      </button>
+    ) : (
+      <div className="animate-in slide-in-from-top-1 duration-150">
+        <div className="grid grid-cols-[220px_1fr] gap-4 border-b border-neutral-200 px-4 py-3">
+          <div />
 
-         <div className="flex items-center justify-between border-t border-neutral-100 px-3 py-2">
-         <p className="text-[10px] text-neutral-400">
-              Product IDs backend me {multiple ? "ordered array" : "single ID"} ke
-              form me save honge.
-            </p>
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsPickerOpen(true)}
+              className="h-9 rounded-xl px-4 text-sm"
+            >
+              Select products
+            </Button>
 
-            <div className="flex items-center gap-2">
-              <Button
+            {draftIds.length > 0 ? (
+              <button
                 type="button"
-                variant="outline"
-                onClick={handleCancel}
-                className="h-9 rounded-xl"
+                onClick={clearDraftProducts}
+                className="text-sm font-medium text-blue-600 hover:text-blue-700"
               >
-                Cancel
-              </Button>
-
-              <Button
-                type="button"
-                onClick={handleDone}
-                className="h-9 rounded-xl bg-neutral-950 px-5 text-white hover:bg-neutral-800"
-              >
-                Done
-              </Button>
-            </div>
+                Clear all
+              </button>
+            ) : null}
           </div>
         </div>
-      )}
 
-      {isPickerOpen ? (
-        <ProductPickerModal
-          fieldLabel={label}
-          selectedIds={draftIds}
-          multiple={multiple}
-          onChange={setDraftIds}
-          onClose={() => setIsPickerOpen(false)}
-        />
-      ) : null}
-    </div>
-  );
+        {selectedProductsError ? (
+          <div className="m-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            {selectedProductsError}
+          </div>
+        ) : isSelectedLoading || unresolvedDraftIds.length > 0 ? (
+          <div className="flex items-center gap-2 px-4 py-6 text-sm text-neutral-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading selected product details...
+          </div>
+        ) : draftIds.length > 0 ? (
+          <div className="divide-y divide-neutral-100">
+            {draftIds.map((id) => {
+              const product = selectedProductsById[id];
+
+              if (!product) {
+                throw new Error(
+                  `Selected product details state mein missing hain: ${id}`,
+                );
+              }
+
+              const title = getProductTitle(product);
+              const image = getProductImage(product);
+
+              return (
+                <div
+                  key={id}
+                  draggable
+                  onDragStart={() => handleDragStart(id)}
+                  onDragEnter={() => handleDragEnter(id)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragEnd={handleDragEnd}
+                  className={`grid grid-cols-[220px_1fr_32px] items-center gap-4 px-4 py-3 transition-all duration-200 ease-out ${
+                    draggedId === id
+                      ? "scale-[0.99] bg-neutral-100 opacity-60"
+                      : dragOverId === id
+                        ? "bg-neutral-50"
+                        : "bg-white"
+                  }`}
+                >
+                  <div className="flex justify-end pr-3">
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={() => handleDragStart(id)}
+                      onDragEnd={handleDragEnd}
+                      className="flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700 active:cursor-grabbing"
+                      aria-label={`Drag ${title}`}
+                    >
+                      <span className="text-lg leading-none">⋮⋮</span>
+                    </button>
+                  </div>
+
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-neutral-200 bg-neutral-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={image}
+                        alt={title}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-neutral-950">
+                        {title}
+                      </p>
+
+                      {product.sku || product.slug ? (
+                        <p className="mt-0.5 truncate text-xs text-neutral-500">
+                          {product.sku || product.slug}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => removeDraftProduct(id)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
+                    aria-label={`Remove ${title}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-[220px_1fr] gap-4 px-4 py-6">
+            <div />
+
+            <p className="text-sm text-neutral-500">
+              {placeholder || "No products selected"}
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-t border-neutral-100 px-3 py-2">
+          <p className="text-[10px] text-neutral-400">
+            Product IDs backend me{" "}
+            {multiple ? "ordered array" : "single ID"} ke form me save honge.
+          </p>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancel}
+              className="h-9 rounded-xl"
+            >
+              Cancel
+            </Button>
+
+            <Button
+              type="button"
+              onClick={handleDone}
+              disabled={
+                isSelectedLoading ||
+                Boolean(selectedProductsError) ||
+                unresolvedDraftIds.length > 0
+              }
+              className="h-9 rounded-xl bg-neutral-950 px-5 text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Done
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {isPickerOpen ? (
+      <ProductPickerModal
+        fieldLabel={label}
+        selectedIds={draftIds}
+        multiple={multiple}
+        onChange={setDraftIds}
+        onProductResolved={rememberSelectedProduct}
+        onClose={() => setIsPickerOpen(false)}
+      />
+    ) : null}
+  </div>
+);
 }
 
 

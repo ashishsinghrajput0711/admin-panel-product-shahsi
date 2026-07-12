@@ -131,11 +131,12 @@ export default function EditAttributePage() {
         </section>
       ) : null}
 
-      <AttributeForm
-        defaultValues={attribute}
-        onSubmit={handleSubmit}
-        isSubmitting={isSubmitting}
-      />
+    <AttributeForm
+  attributeId={id}
+  defaultValues={attribute}
+  onSubmit={handleSubmit}
+  isSubmitting={isSubmitting}
+/>
     </main>
   );
 }

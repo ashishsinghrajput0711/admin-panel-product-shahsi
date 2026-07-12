@@ -1,9 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { type Resolver, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Power, RotateCcw, Trash2 } from "lucide-react";
+
+import {
+  deleteCatalogAttributeOption,
+  updateCatalogAttributeOption,
+} from "@/lib/admin/catalog-attributes-api";
 
 import { attributeSchema, type AttributeFormValues } from "./attribute-schema";
 import { Button } from "@/components/ui/button";
@@ -143,10 +148,12 @@ function mapDefaultValues(
 }
 
 export function AttributeForm({
+  attributeId,
   defaultValues,
   onSubmit,
   isSubmitting = false,
 }: {
+  attributeId?: string;
   defaultValues?: Partial<AttributeFormValues>;
   onSubmit: (values: AttributeFormValues) => void;
   isSubmitting?: boolean;
@@ -161,6 +168,15 @@ export function AttributeForm({
     name: "options",
     keyName: "formRowId",
   });
+
+  const [optionAction, setOptionAction] = useState<{
+  id: string;
+  type: "status" | "delete";
+} | null>(null);
+
+const [optionActionError, setOptionActionError] = useState<string | null>(
+  null,
+);
 
   const selectedType = form.watch("type");
   const showOptions = optionBasedTypes.includes(selectedType);
@@ -252,6 +268,105 @@ export function AttributeForm({
       });
     }
   }
+
+  async function handleOptionStatusChange(index: number) {
+  const option = form.getValues(`options.${index}`);
+  const optionId = String(option?.id || "").trim();
+  const nextActive = !Boolean(option?.isActive);
+
+  // New unsaved option hai to sirf local form state change hogi.
+  if (!optionId) {
+    form.setValue(`options.${index}.isActive`, nextActive, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    return;
+  }
+
+  if (!attributeId) {
+    setOptionActionError("Attribute ID missing hai.");
+    return;
+  }
+
+  try {
+    setOptionActionError(null);
+    setOptionAction({
+      id: optionId,
+      type: "status",
+    });
+
+    await updateCatalogAttributeOption({
+      attributeId,
+      optionId,
+      option: {
+        ...option,
+        id: optionId,
+        isActive: nextActive,
+      },
+    });
+
+    form.setValue(`options.${index}.isActive`, nextActive, {
+      shouldDirty: false,
+      shouldValidate: true,
+    });
+  } catch (error) {
+    setOptionActionError(
+      error instanceof Error
+        ? error.message
+        : "Option status update failed.",
+    );
+  } finally {
+    setOptionAction(null);
+  }
+}
+
+async function handleDeleteOption(index: number) {
+  const option = form.getValues(`options.${index}`);
+  const optionId = String(option?.id || "").trim();
+  const optionLabel = String(
+    option?.label || option?.value || "this option",
+  ).trim();
+
+  // Abhi backend mein create nahi hua hai.
+  if (!optionId) {
+    remove(index);
+    return;
+  }
+
+  if (!attributeId) {
+    setOptionActionError("Attribute ID missing hai.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Permanently delete option "${optionLabel}"?\n\nAgar ye option kisi product mein use ho raha hai to backend request reject kar sakta hai.`,
+  );
+
+  if (!confirmed) return;
+
+  try {
+    setOptionActionError(null);
+    setOptionAction({
+      id: optionId,
+      type: "delete",
+    });
+
+    await deleteCatalogAttributeOption({
+      attributeId,
+      optionId,
+    });
+
+    // Backend delete successful hone ke baad hi UI se remove hoga.
+    remove(index);
+  } catch (error) {
+    setOptionActionError(
+      error instanceof Error ? error.message : "Option delete failed.",
+    );
+  } finally {
+    setOptionAction(null);
+  }
+}
 
   function handleSubmit(values: AttributeFormValues) {
     const cleanedValues: AttributeFormValues = {
@@ -479,119 +594,211 @@ export function AttributeForm({
             </Button>
           </div>
 
-          <div className="mt-6 space-y-3">
-            {fields.length ? (
-              fields.map((field, index) => (
-                <div
-                  key={field.formRowId}
-                  className="grid gap-3 rounded-2xl border border-neutral-200 bg-[#fbfaf6] p-4 md:grid-cols-[1.3fr_1.3fr_110px_110px_80px_44px]"
-                >
-                  <Field label="Label">
-                    <Input
-                      value={form.watch(`options.${index}.label`) || ""}
-                      onChange={(event) =>
-                        handleOptionLabelChange(index, event.target.value)
-                      }
-                      placeholder="Ivory"
-                    />
-                  </Field>
+      <div className="mt-6 space-y-3">
+  {optionActionError ? (
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <p className="font-semibold">Option action failed</p>
+      <p className="mt-1">{optionActionError}</p>
+    </div>
+  ) : null}
 
-                  <Field label="Value">
-                    <Input
-                      value={form.watch(`options.${index}.value`) || ""}
-                      onChange={(event) =>
-                        form.setValue(
-                          `options.${index}.value`,
-                          slugify(event.target.value),
-                          {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          },
-                        )
-                      }
-                      placeholder="ivory"
-                    />
-                  </Field>
+  {fields.length ? (
+    fields.map((field, index) => {
+      const currentOption = form.watch(`options.${index}`);
+      const optionId = String(currentOption?.id || "").trim();
+      const isActive = Boolean(currentOption?.isActive);
 
-                  {selectedType === "COLOR" ? (
-                    <Field label="Color">
-                      <input
-                        type="color"
-                        value={
-                          form.watch(`options.${index}.colorHex`) || "#000000"
-                        }
-                        onChange={(event) =>
-                          form.setValue(
-                            `options.${index}.colorHex`,
-                            event.target.value,
-                            {
-                              shouldDirty: true,
-                              shouldValidate: true,
-                            },
-                          )
-                        }
-                        className="h-10 w-full rounded-md border border-neutral-300 bg-white p-1"
-                      />
-                    </Field>
-                  ) : (
-                    <div className="hidden md:block" />
-                  )}
+      const statusLoading =
+        Boolean(optionId) &&
+        optionAction?.id === optionId &&
+        optionAction.type === "status";
 
-                  <Field label="Sort">
-                    <Input
-                      type="number"
-                      value={String(
-                        form.watch(`options.${index}.sortOrder`) || index + 1,
-                      )}
-                      onChange={(event) => {
-                        const nextSort = Number(event.target.value || index + 1);
+      const deleteLoading =
+        Boolean(optionId) &&
+        optionAction?.id === optionId &&
+        optionAction.type === "delete";
 
-                        form.setValue(`options.${index}.sortOrder`, nextSort, {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        });
+      const rowLoading = statusLoading || deleteLoading;
 
-                        form.setValue(`options.${index}.position`, nextSort, {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        });
-                      }}
-                    />
-                  </Field>
+      return (
+        <div
+          key={field.formRowId}
+          className="grid gap-3 rounded-2xl border border-neutral-200 bg-[#fbfaf6] p-4 md:grid-cols-2 xl:grid-cols-[1.3fr_1.3fr_110px_90px_100px_220px]"
+        >
+          <Field label="Label">
+            <Input
+              value={form.watch(`options.${index}.label`) || ""}
+              disabled={rowLoading}
+              onChange={(event) =>
+                handleOptionLabelChange(index, event.target.value)
+              }
+              placeholder="Ivory"
+            />
+          </Field>
 
-                  <CheckboxField
-                    label="Active"
-                    checked={Boolean(form.watch(`options.${index}.isActive`))}
-                    compact
-                    onChange={(checked) =>
-                      form.setValue(`options.${index}.isActive`, checked, {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      })
-                    }
-                  />
+          <Field label="Value">
+            <Input
+              value={form.watch(`options.${index}.value`) || ""}
+              disabled={rowLoading || Boolean(optionId)}
+              onChange={(event) =>
+                form.setValue(
+                  `options.${index}.value`,
+                  slugify(event.target.value),
+                  {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  },
+                )
+              }
+              placeholder="ivory"
+            />
 
-                  <button
-                    type="button"
-                    onClick={() => remove(index)}
-                    className="flex h-10 w-10 items-center justify-center self-end rounded-full border border-red-200 text-red-600 transition hover:bg-red-50"
-                    aria-label="Remove option"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-dashed border-neutral-300 bg-[#fbfaf6] p-8 text-center">
-                <p className="text-sm font-medium text-neutral-800">
-                  No options added yet.
-                </p>
-                <p className="mt-1 text-sm text-neutral-500">
-                  Add option click karke values add karo.
-                </p>
-              </div>
-            )}
+            {optionId ? (
+              <span className="mt-1 block text-xs text-neutral-500">
+                Existing stored value ko change karne se references break ho
+                sakte hain, isliye locked hai.
+              </span>
+            ) : null}
+          </Field>
+
+          {selectedType === "COLOR" ? (
+            <Field label="Color">
+              <input
+                type="color"
+                disabled={rowLoading}
+                value={
+                  form.watch(`options.${index}.colorHex`) || "#000000"
+                }
+                onChange={(event) =>
+                  form.setValue(
+                    `options.${index}.colorHex`,
+                    event.target.value,
+                    {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    },
+                  )
+                }
+                className="h-10 w-full rounded-md border border-neutral-300 bg-white p-1 disabled:opacity-50"
+              />
+            </Field>
+          ) : (
+            <div className="hidden xl:block" />
+          )}
+
+          <Field label="Sort">
+            <Input
+              type="number"
+              disabled={rowLoading}
+              value={String(
+                form.watch(`options.${index}.sortOrder`) || index + 1,
+              )}
+              onChange={(event) => {
+                const nextSort = Number(
+                  event.target.value || index + 1,
+                );
+
+                form.setValue(
+                  `options.${index}.sortOrder`,
+                  nextSort,
+                  {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  },
+                );
+
+                form.setValue(
+                  `options.${index}.position`,
+                  nextSort,
+                  {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  },
+                );
+              }}
+            />
+          </Field>
+
+          <div className="flex flex-col justify-end">
+            <span className="mb-2 block text-sm font-medium text-neutral-800">
+              Status
+            </span>
+
+            <span
+              className={[
+                "inline-flex h-10 items-center justify-center rounded-full px-3 text-xs font-semibold ring-1",
+                isActive
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  : "bg-neutral-100 text-neutral-600 ring-neutral-200",
+              ].join(" ")}
+            >
+              {isActive ? "ACTIVE" : "INACTIVE"}
+            </span>
           </div>
+
+          <div className="flex flex-wrap items-end gap-2 xl:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={rowLoading}
+              onClick={() => handleOptionStatusChange(index)}
+              className={[
+                "h-10 rounded-full px-4",
+                isActive
+                  ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800",
+              ].join(" ")}
+            >
+              {statusLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : isActive ? (
+                <Power className="mr-2 h-4 w-4" />
+              ) : (
+                <RotateCcw className="mr-2 h-4 w-4" />
+              )}
+
+              {statusLoading
+                ? "Updating..."
+                : isActive
+                  ? "Deactivate"
+                  : "Activate"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={rowLoading}
+              onClick={() => handleDeleteOption(index)}
+              className="h-10 rounded-full border-red-200 bg-red-50 px-4 text-red-700 hover:bg-red-100 hover:text-red-800"
+            >
+              {deleteLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+
+              {deleteLoading
+                ? "Deleting..."
+                : optionId
+                  ? "Delete"
+                  : "Remove"}
+            </Button>
+          </div>
+        </div>
+      );
+    })
+  ) : (
+    <div className="rounded-2xl border border-dashed border-neutral-300 bg-[#fbfaf6] p-8 text-center">
+      <p className="text-sm font-medium text-neutral-800">
+        No options added yet.
+      </p>
+
+      <p className="mt-1 text-sm text-neutral-500">
+        Add option click karke values add karo.
+      </p>
+    </div>
+  )}
+</div>
         </section>
       ) : null}
 
