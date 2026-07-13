@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { syncProductCategories } from "@/lib/admin/category-product-sync";
 import { ProductFitDataSection } from "@/components/admin/catalog/products/product-fit-data-section";
+
+import { ProductPageMotion } from "@/components/admin/catalog/products/product-page-motion";
 import { useParams, useRouter } from "next/navigation";
 
 import { ProductPricingSection } from "@/components/admin/catalog/products/product-pricing-section";
@@ -1019,6 +1021,8 @@ setPreviousCategorySlugs(nextCategorySlugs);
 } catch (seoError) {
   console.warn("PRODUCT_SEO_SAVE_FAILED:", seoError);
 
+  await loadProduct({ silent: true });
+
   setSuccessMessage(
     "Product update ho gaya, but SEO save me backend error aaya. SEO API response check karni hogi."
   );
@@ -1154,32 +1158,71 @@ await saveProductMetafields({
 }
 
 try {
-  if (values.taxonomyId) {
-await saveProductCategoryMetafields({
-  apiRootUrl,
-  productId,
-  taxonomyId: values.taxonomyId,
- taxonomyCategoryId:
-  values.taxonomy?.taxonomyId ||
-  values.taxonomyId,
-  categoryMetafields: cleanCategoryMetafieldsForTaxonomySave(
-    categoryMetafieldsForSave,
-  ),
-  token,
-});
-  }
-  setSuccessMessage(
-  "Product update ho gaya. SEO, tags, product metafields, category metafields, associated categories aur Google Merchant data save ho gaye.",
-);
-await loadProduct({ silent: true });
-} catch (categoryMetafieldsError) {
-  console.warn("CATEGORY_METAFIELDS_SAVE_FAILED:", categoryMetafieldsError);
+  const taxonomyId = String(
+    values.taxonomy?.taxonomyId ||
+      values.taxonomyId ||
+      "",
+  ).trim();
 
-  setSuccessMessage(
-    "Product update aur product metafields save ho gaye, but category metafields save me backend error aaya. Category metafields API response check karni hogi."
+  const taxonomyCategoryId = String(
+    values.taxonomy?.id ||
+      "",
+  ).trim();
+
+  if (!taxonomyId) {
+    throw new Error(
+      "Category metafields save nahi hue: taxonomyId missing hai.",
+    );
+  }
+
+  if (!taxonomyCategoryId) {
+    throw new Error(
+      "Category metafields save nahi hue: backend taxonomy category UUID missing hai.",
+    );
+  }
+
+ const rawCategoryMetafields = {
+  ...(categoryMetafieldsForSave || {}),
+} as Record<string, unknown>;
+
+// Backend category definitions mein colorHex key nahi hai.
+delete rawCategoryMetafields.colorHex;
+delete rawCategoryMetafields.color_hex;
+
+const categoryMetafieldsPayload =
+  cleanCategoryMetafieldsForTaxonomySave(
+    rawCategoryMetafields,
   );
 
-  return;
+  console.log("CATEGORY_METAFIELDS_SAVE_REQUEST:", {
+    productId,
+    taxonomyId,
+    taxonomyCategoryId,
+    categoryMetafields: categoryMetafieldsPayload,
+  });
+
+  await saveProductCategoryMetafields({
+    apiRootUrl,
+    productId,
+
+    // Example: "2271"
+    taxonomyId,
+
+    // Example: "40d9371d-485e-4080-81c2-6769f2a4ed65"
+    taxonomyCategoryId,
+
+    categoryMetafields: categoryMetafieldsPayload,
+    token,
+  });
+} catch (categoryMetafieldsError) {
+  console.error(
+    "CATEGORY_METAFIELDS_SAVE_FAILED:",
+    categoryMetafieldsError,
+  );
+
+  throw categoryMetafieldsError instanceof Error
+    ? categoryMetafieldsError
+    : new Error("Category metafields save failed.");
 }
 
 console.log("CATEGORY_SYNC_VALUES:", {
@@ -1259,6 +1302,7 @@ setSuccessMessage(
   }
 
   return (
+      <ProductPageMotion>
     <main className="min-h-screen bg-[#f7f6f1] px-4 py-4 sm:px-6">
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-4 flex flex-col gap-3 border-b border-neutral-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1368,6 +1412,7 @@ setSuccessMessage(
 )}
       </div>
     </main>
+    </ProductPageMotion>
   );
 }
 

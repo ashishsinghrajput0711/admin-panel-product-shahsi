@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type ReactNode,
 } from "react";
 import {
@@ -20,6 +21,8 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+import { CategoryMetafieldOptionsManager } from "./category-metafield-options-manager";
 import type { ProductFormValues } from "./product-schema";
 import {
   getTaxonomyCategoryChildren,
@@ -597,7 +600,69 @@ function getTaxonomyDisplayLabel(taxonomy: TaxonomyCategory) {
 function normalizeOptions(options: unknown) {
   if (!Array.isArray(options)) return [];
 
-  return options.map((option) => String(option)).filter(Boolean);
+  const normalizedOptions = options
+    .map((option) => {
+      if (typeof option === "string" || typeof option === "number") {
+        return String(option).trim();
+      }
+
+      if (!option || typeof option !== "object") {
+        return "";
+      }
+
+      const record = option as Record<string, unknown>;
+
+      const status = String(record.status || "")
+        .trim()
+        .toUpperCase();
+
+      if (
+        record.isActive === false ||
+        status === "INACTIVE" ||
+        status === "ARCHIVED"
+      ) {
+        return "";
+      }
+
+      return String(
+        record.value ||
+          record.label ||
+          record.name ||
+          ""
+      ).trim();
+    })
+    .filter(Boolean);
+
+  return Array.from(new Set(normalizedOptions));
+}
+
+function normalizeCategoryMetafieldType(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function getCategoryMetafieldDefinitionId(
+  definition: CategoryMetafieldDefinition,
+) {
+  return String(
+    (definition as CategoryMetafieldDefinition & {
+      id?: string | null;
+    }).id || "",
+  ).trim();
+}
+
+function canManageCategoryMetafieldOptions(
+  definition: CategoryMetafieldDefinition,
+) {
+  const fieldType = normalizeCategoryMetafieldType(definition.type);
+
+  return (
+    !isColorMetafield(definition) &&
+    ["select", "single_select", "multi_select"].includes(fieldType) &&
+    Boolean(getCategoryMetafieldDefinitionId(definition))
+  );
 }
 
 function cleanCategoryMetafieldsForDefinitions({
@@ -1517,8 +1582,9 @@ async function fetchMediaLibraryItems(search: string) {
 function isColorMetafield(definition: CategoryMetafieldDefinition) {
   const key = String(definition.key || "").trim().toLowerCase();
   const label = String(definition.label || "").trim().toLowerCase();
+  const type = normalizeCategoryMetafieldType(definition.type);
 
-  return definition.type === "color" || key === "color" || label === "color";
+  return type === "color" || key === "color" || label === "color";
 }
 
 async function fetchProductPicker({
@@ -4143,7 +4209,7 @@ function ColorAttributeSelect({
   );
 
   const selectedHex = selectedOption?.colorHex || normalizeHexValue(textValue);
-  const selectedLabel = selectedOption?.label || "";
+
 
   useEffect(() => {
     let ignore = false;
@@ -4297,6 +4363,10 @@ function CategoryMultiSelectEditor({
     selected.length ? selected : [""],
   );
 
+  const draggedValueRef = useRef<string | null>(null);
+
+const [draggedValue, setDraggedValue] = useState<string | null>(null);
+const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   useEffect(() => {
     if (!isEditing) {
       setDraftValues(selected.length ? selected : [""]);
@@ -4341,6 +4411,67 @@ function CategoryMultiSelectEditor({
       return nextValues.length ? nextValues : [""];
     });
   }
+  function moveDraftValue(sourceValue: string, targetIndex: number) {
+  setDraftValues((current) => {
+    const sourceIndex = current.indexOf(sourceValue);
+
+    if (
+      sourceIndex === -1 ||
+      targetIndex < 0 ||
+      targetIndex >= current.length ||
+      sourceIndex === targetIndex
+    ) {
+      return current;
+    }
+
+    const next = [...current];
+    const [movedValue] = next.splice(sourceIndex, 1);
+
+    next.splice(targetIndex, 0, movedValue);
+
+    return next;
+  });
+}
+
+function handleRowDragStart(
+  event: DragEvent<HTMLButtonElement>,
+  currentValue: string,
+  index: number,
+) {
+  draggedValueRef.current = currentValue;
+
+  setDraggedValue(currentValue);
+  setDragOverIndex(index);
+
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData(
+    "text/plain",
+    currentValue || String(index),
+  );
+}
+
+function handleRowDragEnter(targetIndex: number) {
+  const sourceValue = draggedValueRef.current;
+
+  if (sourceValue === null) {
+    return;
+  }
+
+  setDragOverIndex(targetIndex);
+  moveDraftValue(sourceValue, targetIndex);
+}
+
+function handleRowDragOver(event: DragEvent<HTMLDivElement>) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+}
+
+function handleRowDragEnd() {
+  draggedValueRef.current = null;
+
+  setDraggedValue(null);
+  setDragOverIndex(null);
+}
 
   function handleDone() {
     const cleanedValues = Array.from(
@@ -4384,54 +4515,93 @@ function CategoryMultiSelectEditor({
 
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white">
-      <div className="divide-y divide-neutral-200">
-        {draftValues.map((currentValue, index) => (
-          <div
-            key={`${index}-${currentValue}`}
-            className="flex items-center gap-3 p-3"
-          >
-            <span className="cursor-grab px-1 text-lg text-neutral-400">
-              ⠿
-            </span>
+     <div className="divide-y divide-neutral-200">
+  {draftValues.map((currentValue, index) => {
+    const isDragged = draggedValue === currentValue;
+    const isDragOver =
+      dragOverIndex === index && draggedValue !== currentValue;
 
-            <select
-              value={currentValue}
-              onChange={(event) =>
-                updateRow(index, event.target.value)
-              }
-              className="h-11 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
-            >
-              <option value="">{placeholder}</option>
+    return (
+      <div
+        key={
+          currentValue
+            ? `selected-value-${currentValue}`
+            : `empty-value-${index}`
+        }
+        onDragEnter={() => handleRowDragEnter(index)}
+        onDragOver={handleRowDragOver}
+        onDrop={handleRowDragEnd}
+        className={[
+          "flex items-center gap-3 p-3 transition-all duration-200",
+          isDragged
+            ? "scale-[0.99] bg-neutral-100 opacity-60"
+            : isDragOver
+              ? "bg-blue-50/70"
+              : "bg-white",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          draggable
+          onDragStart={(event) =>
+            handleRowDragStart(
+              event,
+              currentValue,
+              index,
+            )
+          }
+          onDragEnd={handleRowDragEnd}
+          className="flex h-10 w-8 shrink-0 cursor-grab items-center justify-center rounded-lg text-lg text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700 active:cursor-grabbing"
+          aria-label={`Drag ${
+            currentValue || `item ${index + 1}`
+          } to reorder`}
+          title="Drag to reorder"
+        >
+          ⠿
+        </button>
 
-              {availableOptions.map((option) => {
-                const alreadySelected = draftValues.some(
-                  (item, itemIndex) =>
-                    itemIndex !== index && item === option,
-                );
+        <select
+          value={currentValue}
+          draggable={false}
+          onChange={(event) =>
+            updateRow(index, event.target.value)
+          }
+          className="h-11 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+        >
+          <option value="">{placeholder}</option>
 
-                return (
-                  <option
-                    key={option}
-                    value={option}
-                    disabled={alreadySelected}
-                  >
-                    {option}
-                  </option>
-                );
-              })}
-            </select>
+          {availableOptions.map((option) => {
+            const alreadySelected = draftValues.some(
+              (item, itemIndex) =>
+                itemIndex !== index && item === option,
+            );
 
-            <button
-              type="button"
-              onClick={() => removeRow(index)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-neutral-500 transition hover:bg-red-50 hover:text-red-600"
-              aria-label="Remove selected value"
-            >
-              ×
-            </button>
-          </div>
-        ))}
+            return (
+              <option
+                key={option}
+                value={option}
+                disabled={alreadySelected}
+              >
+                {option}
+              </option>
+            );
+          })}
+        </select>
+
+        <button
+          type="button"
+          onClick={() => removeRow(index)}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-neutral-500 transition hover:bg-red-50 hover:text-red-600"
+          aria-label={`Remove ${
+            currentValue || `item ${index + 1}`
+          }`}
+        >
+          ×
+        </button>
       </div>
+    );
+  })}
+</div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 p-3">
         <button
@@ -4491,8 +4661,9 @@ function DynamicCategoryMetafieldInput({
 }) {
   const textValue = stringifyValue(value);
   const options = normalizeOptions(definition.options);
+  const fieldType = normalizeCategoryMetafieldType(definition.type);
 
-  if (definition.type === "multi_line_text") {
+  if (fieldType === "multi_line_text") {
     return (
       <textarea
         value={textValue}
@@ -4504,14 +4675,18 @@ function DynamicCategoryMetafieldInput({
     );
   }
 
-  if (definition.type === "single_select") {
+  if (fieldType === "single_select") {
     return (
       <select
         value={textValue}
         onChange={(event) => onChange(event.target.value)}
         className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
       >
-        <option value="">Select</option>
+        <option value="">
+          {definition.placeholder ||
+            `Select ${definition.label || definition.key}`}
+        </option>
+
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -4521,44 +4696,46 @@ function DynamicCategoryMetafieldInput({
     );
   }
 
-if (definition.type === "multi_select") {
-  const selected = getStringArrayValue(value);
+  if (fieldType === "multi_select") {
+    const selected = getStringArrayValue(value);
 
-  if (options.length === 0) {
+    if (options.length === 0) {
+      return (
+        <input
+          value={textValue}
+          onChange={(event) => onChange(parseTags(event.target.value))}
+          placeholder={
+            definition.placeholder || "Comma separated values"
+          }
+          className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+        />
+      );
+    }
+
     return (
-      <input
-        value={textValue}
-        onChange={(event) =>
-          onChange(parseTags(event.target.value))
-        }
+      <CategoryMultiSelectEditor
+        options={options}
+        selected={selected}
         placeholder={
-          definition.placeholder || "Comma separated values"
+          definition.placeholder ||
+          `Select ${definition.label || definition.key}`
         }
-        className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+        onChange={onChange}
       />
     );
   }
 
-  return (
-    <CategoryMultiSelectEditor
-      options={options}
-      selected={selected}
-      placeholder={
-        definition.placeholder ||
-        `Select ${definition.label || definition.key}`
-      }
-      onChange={onChange}
-    />
-  );
-}
-
-  if (definition.type === "number") {
+  if (fieldType === "number") {
     return (
       <input
         type="number"
         value={textValue}
         onChange={(event) =>
-          onChange(event.target.value === "" ? "" : Number(event.target.value))
+          onChange(
+            event.target.value === ""
+              ? ""
+              : Number(event.target.value)
+          )
         }
         placeholder={definition.placeholder || undefined}
         className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
@@ -4566,7 +4743,7 @@ if (definition.type === "multi_select") {
     );
   }
 
-  if (definition.type === "boolean") {
+  if (fieldType === "boolean") {
     return (
       <label className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700">
         <input
@@ -4580,17 +4757,17 @@ if (definition.type === "multi_select") {
     );
   }
 
-if (isColorMetafield(definition)) {
-  return (
-    <ColorAttributeSelect
-      value={value}
-      onChange={onChange}
-      onColorSelect={onColorSelect}
-    />
-  );
-}
+  if (isColorMetafield(definition)) {
+    return (
+      <ColorAttributeSelect
+        value={value}
+        onChange={onChange}
+        onColorSelect={onColorSelect}
+      />
+    );
+  }
 
-  if (definition.type === "url") {
+  if (fieldType === "url") {
     return (
       <input
         type="url"
@@ -4602,7 +4779,7 @@ if (isColorMetafield(definition)) {
     );
   }
 
-  if (definition.type === "product_reference") {
+  if (fieldType === "product_reference") {
     return (
       <ProductReferenceInput
         label={definition.label}
@@ -4614,7 +4791,7 @@ if (isColorMetafield(definition)) {
     );
   }
 
-  if (definition.type === "list_product_reference") {
+  if (fieldType === "list_product_reference") {
     return (
       <ProductReferenceInput
         label={definition.label}
@@ -5167,13 +5344,17 @@ function CategoryMetafieldsCard({
   isLoading,
   error,
   onChange,
+  onManageDefinition,
 }: {
   values: ProductFormValues;
   definitions: CategoryMetafieldDefinition[];
   isLoading: boolean;
   error: string | null;
   onChange: (values: ProductFormValues) => void;
+  onManageDefinition: (definition: CategoryMetafieldDefinition) => void;
 }) {
+ 
+
   const filledCount = useMemo(() => {
     return definitions.filter((definition) => {
       const value = getValue(values, "categoryMetafields", definition.key);
@@ -5235,33 +5416,47 @@ function CategoryMetafieldsCard({
                 description={definition.description}
                 required={definition.isRequired}
               >
-                <DynamicCategoryMetafieldInput
-                  definition={definition}
-                  value={value}
-                  onChange={(nextValue) =>
-                    updateValue(
-                      values,
-                      "categoryMetafields",
-                      definition.key,
-                      nextValue,
-                      onChange
-                    )
-                  }
-                  onColorSelect={
-                    isColorMetafield(definition)
-                      ? (colorOption) => {
-                          onChange({
-                            ...values,
-                            categoryMetafields: {
-                              ...(values.categoryMetafields || {}),
-                              color: colorOption.color,
-                              colorHex: colorOption.colorHex,
-                            },
-                          });
-                        }
-                      : undefined
-                  }
-                />
+              <div className="space-y-2">
+  <DynamicCategoryMetafieldInput
+    definition={definition}
+    value={value}
+    onChange={(nextValue) =>
+      updateValue(
+        values,
+        "categoryMetafields",
+        definition.key,
+        nextValue,
+        onChange,
+      )
+    }
+    onColorSelect={
+      isColorMetafield(definition)
+        ? (colorOption) => {
+            onChange({
+              ...values,
+              categoryMetafields: {
+                ...(values.categoryMetafields || {}),
+                color: colorOption.color,
+                colorHex: colorOption.colorHex,
+              },
+            });
+          }
+        : undefined
+    }
+  />
+
+  {canManageCategoryMetafieldOptions(definition) ? (
+    <div className="flex justify-end">
+      <button
+        type="button"
+        onClick={() => onManageDefinition(definition)}
+        className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-neutral-700 transition hover:border-neutral-400 hover:text-neutral-950"
+      >
+        Manage values
+      </button>
+    </div>
+  ) : null}
+</div>
               </ShopifyMetafieldRow>
             );
           })}
@@ -5383,6 +5578,10 @@ export function ProductShopifyMetafieldsSection({
   const [isDefinitionsLoading, setIsDefinitionsLoading] = useState(false);
   const [definitionsError, setDefinitionsError] = useState<string | null>(null);
 
+  const [managedDefinitionId, setManagedDefinitionId] = useState<string | null>(
+  null,
+);
+
   const selectedTaxonomyId = values.taxonomyId || values.taxonomy?.taxonomyId || "";
   const selectedTaxonomyLabel = getTaxonomyLabel(values.taxonomy);
 
@@ -5438,6 +5637,29 @@ export function ProductShopifyMetafieldsSection({
       ignore = true;
     };
   }, [selectedTaxonomyId]);
+
+
+  const managedDefinition = managedDefinitionId
+  ? definitions.find(
+      (definition) =>
+        getCategoryMetafieldDefinitionId(definition) === managedDefinitionId,
+    ) || null
+  : null;
+
+async function refreshDefinitions() {
+  if (!selectedTaxonomyId) {
+    setDefinitions([]);
+    return;
+  }
+
+  const result = await getTaxonomyCategoryMetafields({
+    apiRootUrl: getApiRootUrl(),
+    taxonomyId: selectedTaxonomyId,
+    token: getToken(),
+  });
+
+  setDefinitions(result.metafields);
+}
 
   function handleTaxonomySelect(taxonomy: TaxonomyCategory) {
     const nextDefinitions = definitions;
@@ -5562,15 +5784,30 @@ export function ProductShopifyMetafieldsSection({
         </div>
       </section>
 
-      <CategoryMetafieldsCard
-        values={values}
-        definitions={definitions}
-        isLoading={isDefinitionsLoading}
-        error={definitionsError}
-        onChange={onChange}
-      />
+     <CategoryMetafieldsCard
+  values={values}
+  definitions={definitions}
+  isLoading={isDefinitionsLoading}
+  error={definitionsError}
+  onChange={onChange}
+  onManageDefinition={(definition) =>
+    setManagedDefinitionId(
+      getCategoryMetafieldDefinitionId(definition),
+    )
+  }
+/>
 
       <ProductMetafieldsCard values={values} onChange={onChange} />
+
+      {managedDefinition ? (
+  <CategoryMetafieldOptionsManager
+    definition={managedDefinition}
+    apiRootUrl={getApiRootUrl()}
+    token={getToken()}
+    onChanged={refreshDefinitions}
+    onClose={() => setManagedDefinitionId(null)}
+  />
+) : null}
 
       {isTaxonomyModalOpen ? (
         <TaxonomySearchModal

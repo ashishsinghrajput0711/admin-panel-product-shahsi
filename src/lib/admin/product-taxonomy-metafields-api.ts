@@ -50,6 +50,51 @@ export type CategoryMetafieldValue =
 
 export type CategoryMetafieldRecord = Record<string, CategoryMetafieldValue>;
 
+export type CategoryMetafieldOptionUsageDefinition = {
+  id: string;
+  key: string;
+  label: string;
+  type: string;
+};
+
+export type CategoryMetafieldOptionUsageOption = {
+  id: string;
+  label: string;
+  value: string;
+  status: string;
+  isActive: boolean;
+  usageCount: number;
+  canDelete: boolean;
+};
+
+export type CategoryMetafieldOptionUsageProduct = {
+  id: string;
+  name: string;
+  sku: string;
+  slug: string;
+  status: string;
+  businessType: string;
+  productType: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  categoryMetafieldKey: string;
+  savedValue: string | string[] | number | boolean | null;
+};
+
+export type CategoryMetafieldOptionUsagePagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export type CategoryMetafieldOptionUsageData = {
+  definition: CategoryMetafieldOptionUsageDefinition;
+  option: CategoryMetafieldOptionUsageOption;
+  products: CategoryMetafieldOptionUsageProduct[];
+  pagination: CategoryMetafieldOptionUsagePagination;
+};
+
 type ApiSuccessResponse<T> = {
   success?: boolean;
   data?: T;
@@ -347,7 +392,128 @@ export async function getTaxonomyCategoryMetafields({
     raw: data,
   };
 }
+export async function getCategoryMetafieldOptionUsage({
+  apiRootUrl,
+  definitionId,
+  optionId,
+  page = 1,
+  limit = 20,
+  search,
+  status,
+  businessType,
+  productType,
+  token,
+}: {
+  apiRootUrl: string;
+  definitionId: string;
+  optionId: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  businessType?: string;
+  productType?: string;
+  token?: string | null;
+}) {
+  const cleanDefinitionId = String(definitionId || "").trim();
+  const cleanOptionId = String(optionId || "").trim();
 
+  if (!cleanDefinitionId) {
+    throw new Error(
+      "Category metafield option usage load failed: definitionId missing hai."
+    );
+  }
+
+  if (!cleanOptionId) {
+    throw new Error(
+      "Category metafield option usage load failed: optionId missing hai."
+    );
+  }
+
+  const params = new URLSearchParams();
+
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+
+  if (search?.trim()) {
+    params.set("search", search.trim());
+  }
+
+  if (status?.trim()) {
+    params.set("status", status.trim());
+  }
+
+  if (businessType?.trim()) {
+    params.set("businessType", businessType.trim());
+  }
+
+  if (productType?.trim()) {
+    params.set("productType", productType.trim());
+  }
+
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/taxonomy/metafield-definitions/${encodeURIComponent(
+      cleanDefinitionId
+    )}/options/${encodeURIComponent(
+      cleanOptionId
+    )}/usage?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+      cache: "no-store",
+    }
+  );
+
+  const data = await readJson<
+    ApiSuccessResponse<CategoryMetafieldOptionUsageData>
+  >(
+    response,
+    "Category metafield option usage API JSON response nahi de rahi"
+  );
+
+  if (!response.ok || data?.success === false) {
+    throw new Error(
+      getApiError(
+        data,
+        `Category metafield option usage load failed: ${response.status}`
+      )
+    );
+  }
+
+  const payload = data?.data;
+
+  if (!payload || typeof payload !== "object") {
+    throw new Error(
+      "Category metafield option usage API response me data missing hai."
+    );
+  }
+
+  if (!payload.definition?.id) {
+    throw new Error(
+      "Category metafield option usage API response me definition missing hai."
+    );
+  }
+
+  if (!payload.option?.id) {
+    throw new Error(
+      "Category metafield option usage API response me option missing hai."
+    );
+  }
+
+  if (!Array.isArray(payload.products)) {
+    throw new Error(
+      "Category metafield option usage API response me products array missing hai."
+    );
+  }
+
+  if (!payload.pagination) {
+    throw new Error(
+      "Category metafield option usage API response me pagination missing hai."
+    );
+  }
+
+  return payload;
+}
 
 export async function saveProductTaxonomy({
   apiRootUrl,

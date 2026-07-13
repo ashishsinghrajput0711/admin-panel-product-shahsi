@@ -147,3 +147,482 @@
 .reactEasyCrop_CropArea {
   border-radius: 0 !important;
 }
+
+
+/* =========================================================
+   SHAHSI PRODUCT EDITOR — PROFESSIONAL MOTION SYSTEM
+   ========================================================= */
+
+.product-editor-motion {
+  position: relative;
+  isolation: isolate;
+  min-height: 100%;
+  scroll-behavior: smooth;
+}
+
+/*
+ * Subtle ambient background.
+ * Existing section backgrounds ko override nahi karega.
+ */
+.product-editor-motion::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 8% 5%,
+      rgba(99, 102, 241, 0.07),
+      transparent 25rem
+    ),
+    radial-gradient(
+      circle at 92% 18%,
+      rgba(236, 72, 153, 0.045),
+      transparent 28rem
+    ),
+    radial-gradient(
+      circle at 50% 100%,
+      rgba(16, 185, 129, 0.04),
+      transparent 30rem
+    );
+}
+
+/* ---------- Main page heading entrance ---------- */
+
+.product-editor-motion[data-product-motion-ready="true"]
+  [data-product-motion-header="true"] {
+  animation: shahsi-product-header-enter 650ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes shahsi-product-header-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -12px, 0);
+    filter: blur(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
+/* ---------- Scroll reveal cards ---------- */
+
+.product-editor-motion[data-product-motion-ready="true"]
+  [data-product-motion-card="true"] {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0) scale(0.992);
+  filter: blur(4px);
+  transition:
+    opacity 650ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 650ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 650ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 260ms ease,
+    box-shadow 320ms ease,
+    background-color 260ms ease;
+  transition-delay: calc(
+    var(--product-motion-order, 0) * 34ms
+  );
+  will-change: opacity, transform, filter;
+  backface-visibility: hidden;
+}
+
+.product-editor-motion[data-product-motion-ready="true"]
+  [data-product-motion-card="true"][data-product-motion-visible="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  filter: blur(0);
+}
+
+/* ---------- Premium card hover ---------- */
+
+@media (hover: hover) and (pointer: fine) {
+  .product-editor-motion
+    [data-product-motion-card="true"][data-product-motion-visible="true"]:hover {
+    transform: translate3d(0, -3px, 0);
+    border-color: rgba(23, 23, 23, 0.16);
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 12px 28px rgba(15, 23, 42, 0.07),
+      0 28px 70px rgba(15, 23, 42, 0.045);
+  }
+}
+
+/* ---------- Section heading typography ---------- */
+
+.product-editor-motion
+  [data-product-motion-card="true"]
+  :is(h2, h3) {
+  transition:
+    transform 250ms ease,
+    letter-spacing 250ms ease,
+    color 250ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-editor-motion
+    [data-product-motion-card="true"]:hover
+    :is(h2, h3) {
+    transform: translateX(2px);
+    letter-spacing: 0.012em;
+  }
+}
+
+/* ---------- Inputs, selects, textarea ---------- */
+
+.product-editor-motion
+  [data-product-motion-control="true"] {
+  transition:
+    border-color 220ms ease,
+    background-color 220ms ease,
+    box-shadow 260ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 220ms ease,
+    opacity 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-editor-motion
+    [data-product-motion-control="true"]:not(:disabled):hover {
+    border-color: rgba(23, 23, 23, 0.28);
+    background-color: rgba(255, 255, 255, 0.96);
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.035),
+      0 7px 18px rgba(15, 23, 42, 0.045);
+  }
+}
+
+.product-editor-motion
+  [data-product-motion-control="true"]:focus,
+.product-editor-motion
+  [data-product-motion-control="true"]:focus-visible {
+  outline: none;
+  border-color: rgba(17, 24, 39, 0.62);
+  transform: translate3d(0, -1px, 0);
+  box-shadow:
+    0 0 0 4px rgba(17, 24, 39, 0.075),
+    0 10px 26px rgba(15, 23, 42, 0.075);
+}
+
+/* Placeholder fade */
+
+.product-editor-motion
+  [data-product-motion-control="true"]::placeholder {
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.product-editor-motion
+  [data-product-motion-control="true"]:focus::placeholder {
+  opacity: 0.56;
+}
+
+/* Disabled controls */
+
+.product-editor-motion
+  [data-product-motion-control="true"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  box-shadow: none;
+}
+
+/* ---------- Button interactions ---------- */
+
+.product-editor-motion
+  [data-product-motion-button="true"] {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease,
+    color 220ms ease,
+    opacity 220ms ease;
+  backface-visibility: hidden;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-editor-motion
+    [data-product-motion-button="true"]:not(:disabled):hover {
+    transform: translate3d(0, -2px, 0);
+    box-shadow:
+      0 2px 5px rgba(15, 23, 42, 0.07),
+      0 9px 20px rgba(15, 23, 42, 0.09);
+  }
+}
+
+.product-editor-motion
+  [data-product-motion-button="true"]:not(:disabled):active {
+  transform: translate3d(0, 0, 0) scale(0.975);
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.08);
+  transition-duration: 90ms;
+}
+
+.product-editor-motion
+  [data-product-motion-button="true"]:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 4px rgba(17, 24, 39, 0.11),
+    0 9px 22px rgba(15, 23, 42, 0.1);
+}
+
+.product-editor-motion
+  [data-product-motion-button="true"]:disabled {
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ---------- Primary save action shine ---------- */
+
+.product-editor-motion
+  [data-product-motion-primary-action="true"] {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.product-editor-motion
+  [data-product-motion-primary-action="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -40% auto -40% -65%;
+  width: 40%;
+  pointer-events: none;
+  transform: skewX(-18deg);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  animation: shahsi-product-button-shine 4.8s ease-in-out infinite;
+}
+
+@keyframes shahsi-product-button-shine {
+  0%,
+  64% {
+    left: -65%;
+  }
+
+  82%,
+  100% {
+    left: 125%;
+  }
+}
+
+/* ---------- Sticky Save Product bar ---------- */
+
+.product-editor-motion
+  [data-product-motion-save-bar="true"] {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.19),
+    0 22px 70px rgba(0, 0, 0, 0.13);
+  backdrop-filter: blur(20px) saturate(135%);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  animation: shahsi-save-bar-enter 600ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.product-editor-motion
+  [data-product-motion-save-bar="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.09),
+    transparent 28%,
+    transparent 72%,
+    rgba(255, 255, 255, 0.045)
+  );
+}
+
+@keyframes shahsi-save-bar-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ---------- Product/media image animation ---------- */
+
+.product-editor-motion
+  [data-product-motion-image="true"] {
+  transition:
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 320ms ease,
+    opacity 320ms ease;
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-editor-motion
+    [data-product-motion-card="true"]:hover
+    [data-product-motion-image="true"] {
+    transform: scale(1.035);
+    filter: saturate(1.04) contrast(1.015);
+  }
+}
+
+/* ---------- Pills, tags and selected chips ---------- */
+
+.product-editor-motion
+  :is(
+    button,
+    [role="button"]
+  )[class*="rounded-full"] {
+  transition:
+    transform 180ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-editor-motion
+    :is(
+      button,
+      [role="button"]
+    )[class*="rounded-full"]:not(:disabled):hover {
+    transform: translate3d(0, -1px, 0) scale(1.015);
+    box-shadow: 0 5px 13px rgba(15, 23, 42, 0.075);
+  }
+}
+
+/* ---------- Checkbox and radio animation ---------- */
+
+.product-editor-motion
+  input:is([type="checkbox"], [type="radio"]) {
+  transition:
+    transform 160ms ease,
+    box-shadow 200ms ease,
+    border-color 200ms ease;
+}
+
+.product-editor-motion
+  input:is([type="checkbox"], [type="radio"]):checked {
+  animation: shahsi-product-check-pop 260ms
+    cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes shahsi-product-check-pop {
+  0% {
+    transform: scale(0.72);
+  }
+
+  65% {
+    transform: scale(1.12);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ---------- Error/success message entrance ---------- */
+
+.product-editor-motion
+  :is(
+    [class*="border-red-"],
+    [class*="bg-red-"],
+    [class*="border-green-"],
+    [class*="bg-green-"],
+    [role="alert"]
+  ) {
+  animation: shahsi-product-message-enter 380ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes shahsi-product-message-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -7px, 0) scale(0.992);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ---------- Native details/accordion ---------- */
+
+.product-editor-motion details {
+  transition:
+    box-shadow 260ms ease,
+    border-color 260ms ease,
+    background-color 260ms ease;
+}
+
+.product-editor-motion details > summary {
+  transition:
+    color 220ms ease,
+    transform 220ms ease;
+}
+
+.product-editor-motion details[open] > summary {
+  transform: translateX(2px);
+}
+
+/* ---------- Smooth scrollbar ---------- */
+
+.product-editor-motion * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(82, 82, 82, 0.25) transparent;
+}
+
+.product-editor-motion *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.product-editor-motion *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.product-editor-motion *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(82, 82, 82, 0.24);
+  background-clip: padding-box;
+}
+
+.product-editor-motion *::-webkit-scrollbar-thumb:hover {
+  background: rgba(82, 82, 82, 0.42);
+  background-clip: padding-box;
+}
+
+/* ---------- Accessibility: reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .product-editor-motion *,
+  .product-editor-motion *::before,
+  .product-editor-motion *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  .product-editor-motion
+    [data-product-motion-card="true"] {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}

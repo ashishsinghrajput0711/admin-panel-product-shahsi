@@ -782,6 +782,15 @@ function makeSlug(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizeSlugInput(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+/g, "");
+}
+
 function findMediaUrl(value: unknown): string | null {
   if (!value) return null;
 
@@ -940,6 +949,20 @@ const selectedColor = form.watch("color") || "";
 const selectedColorFamily = form.watch("colorFamily") || "";
 const selectedColorHex = form.watch("colorHex") || "";
 
+const seoTitleValue = form.watch("seoTitle") || "";
+const seoDescriptionValue = form.watch("seoDescription") || "";
+const slugValue = form.watch("slug") || "";
+const priceValue = Number(form.watch("price") || 0);
+
+const storefrontName =
+  process.env.NEXT_PUBLIC_STOREFRONT_NAME?.trim() || "";
+
+const storefrontUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") || "";
+
+const storefrontCurrency =
+  process.env.NEXT_PUBLIC_STOREFRONT_CURRENCY?.trim().toUpperCase() || "";
+
 const formValues = form.watch();
 
 const normalizedCategoryId = String(categoryId || "").trim();
@@ -1087,34 +1110,23 @@ function clearProductColor() {
 
 
 
- useEffect(() => {
-  const currentValues = form.getValues();
+useEffect(() => {
   const nextValues = getDefaultFormValues(defaultValues);
 
   form.reset(
     {
       ...nextValues,
 
-      productMetafields: hasRecordValue(nextValues.productMetafields)
-        ? nextValues.productMetafields
-        : currentValues.productMetafields || {},
+      // Sirf backend se received values.
+      // Local/current form fallback bilkul nahi.
+      productMetafields: nextValues.productMetafields || {},
+      categoryMetafields: nextValues.categoryMetafields || {},
 
-      categoryMetafields: hasRecordValue(nextValues.categoryMetafields)
-        ? nextValues.categoryMetafields
-        : currentValues.categoryMetafields || {},
-
-      taxonomyId:
-        nextValues.taxonomyId ||
-        currentValues.taxonomyId ||
-        "",
-
-      taxonomy:
-        nextValues.taxonomy ??
-        currentValues.taxonomy ??
-        null,
+      taxonomyId: nextValues.taxonomyId || "",
+      taxonomy: nextValues.taxonomy ?? null,
     },
     {
-      keepDirtyValues: true,
+      keepDirtyValues: false,
     },
   );
 }, [defaultValues, form]);
@@ -1280,6 +1292,30 @@ useEffect(() => {
 
 
  function handleMetafieldsChange(nextValues: ProductFormValues) {
+const nextCategoryMetafields: NonNullable<
+  ProductFormValues["categoryMetafields"]
+> = {
+  ...(nextValues.categoryMetafields || {}),
+};
+
+  // Color hex category metafield definition nahi hai.
+  // Isko actual product color field mein persist karenge.
+  const nextColor = String(
+    nextValues.color ||
+      nextCategoryMetafields.color ||
+      "",
+  ).trim();
+
+  const nextColorHex = String(
+    nextValues.colorHex ||
+      nextCategoryMetafields.colorHex ||
+      nextCategoryMetafields.color_hex ||
+      "",
+  ).trim();
+
+  delete nextCategoryMetafields.colorHex;
+  delete nextCategoryMetafields.color_hex;
+
   form.setValue("taxonomyId", nextValues.taxonomyId || "", {
     shouldDirty: true,
     shouldValidate: true,
@@ -1290,12 +1326,30 @@ useEffect(() => {
     shouldValidate: true,
   });
 
-  form.setValue("productMetafields", nextValues.productMetafields || {}, {
+  form.setValue(
+    "productMetafields",
+    nextValues.productMetafields || {},
+    {
+      shouldDirty: true,
+      shouldValidate: true,
+    },
+  );
+
+  form.setValue(
+    "categoryMetafields",
+    nextCategoryMetafields,
+    {
+      shouldDirty: true,
+      shouldValidate: true,
+    },
+  );
+
+  form.setValue("color", nextColor, {
     shouldDirty: true,
     shouldValidate: true,
   });
 
-  form.setValue("categoryMetafields", nextValues.categoryMetafields || {}, {
+  form.setValue("colorHex", nextColorHex, {
     shouldDirty: true,
     shouldValidate: true,
   });
@@ -1396,24 +1450,7 @@ onSubmit(payload);
             />
           </Field>
 
-          <Field label="Slug" error={form.formState.errors.slug?.message}>
-            <div className="flex gap-2">
-              <Input
-                {...form.register("slug")}
-                placeholder="mira-chiffon-dress"
-                className="h-9 text-sm"
-              />
-
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 rounded-md px-3 text-xs"
-                onClick={generateSlug}
-              >
-                Generate
-              </Button>
-            </div>
-          </Field>
+        
 
           <Field label="Brand">
             <Input
@@ -1648,102 +1685,42 @@ onSubmit(payload);
       </div>
     <ProductTagsSection values={formValues} onChange={handleTagsChange} />
 
-     <FormSection
-  icon={<Search className="h-4 w-4" />}
-  title="SEO"
-  description="Search title and meta description."
->
-  {(() => {
-    const seoTitle = form.watch("seoTitle") || "";
-    const seoDescription = form.watch("seoDescription") || "";
-
-    const titleLength = seoTitle.length;
-    const descriptionLength = seoDescription.length;
-
-    const titleStatus =
-      titleLength === 0
-        ? "empty"
-        : titleLength < 35
-          ? "short"
-          : titleLength <= 65
-            ? "good"
-            : "long";
-
-    const descriptionStatus =
-      descriptionLength === 0
-        ? "empty"
-        : descriptionLength < 120
-          ? "short"
-          : descriptionLength <= 170
-            ? "good"
-            : "long";
-
-    const statusClass = {
-      empty: "text-neutral-400",
-      short: "text-amber-600",
-      good: "text-emerald-700",
-      long: "text-red-600",
-    } as const;
-
-    return (
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field
-          label="SEO title"
-          error={form.formState.errors.seoTitle?.message}
-        >
-          <Input
-            {...form.register("seoTitle")}
-            placeholder="Ivory Smocked Waist Cotton Midi Dress for Women"
-            className="h-9 text-sm"
-          />
-
-          <div className="mt-1 flex items-center justify-between text-[11px]">
-            <span className={statusClass[titleStatus]}>
-              {titleStatus === "empty"
-                ? "SEO title empty hai."
-                : titleStatus === "short"
-                  ? "Thoda short hai. 35-65 characters best."
-                  : titleStatus === "good"
-                    ? "Good length."
-                    : "Too long. Social/Google preview me cut ho sakta hai."}
-            </span>
-
-            <span className={statusClass[titleStatus]}>
-              {titleLength}/65
-            </span>
-          </div>
-        </Field>
-
-        <Field
-          label="SEO description"
-          error={form.formState.errors.seoDescription?.message}
-        >
-          <textarea
-            {...form.register("seoDescription")}
-            className="min-h-20 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-            placeholder="Shop an ivory cotton midi dress with a smocked waist and tiered silhouette. Perfect for summer weddings, vacations and daytime events."
-          />
-
-          <div className="mt-1 flex items-center justify-between text-[11px]">
-            <span className={statusClass[descriptionStatus]}>
-              {descriptionStatus === "empty"
-                ? "SEO description empty hai."
-                : descriptionStatus === "short"
-                  ? "Thoda short hai. 120-170 characters best."
-                  : descriptionStatus === "good"
-                    ? "Good length."
-                    : "Too long. Preview me cut ho sakta hai."}
-            </span>
-
-            <span className={statusClass[descriptionStatus]}>
-              {descriptionLength}/170
-            </span>
-          </div>
-        </Field>
-      </div>
-    );
-  })()}
-</FormSection>
+   <SearchEngineListingSection
+  storeName={storefrontName}
+  storefrontUrl={storefrontUrl}
+  currency={storefrontCurrency}
+  seoTitle={seoTitleValue}
+  seoDescription={seoDescriptionValue}
+  slug={slugValue}
+  price={priceValue}
+  titleError={form.formState.errors.seoTitle?.message}
+  slugError={form.formState.errors.slug?.message}
+  onSeoTitleChange={(nextValue) => {
+    form.setValue("seoTitle", nextValue, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }}
+  onSeoDescriptionChange={(nextValue) => {
+    form.setValue("seoDescription", nextValue, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }}
+  onSlugChange={(nextValue) => {
+    form.setValue("slug", normalizeSlugInput(nextValue), {
+      shouldDirty: true,
+      shouldValidate: false,
+    });
+  }}
+  onSlugBlur={() => {
+    form.setValue("slug", makeSlug(slugValue), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }}
+  onGenerateSlug={generateSlug}
+/>
 
       <div className="sticky bottom-3 z-20 rounded-lg border border-neutral-900 bg-neutral-950 px-3 py-2 shadow-lg">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -3038,6 +3015,270 @@ function GoogleMerchantField({
 //     </button>
 //   );
 // }
+
+function SearchEngineListingSection({
+  storeName,
+  storefrontUrl,
+  currency,
+  seoTitle,
+  seoDescription,
+  slug,
+  price,
+  titleError,
+  slugError,
+  onSeoTitleChange,
+  onSeoDescriptionChange,
+  onSlugChange,
+  onSlugBlur,
+  onGenerateSlug,
+}: {
+  storeName: string;
+  storefrontUrl: string;
+  currency: string;
+  seoTitle: string;
+  seoDescription: string;
+  slug: string;
+  price: number;
+  titleError?: string;
+  slugError?: string;
+  onSeoTitleChange: (value: string) => void;
+  onSeoDescriptionChange: (value: string) => void;
+  onSlugChange: (value: string) => void;
+  onSlugBlur: () => void;
+  onGenerateSlug: () => void;
+}) {
+  const titleLimit = 70;
+  const descriptionLimit = 160;
+
+  const titleLength = seoTitle.length;
+  const descriptionLength = seoDescription.length;
+
+  const titleTooLong = titleLength > titleLimit;
+  const descriptionTooLong = descriptionLength > descriptionLimit;
+
+  const missingConfiguration = [
+    !storeName ? "NEXT_PUBLIC_STOREFRONT_NAME" : "",
+    !storefrontUrl ? "NEXT_PUBLIC_STOREFRONT_URL" : "",
+    !currency ? "NEXT_PUBLIC_STOREFRONT_CURRENCY" : "",
+  ].filter(Boolean);
+
+  const cleanSlug = slug.trim();
+
+  const fullProductUrl =
+    storefrontUrl && cleanSlug
+      ? `${storefrontUrl}/products/${cleanSlug}`
+      : "";
+
+  const displayProductUrl =
+    storefrontUrl && cleanSlug
+      ? `${storefrontUrl} › products › ${cleanSlug}`
+      : "";
+
+  let formattedPrice = "";
+
+  if (
+    Number.isFinite(price) &&
+    /^[A-Z]{3}$/.test(currency)
+  ) {
+    try {
+      formattedPrice = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        minimumFractionDigits: 2,
+      }).format(price);
+    } catch {
+      formattedPrice = "";
+    }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+      <div className="border-b border-neutral-200 p-4 sm:p-5">
+        <div>
+          <h2 className="text-base font-semibold text-neutral-950">
+            Search engine listing
+          </h2>
+
+          <p className="mt-1 text-xs text-neutral-500">
+            Google search result preview, page title, meta description aur
+            product URL handle manage karo.
+          </p>
+        </div>
+
+        {missingConfiguration.length > 0 ? (
+          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-xs text-red-700">
+            Storefront configuration missing:{" "}
+            <span className="font-semibold">
+              {missingConfiguration.join(", ")}
+            </span>
+          </div>
+        ) : (
+          <div className="mt-5 max-w-[900px]">
+            <p className="text-[15px] text-neutral-800">
+              {storeName}
+            </p>
+
+            {displayProductUrl ? (
+              <p className="mt-0.5 break-all text-sm text-neutral-600">
+                {displayProductUrl}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-sm text-red-600">
+                Product URL handle missing
+              </p>
+            )}
+
+            <p className="mt-2 max-w-[850px] text-[20px] leading-7 text-[#1a0dab]">
+              {seoTitle.trim() || "Page title missing"}
+            </p>
+
+            <p className="mt-1 max-w-[850px] text-[15px] leading-6 text-neutral-600">
+              {seoDescription.trim() || "Meta description missing"}
+            </p>
+
+            {formattedPrice ? (
+              <p className="mt-2 text-[15px] text-neutral-600">
+                {formattedPrice} {currency}
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-5 p-4 sm:p-5">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-neutral-800">
+            Page title
+          </label>
+
+          <Input
+            value={seoTitle}
+            onChange={(event) => onSeoTitleChange(event.target.value)}
+            placeholder="Enter search engine page title"
+            className={`h-11 text-sm ${
+              titleTooLong || titleError
+                ? "border-red-400 focus-visible:ring-red-200"
+                : ""
+            }`}
+          />
+
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span
+              className={
+                titleTooLong
+                  ? "text-red-600"
+                  : titleLength > 0
+                    ? "text-neutral-500"
+                    : "text-amber-600"
+              }
+            >
+              {titleLength} of {titleLimit} characters used
+            </span>
+
+            {titleTooLong ? (
+              <span className="text-red-600">
+                Search result mein title cut ho sakta hai.
+              </span>
+            ) : null}
+          </div>
+
+          {titleError ? (
+            <p className="mt-1 text-xs text-red-600">
+              {titleError}
+            </p>
+          ) : null}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-neutral-800">
+            Meta description
+          </label>
+
+          <textarea
+            value={seoDescription}
+            onChange={(event) =>
+              onSeoDescriptionChange(event.target.value)
+            }
+            placeholder="Enter search engine meta description"
+            className={`min-h-[120px] w-full rounded-md border bg-white px-3 py-3 text-sm leading-6 outline-none transition focus:ring-2 ${
+              descriptionTooLong
+                ? "border-red-400 focus:ring-red-200"
+                : "border-neutral-300 focus:ring-neutral-950/10"
+            }`}
+          />
+
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span
+              className={
+                descriptionTooLong
+                  ? "text-red-600"
+                  : descriptionLength > 0
+                    ? "text-neutral-500"
+                    : "text-amber-600"
+              }
+            >
+              {descriptionLength} of {descriptionLimit} characters used
+            </span>
+
+            {descriptionTooLong ? (
+              <span className="text-red-600">
+                Search result mein description cut ho sakti hai.
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-neutral-800">
+            URL handle
+          </label>
+
+          <div
+            className={`flex min-h-11 overflow-hidden rounded-md border bg-white ${
+              slugError ? "border-red-400" : "border-neutral-300"
+            }`}
+          >
+            <span className="inline-flex shrink-0 items-center border-r border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-500">
+              /products/
+            </span>
+
+            <input
+              value={slug}
+              onChange={(event) => onSlugChange(event.target.value)}
+              onBlur={onSlugBlur}
+              placeholder="product-url-handle"
+              className="min-w-0 flex-1 bg-transparent px-3 text-sm text-neutral-900 outline-none"
+            />
+
+            <button
+              type="button"
+              onClick={onGenerateSlug}
+              className="shrink-0 border-l border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              Generate
+            </button>
+          </div>
+
+          {slugError ? (
+            <p className="mt-1 text-xs text-red-600">
+              {slugError}
+            </p>
+          ) : null}
+
+          {fullProductUrl ? (
+            <p className="mt-2 break-all text-xs text-neutral-500">
+              {fullProductUrl}
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-amber-600">
+              Valid URL handle required hai.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function FormSection({
   icon,
