@@ -75,11 +75,11 @@ const productSubTabs = [
     href: "/admin/catalog/publishing",
     icon: Send,
   },
-  {
-    label: "Search Data",
-    href: "/admin/catalog/search",
-    icon: Database,
-  },
+  // {
+  //   label: "Search Data",
+  //   href: "/admin/catalog/search",
+  //   icon: Database,
+  // },
 ];
 
 export default function CatalogLayout({
