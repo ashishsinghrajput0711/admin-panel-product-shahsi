@@ -5,10 +5,12 @@ import { useEffect, useMemo, useState } from "react";
 import { FolderTree, Plus, RefreshCw } from "lucide-react";
 import type { CategoryNode } from "@/components/admin/catalog/categories/category-types";
 import { CategoryTreeTable } from "@/components/admin/catalog/categories/category-tree-table";
+
+import { ProductPageMotion } from "@/components/admin/catalog/products/product-page-motion";
 import {
   deleteCategory,
-  fetchCategoryProducts,
   fetchCategoryTree,
+  reorderCategorySiblings,
 } from "@/lib/admin/category-api";
 
 function countCategories(categories: CategoryNode[]) {
@@ -39,9 +41,10 @@ function getCategoryTotalProductCount(category: CategoryNode) {
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<CategoryNode[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const [isLoading, setIsLoading] = useState(true);
+const [isDeleting, setIsDeleting] = useState(false);
+const [isReordering, setIsReordering] = useState(false);
+const [error, setError] = useState<string | null>(null);
 
   const totalCategories = useMemo(() => countCategories(categories), [categories]);
 
@@ -113,7 +116,51 @@ async function handleDelete(category: CategoryNode) {
   }
 }
 
-  return (
+async function handleReorder(
+  nextTree: CategoryNode[],
+  reorderedSiblings: CategoryNode[],
+) {
+  if (isReordering) {
+    return;
+  }
+
+  const previousTree = categories;
+
+  /*
+   * Optimistic update:
+   * drop hote hi row UI mein new position par chali jayegi.
+   */
+  setCategories(nextTree);
+  setIsReordering(true);
+  setError(null);
+
+  try {
+    await reorderCategorySiblings(reorderedSiblings);
+
+    /*
+     * Backend se final tree dobara load karke confirm karenge
+     * ki new sort order permanently save ho gaya.
+     */
+    const refreshedTree = await fetchCategoryTree();
+    setCategories(refreshedTree);
+  } catch (reorderError) {
+    /*
+     * Backend request fail ho to previous tree restore.
+     */
+    setCategories(previousTree);
+
+    setError(
+      reorderError instanceof Error
+        ? reorderError.message
+        : "Category reorder save failed.",
+    );
+  } finally {
+    setIsReordering(false);
+  }
+}
+
+return (
+  <ProductPageMotion className="min-h-screen">
     <main className="min-h-screen bg-[#f7f6f1] px-4 py-4 sm:px-6">
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-5 flex flex-col gap-3 border-b border-neutral-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
@@ -135,11 +182,18 @@ async function handleDelete(category: CategoryNode) {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
+        <div className="flex flex-wrap items-center gap-2">
+  {isReordering ? (
+    <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 shadow-sm">
+      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+      Saving order...
+    </div>
+  ) : null}
+
+  <button
               type="button"
               onClick={loadCategories}
-              disabled={isLoading || isDeleting}
+           disabled={isLoading || isDeleting || isReordering}
               className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw className="h-4 w-4" />
@@ -168,13 +222,16 @@ async function handleDelete(category: CategoryNode) {
             Loading category tree...
           </div>
         ) : (
-          <CategoryTreeTable
-            categories={categories}
-            onDelete={handleDelete}
-            isDeleting={isDeleting}
-          />
+        <CategoryTreeTable
+  categories={categories}
+  onDelete={handleDelete}
+  onReorder={handleReorder}
+  isDeleting={isDeleting}
+  isReordering={isReordering}
+/>
         )}
-      </div>
+         </div>
     </main>
+  </ProductPageMotion>
   );
 }

@@ -49,6 +49,9 @@ export const attributeSchema = z.object({
     "OCCASION",
     "CUSTOM",
   ]),
+  groupId: z.string().optional(),
+groupKey: z.string().optional(),
+groupSlug: z.string().optional(),
 
   isRequired: z.boolean().optional(),
   isFilterable: z.boolean().optional(),

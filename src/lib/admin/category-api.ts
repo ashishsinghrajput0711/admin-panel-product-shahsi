@@ -510,3 +510,87 @@ export async function removeProductFromCategory(slug: string, productId: string)
 
   return data;
 }
+
+
+export async function updateCategorySortOrder({
+  category,
+  sortOrder,
+}: {
+  category: CategoryNode;
+  sortOrder: number;
+}) {
+  const idOrSlug = String(
+    category.id ||
+      category.slug ||
+      category.deleteSlug ||
+      "",
+  ).trim();
+
+  const name = String(category.name || "").trim();
+  const slug = String(category.slug || "").trim();
+
+  if (!idOrSlug) {
+    throw new Error(
+      "Category reorder ke liye category id/slug missing hai.",
+    );
+  }
+
+  if (!name) {
+    throw new Error(
+      "Category reorder ke liye category name missing hai.",
+    );
+  }
+
+  if (!slug) {
+    throw new Error(
+      "Category reorder ke liye category slug missing hai.",
+    );
+  }
+
+  const apiRootUrl = getAdminApiRootUrl();
+
+  const response = await fetch(
+    `${apiRootUrl}/admin/catalog/categories/${encodeURIComponent(
+      idOrSlug,
+    )}`,
+    {
+      method: "PATCH",
+      headers: getJsonHeaders(),
+      body: JSON.stringify({
+        name,
+        slug,
+        sortOrder: Number(sortOrder),
+      }),
+    },
+  );
+
+  const data = await readJson<CategoryUpsertResponse>(response);
+
+  if (!response.ok) {
+    throw new Error(
+      getApiError(data) ||
+        `Category order update failed: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return data?.data
+    ? normalizeCategoryNode(data.data)
+    : null;
+}
+
+export async function reorderCategorySiblings(
+  categories: CategoryNode[],
+) {
+  for (
+    let index = 0;
+    index < categories.length;
+    index += 1
+  ) {
+    const category = categories[index];
+
+    await updateCategorySortOrder({
+      category,
+      sortOrder: index + 1,
+    });
+  }
+}

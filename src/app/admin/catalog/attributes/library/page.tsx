@@ -19,6 +19,7 @@ import {
   Power,
   PowerOff,
   RefreshCcw,
+  Layers3,
   Sparkles,
   Trash2,
   X,
@@ -1115,6 +1116,20 @@ disabled={
                 />
                 Refresh
               </Button>
+
+              {!isFocusedMode ? (
+  <Button
+    type="button"
+    variant="secondary"
+    className="rounded-full"
+    asChild
+  >
+    <Link href="/admin/catalog/attributes/groups">
+      <Layers3 className="mr-2 h-4 w-4" />
+      Manage groups
+    </Link>
+  </Button>
+) : null}
 
               {!isFocusedMode ? (
 

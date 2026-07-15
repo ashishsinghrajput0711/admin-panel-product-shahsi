@@ -1,13 +1,28 @@
 "use client";
+import Link from "next/link";
 
-import { type ReactNode, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { type Resolver, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, Power, RotateCcw, Trash2 } from "lucide-react";
+import {
+  Layers3,
+  Loader2,
+  Plus,
+  Power,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 
 import {
   deleteCatalogAttributeOption,
+  fetchCatalogAttributeGroups,
   updateCatalogAttributeOption,
+  type CatalogAttributeGroup,
 } from "@/lib/admin/catalog-attributes-api";
 
 import { attributeSchema, type AttributeFormValues } from "./attribute-schema";
@@ -52,6 +67,69 @@ function normalizeAttributeType(
   return "TEXT";
 }
 
+const SYSTEM_ATTRIBUTE_GROUPS = [
+  "PRODUCT",
+  "VARIANT",
+  "FIT",
+  "STYLE",
+  "SEO",
+  "SEARCH",
+  "MTO",
+  "RENTAL",
+  "RESALE",
+  "BASIC",
+  "SIZE",
+  "COLOR",
+  "FABRIC",
+  "OCCASION",
+  "CUSTOM",
+] as const;
+
+function normalizeSystemGroup(
+  value: unknown,
+): AttributeFormValues["group"] {
+  const normalizedValue = String(value || "")
+    .trim()
+    .toUpperCase();
+
+  if (
+    SYSTEM_ATTRIBUTE_GROUPS.includes(
+      normalizedValue as (typeof SYSTEM_ATTRIBUTE_GROUPS)[number],
+    )
+  ) {
+    return normalizedValue as AttributeFormValues["group"];
+  }
+
+  return "PRODUCT";
+}
+
+function getAssignedCatalogGroup(
+  defaultValues?: Partial<AttributeFormValues>,
+) {
+  const record = (defaultValues || {}) as Record<
+    string,
+    unknown
+  >;
+
+  const possibleGroups = [
+    record.attributeGroup,
+    record.catalogAttributeGroup,
+    record.groupDetails,
+    typeof record.group === "object"
+      ? record.group
+      : null,
+  ];
+
+  return (
+    possibleGroups.find(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        !Array.isArray(item),
+    ) as Record<string, unknown> | undefined
+  );
+}
+
 function getFieldTypeFromType(type: AttributeFormValues["type"]) {
   if (type === "TEXT") return "text";
   if (type === "NUMBER") return "number";
@@ -76,12 +154,54 @@ function shouldAutoReplace(currentValue: string, previousName: string) {
 function mapDefaultValues(
   defaultValues?: Partial<AttributeFormValues>,
 ): AttributeFormValues {
-  const name = String(defaultValues?.name || "").trim();
-  const code = String(defaultValues?.code || defaultValues?.slug || "").trim();
+  const rawDefaults = (defaultValues || {}) as Record<
+    string,
+    unknown
+  >;
+
+  const assignedCatalogGroup =
+    getAssignedCatalogGroup(defaultValues);
+
+  const name = String(
+    rawDefaults.name || "",
+  ).trim();
+
+  const code = String(
+    rawDefaults.code ||
+      rawDefaults.slug ||
+      "",
+  ).trim();
 
   const type = normalizeAttributeType(
-    String(defaultValues?.type || defaultValues?.fieldType || ""),
+    String(
+      rawDefaults.type ||
+        rawDefaults.fieldType ||
+        "",
+    ),
   );
+
+  const assignedGroupId = String(
+    rawDefaults.groupId ||
+      assignedCatalogGroup?.id ||
+      "",
+  ).trim();
+
+  const assignedGroupKey = String(
+    rawDefaults.groupKey ||
+      assignedCatalogGroup?.key ||
+      assignedCatalogGroup?.code ||
+      assignedCatalogGroup?.slug ||
+      "",
+  ).trim();
+
+  const assignedGroupSlug = String(
+    rawDefaults.groupSlug ||
+      assignedCatalogGroup?.slug ||
+      assignedCatalogGroup?.key ||
+      assignedCatalogGroup?.code ||
+      "",
+  ).trim();
+
 
   return {
     name,
@@ -92,8 +212,15 @@ function mapDefaultValues(
     type,
     fieldType: defaultValues?.fieldType || getFieldTypeFromType(type),
 
-    scope: defaultValues?.scope || "PRODUCT_AND_VARIANT",
-    group: defaultValues?.group || "PRODUCT",
+   scope:
+  (rawDefaults.scope as AttributeFormValues["scope"]) ||
+  "PRODUCT_AND_VARIANT",
+
+group: normalizeSystemGroup(rawDefaults.group),
+
+groupId: assignedGroupId,
+groupKey: assignedGroupKey,
+groupSlug: assignedGroupSlug,
 
     isRequired: Boolean(defaultValues?.isRequired),
     isFilterable: Boolean(defaultValues?.isFilterable),
@@ -177,9 +304,65 @@ export function AttributeForm({
 const [optionActionError, setOptionActionError] = useState<string | null>(
   null,
 );
+const [catalogGroups, setCatalogGroups] = useState<
+  CatalogAttributeGroup[]
+>([]);
+
+const [isCatalogGroupsLoading, setIsCatalogGroupsLoading] =
+  useState(true);
+
+const [catalogGroupsError, setCatalogGroupsError] =
+  useState<string | null>(null);
 
   const selectedType = form.watch("type");
+
+  const selectedCatalogGroupId = String(
+  form.watch("groupId") || "",
+).trim();
+
+const selectedCatalogGroup = useMemo(
+  () =>
+    catalogGroups.find(
+      (group) =>
+        String(group.id) ===
+        selectedCatalogGroupId,
+    ) || null,
+  [
+    catalogGroups,
+    selectedCatalogGroupId,
+  ],
+);
   const showOptions = optionBasedTypes.includes(selectedType);
+  async function loadCatalogGroups() {
+  try {
+    setIsCatalogGroupsLoading(true);
+    setCatalogGroupsError(null);
+
+   const result =
+  await fetchCatalogAttributeGroups({
+    page: 1,
+    limit: 100,
+    sortBy: "sortOrder",
+    sortOrder: "asc",
+  });
+
+    setCatalogGroups(result.groups);
+  } catch (error) {
+    setCatalogGroups([]);
+
+    setCatalogGroupsError(
+      error instanceof Error
+        ? error.message
+        : "Attribute groups load failed.",
+    );
+  } finally {
+    setIsCatalogGroupsLoading(false);
+  }
+}
+
+useEffect(() => {
+  void loadCatalogGroups();
+}, []);
 
   function handleNameChange(value: string) {
     const previousName = form.getValues("name");
@@ -238,6 +421,61 @@ const [optionActionError, setOptionActionError] = useState<string | null>(
       });
     }
   }
+
+  function handleCatalogGroupChange(
+  groupId: string,
+) {
+  const cleanGroupId = String(
+    groupId || "",
+  ).trim();
+
+  const selectedGroup =
+    catalogGroups.find(
+      (group) =>
+        String(group.id) === cleanGroupId,
+    ) || null;
+
+  form.setValue(
+    "groupId",
+    cleanGroupId,
+    {
+      shouldDirty: true,
+      shouldValidate: true,
+    },
+  );
+
+  form.setValue(
+    "groupKey",
+    selectedGroup
+      ? String(
+          selectedGroup.key ||
+            selectedGroup.code ||
+            selectedGroup.slug ||
+            "",
+        )
+      : "",
+    {
+      shouldDirty: true,
+      shouldValidate: true,
+    },
+  );
+
+  form.setValue(
+    "groupSlug",
+    selectedGroup
+      ? String(
+          selectedGroup.slug ||
+            selectedGroup.key ||
+            selectedGroup.code ||
+            "",
+        )
+      : "",
+    {
+      shouldDirty: true,
+      shouldValidate: true,
+    },
+  );
+}
 
   function addOption() {
     const sortOrder = fields.length + 1;
@@ -373,6 +611,9 @@ async function handleDeleteOption(index: number) {
       ...values,
       fieldType: values.fieldType || getFieldTypeFromType(values.type),
       isActive: values.status === "ACTIVE",
+      groupId: String(values.groupId || "").trim(),
+groupKey: String(values.groupKey || "").trim(),
+groupSlug: String(values.groupSlug || "").trim(),
 
       isVariantLevel: Boolean(
         values.isVariantLevel ||
@@ -545,7 +786,7 @@ async function handleDeleteOption(index: number) {
             </select>
           </Field>
 
-          <Field label="Group">
+        <Field label="System group">
             <select
               {...form.register("group")}
               className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
@@ -567,6 +808,114 @@ async function handleDeleteOption(index: number) {
               <option value="CUSTOM">Custom</option>
             </select>
           </Field>
+          <div className="md:col-span-3">
+            <div className="rounded-2xl border border-neutral-200 bg-[#fbfaf6] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Layers3 className="h-4 w-4 text-neutral-500" />
+
+                    <p className="text-sm font-semibold text-neutral-900">
+                      Catalog attribute group
+                    </p>
+                  </div>
+
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">
+                    Backend Attribute Group assign karo. Ye System group se
+                    alag relation hai aur Attribute Groups page par usage count
+                    update karega.
+                  </p>
+                </div>
+
+                <Link
+                  href="/admin/catalog/attributes/groups"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-full border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 transition hover:bg-neutral-100"
+                >
+                  <Layers3 className="h-3.5 w-3.5" />
+                  Manage groups
+                </Link>
+              </div>
+
+              <div className="mt-4">
+                <select
+                  value={selectedCatalogGroupId}
+                  onChange={(event) =>
+                    handleCatalogGroupChange(event.target.value)
+                  }
+                  disabled={isCatalogGroupsLoading}
+                  className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-100"
+                >
+                  <option value="">
+                    {isCatalogGroupsLoading
+                      ? "Loading attribute groups..."
+                      : "Ungrouped"}
+                  </option>
+
+                  {catalogGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.label || group.name}
+                      {group.isActive === false ? " — Inactive" : ""}
+                    </option>
+                  ))}
+                </select>
+
+                {catalogGroupsError ? (
+                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {catalogGroupsError}
+                  </div>
+                ) : null}
+
+                {!isCatalogGroupsLoading &&
+                !catalogGroupsError &&
+                catalogGroups.length === 0 ? (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Abhi koi Catalog Attribute Group available nahi hai. Manage
+                    groups page se pehle group create karo.
+                  </div>
+                ) : null}
+
+                {selectedCatalogGroup ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                      {selectedCatalogGroup.label ||
+                        selectedCatalogGroup.name}
+                    </span>
+
+                    <span className="rounded-full bg-white px-3 py-1 font-mono text-[11px] text-neutral-500 ring-1 ring-neutral-200">
+                      {selectedCatalogGroup.slug ||
+                        selectedCatalogGroup.key ||
+                        selectedCatalogGroup.code}
+                    </span>
+
+                    <span
+                      className={[
+                        "rounded-full px-3 py-1 text-[10px] font-semibold uppercase",
+                        selectedCatalogGroup.isActive === false
+                          ? "bg-neutral-200 text-neutral-600"
+                          : "bg-emerald-50 text-emerald-700",
+                      ].join(" ")}
+                    >
+                      {selectedCatalogGroup.isActive === false
+                        ? "Inactive"
+                        : "Active"}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCatalogGroupChange("")}
+                      className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-100"
+                    >
+                      Remove assignment
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-neutral-500">
+                    Attribute currently ungrouped rahega.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

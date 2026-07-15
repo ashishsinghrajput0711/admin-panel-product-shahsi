@@ -12,6 +12,102 @@ export type AttributePagination = {
   totalPages: number;
 };
 
+
+export type CatalogAttributeGroup = {
+  id: string;
+
+  key?: string | null;
+  code?: string | null;
+  slug: string;
+
+  name: string;
+  label?: string | null;
+  description?: string | null;
+
+  sortOrder?: number | null;
+  isActive?: boolean;
+  status?: string | null;
+
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+
+  attributes?: Attribute[];
+  usageCount?: number | null;
+  attributeCount?: number | null;
+};
+
+export type CatalogAttributeGroupPayload = {
+  key?: string;
+  code?: string;
+  slug: string;
+
+  name: string;
+  label: string;
+  description: string;
+
+  sortOrder: number;
+  isActive: boolean;
+  status?: string;
+};
+
+export type CatalogAttributeGroupPagination = {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export type CatalogAttributeGroupsResult = {
+  groups: CatalogAttributeGroup[];
+  pagination: CatalogAttributeGroupPagination;
+};
+
+export type FetchCatalogAttributeGroupsParams = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  isActive?: boolean;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+};
+
+type CatalogAttributeGroupsResponse = {
+  success?: boolean;
+
+  data?:
+    | CatalogAttributeGroup
+    | CatalogAttributeGroup[]
+    | {
+        data?: CatalogAttributeGroup[];
+        groups?: CatalogAttributeGroup[];
+        items?: CatalogAttributeGroup[];
+
+        group?: CatalogAttributeGroup;
+
+        total?: number;
+        count?: number;
+        page?: number;
+        limit?: number;
+        totalPages?: number;
+      };
+
+  group?: CatalogAttributeGroup;
+  groups?: CatalogAttributeGroup[];
+  items?: CatalogAttributeGroup[];
+
+  total?: number;
+  count?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+
+  message?: string | string[];
+  error?: unknown;
+};
+
 type PaginationShape = {
   total?: number;
   count?: number;
@@ -146,7 +242,11 @@ async function parseApiResponse<T>(
 }
 
 function getApiErrorMessage(
-  data: AttributesResponse | AttributeOptionResponse | null,
+  data:
+    | AttributesResponse
+    | AttributeOptionResponse
+    | CatalogAttributeGroupsResponse
+    | null,
   fallback: string,
 ) {
   if (!data) return fallback;
@@ -393,6 +493,159 @@ function extractSingleAttribute(response: AttributesResponse): AttributeFormValu
   return response as AttributeFormValues;
 }
 
+function extractCatalogAttributeGroups(
+  response: CatalogAttributeGroupsResponse,
+): CatalogAttributeGroupsResult {
+  const nested =
+    response.data &&
+    !Array.isArray(response.data) &&
+    typeof response.data === "object"
+      ? (response.data as Record<string, unknown>)
+      : null;
+
+  let groups: CatalogAttributeGroup[] = [];
+
+  if (Array.isArray(response.data)) {
+    groups = response.data;
+  } else if (Array.isArray(response.groups)) {
+    groups = response.groups;
+  } else if (Array.isArray(response.items)) {
+    groups = response.items;
+  } else if (nested) {
+    if (Array.isArray(nested.groups)) {
+      groups = nested.groups as CatalogAttributeGroup[];
+    } else if (Array.isArray(nested.items)) {
+      groups = nested.items as CatalogAttributeGroup[];
+    } else if (Array.isArray(nested.data)) {
+      groups = nested.data as CatalogAttributeGroup[];
+    }
+  }
+
+  const total =
+    toNumberOrNull(
+      nested?.total ??
+        nested?.count ??
+        response.total ??
+        response.count,
+    ) ?? groups.length;
+
+  const page =
+    toNumberOrNull(
+      nested?.page ??
+        response.page,
+    ) ?? 1;
+
+  const limit =
+    toNumberOrNull(
+      nested?.limit ??
+        response.limit,
+    ) ?? 20;
+
+  const backendTotalPages =
+    toNumberOrNull(
+      nested?.totalPages ??
+        response.totalPages,
+    );
+
+  const totalPages = Math.max(
+    1,
+    backendTotalPages ??
+      Math.ceil(total / Math.max(1, limit)),
+  );
+
+  return {
+    groups,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages,
+    },
+  };
+}
+
+function extractCatalogAttributeGroup(
+  response: CatalogAttributeGroupsResponse,
+): CatalogAttributeGroup {
+  if (
+    response.data &&
+    !Array.isArray(response.data) &&
+    typeof response.data === "object"
+  ) {
+    const dataRecord =
+      response.data as Record<string, unknown>;
+
+    if (
+      dataRecord.data &&
+      typeof dataRecord.data === "object" &&
+      !Array.isArray(dataRecord.data)
+    ) {
+      return dataRecord.data as CatalogAttributeGroup;
+    }
+
+    if (
+      dataRecord.group &&
+      typeof dataRecord.group === "object" &&
+      !Array.isArray(dataRecord.group)
+    ) {
+      return dataRecord.group as CatalogAttributeGroup;
+    }
+
+    if (typeof dataRecord.id === "string") {
+      return response.data as CatalogAttributeGroup;
+    }
+  }
+
+  if (response.group) {
+    return response.group;
+  }
+
+  throw new Error(
+    "Attribute group response mein group data missing hai.",
+  );
+}
+
+function cleanCatalogAttributeGroupPayload(
+  values: CatalogAttributeGroupPayload,
+) {
+  const name = String(values.name || "").trim();
+
+  const slug = toSnakeCase(
+    values.slug ||
+      values.key ||
+      values.code ||
+      name,
+  );
+
+  const key = toSnakeCase(
+    values.key ||
+      values.code ||
+      slug,
+  );
+
+  const isActive = values.isActive !== false;
+
+  return {
+    key,
+    code: key,
+    slug,
+
+    name,
+    label: String(
+      values.label ||
+        name,
+    ).trim(),
+
+    description: String(
+      values.description || "",
+    ).trim(),
+
+    sortOrder: Number(values.sortOrder || 0),
+    isActive,
+    status: isActive ? "ACTIVE" : "INACTIVE",
+  };
+}
+
 function appendFilterParams(
   params: URLSearchParams,
   filters?: AttributeFiltersState,
@@ -456,6 +709,20 @@ function cleanAttributePayload(values: AttributeFormValues) {
   const backendType = mapFrontendTypeToBackendType(record.type);
   const status = String(record.status || "ACTIVE").toUpperCase();
 
+  const groupId = String(record.groupId || "").trim();
+
+const groupKey = toSnakeCase(
+  record.groupKey ||
+    record.groupSlug ||
+    "",
+);
+
+const groupSlug = toSnakeCase(
+  record.groupSlug ||
+    record.groupKey ||
+    "",
+);
+
   return {
     key,
     code: key,
@@ -483,6 +750,24 @@ function cleanAttributePayload(values: AttributeFormValues) {
 
     isActive: status === "ACTIVE",
     status,
+
+    /*
+ * Empty groupId backend ko null bhejega, taaki edit mode mein
+ * existing group assignment remove bhi ki ja sake.
+ */
+groupId: groupId || null,
+
+...(groupId && groupKey
+  ? {
+      groupKey,
+    }
+  : {}),
+
+...(groupId && groupSlug
+  ? {
+      groupSlug,
+    }
+  : {}),
 
     validationRules: {
       requiredMessage: `${name} is required`,
@@ -878,6 +1163,240 @@ export async function deleteCatalogAttributeOption({
       getApiErrorMessage(
         json,
         `Attribute option delete failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return json;
+}
+
+export async function fetchCatalogAttributeGroups({
+  page = 1,
+  limit = 20,
+  search,
+  status,
+  isActive,
+  sortBy = "sortOrder",
+  sortOrder = "asc",
+}: FetchCatalogAttributeGroupsParams = {}) {
+  const params = new URLSearchParams();
+
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+
+  const cleanSearch = String(search || "").trim();
+
+  if (cleanSearch) {
+    params.set("search", cleanSearch);
+  }
+
+  const cleanStatus = String(status || "").trim();
+
+  if (cleanStatus && cleanStatus !== "ALL") {
+    params.set("status", cleanStatus);
+  }
+
+  if (typeof isActive === "boolean") {
+    params.set("isActive", String(isActive));
+  }
+
+  if (sortBy) {
+    params.set("sortBy", sortBy);
+  }
+
+  if (sortOrder) {
+    params.set("sortOrder", sortOrder);
+  }
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attribute-groups?${params.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const json =
+    await parseApiResponse<CatalogAttributeGroupsResponse>(
+      response,
+      "Attribute groups API JSON response nahi de rahi",
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute groups load failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return extractCatalogAttributeGroups(json);
+}
+
+export async function fetchCatalogAttributeGroupById(
+  groupId: string,
+) {
+  const cleanGroupId = String(groupId || "").trim();
+
+  if (!cleanGroupId) {
+    throw new Error("Attribute group ID missing hai.");
+  }
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attribute-groups/${encodeURIComponent(
+      cleanGroupId,
+    )}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    },
+  );
+
+  const json =
+    await parseApiResponse<CatalogAttributeGroupsResponse>(
+      response,
+      "Attribute group detail API JSON response nahi de rahi",
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute group detail load failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return extractCatalogAttributeGroup(json);
+}
+
+export async function createCatalogAttributeGroup(
+  values: CatalogAttributeGroupPayload,
+) {
+  const payload =
+    cleanCatalogAttributeGroupPayload(values);
+
+  if (!payload.name) {
+    throw new Error("Attribute group name required hai.");
+  }
+
+  if (!payload.slug) {
+    throw new Error("Attribute group slug required hai.");
+  }
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attribute-groups`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  const json =
+    await parseApiResponse<CatalogAttributeGroupsResponse>(
+      response,
+      "Attribute group create API JSON response nahi de rahi",
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute group create failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return extractCatalogAttributeGroup(json);
+}
+
+export async function updateCatalogAttributeGroup({
+  groupId,
+  values,
+}: {
+  groupId: string;
+  values: CatalogAttributeGroupPayload;
+}) {
+  const cleanGroupId = String(groupId || "").trim();
+
+  if (!cleanGroupId) {
+    throw new Error("Attribute group ID missing hai.");
+  }
+
+  const payload =
+    cleanCatalogAttributeGroupPayload(values);
+
+  if (!payload.name) {
+    throw new Error("Attribute group name required hai.");
+  }
+
+  if (!payload.slug) {
+    throw new Error("Attribute group slug required hai.");
+  }
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attribute-groups/${encodeURIComponent(
+      cleanGroupId,
+    )}`,
+    {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  const json =
+    await parseApiResponse<CatalogAttributeGroupsResponse>(
+      response,
+      "Attribute group update API JSON response nahi de rahi",
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute group update failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return extractCatalogAttributeGroup(json);
+}
+
+export async function deleteCatalogAttributeGroup(
+  groupId: string,
+) {
+  const cleanGroupId = String(groupId || "").trim();
+
+  if (!cleanGroupId) {
+    throw new Error("Attribute group ID missing hai.");
+  }
+
+  const response = await fetch(
+    `${getApiRootUrl()}/admin/catalog/attribute-groups/${encodeURIComponent(
+      cleanGroupId,
+    )}`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
+
+  const json =
+    await parseApiResponse<CatalogAttributeGroupsResponse>(
+      response,
+      "Attribute group delete API JSON response nahi de rahi",
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      getApiErrorMessage(
+        json,
+        `Attribute group delete failed: ${response.status} ${response.statusText}`,
       ),
     );
   }

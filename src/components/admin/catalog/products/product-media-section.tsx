@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { createPortal } from "react-dom";
+
+
+
+import ReactCrop, {
+  type PercentCrop,
+  type PixelCrop,
+} from "react-image-crop";
+
 
 
 import {
@@ -365,6 +374,12 @@ const [cropperCrop, setCropperCrop] = useState<Point>({ x: 0, y: 0 });
 const [cropperZoom, setCropperZoom] = useState(1);
 const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
 
+
+const freeformImageRef = useRef<HTMLImageElement | null>(null);
+
+const [freeformCrop, setFreeformCrop] =
+  useState<PercentCrop | undefined>(undefined);
+
 const [mediaAspectRatio, setMediaAspectRatio] = useState("4:5");
 const [mediaOrientation, setMediaOrientation] = useState<
   "portrait" | "landscape"
@@ -454,6 +469,64 @@ function handleCropComplete(_: Area, croppedPixels: Area) {
   setMediaCropY(Math.round(croppedPixels.y));
   setMediaCropWidth(Math.round(croppedPixels.width));
   setMediaCropHeight(Math.round(croppedPixels.height));
+}
+
+
+function resetFreeformCrop() {
+  setFreeformCrop(undefined);
+  setCroppedAreaPixels(null);
+
+  setMediaCropX(0);
+  setMediaCropY(0);
+  setMediaCropWidth(0);
+  setMediaCropHeight(0);
+}
+
+function handleFreeformCropComplete(pixelCrop: PixelCrop) {
+  const image = freeformImageRef.current;
+
+  if (
+    !image ||
+    image.clientWidth <= 0 ||
+    image.clientHeight <= 0 ||
+    pixelCrop.width <= 0 ||
+    pixelCrop.height <= 0
+  ) {
+    return;
+  }
+
+  const scaleX = image.naturalWidth / image.clientWidth;
+  const scaleY = image.naturalHeight / image.clientHeight;
+
+  const nextCrop: Area = {
+    x: Math.max(0, Math.round(pixelCrop.x * scaleX)),
+    y: Math.max(0, Math.round(pixelCrop.y * scaleY)),
+    width: Math.max(1, Math.round(pixelCrop.width * scaleX)),
+    height: Math.max(1, Math.round(pixelCrop.height * scaleY)),
+  };
+
+  setCroppedAreaPixels(nextCrop);
+
+  setMediaCropX(nextCrop.x);
+  setMediaCropY(nextCrop.y);
+  setMediaCropWidth(nextCrop.width);
+  setMediaCropHeight(nextCrop.height);
+}
+
+function handleFreeformImageLoad(
+  event: React.SyntheticEvent<HTMLImageElement>,
+) {
+  freeformImageRef.current = event.currentTarget;
+
+  // Original image normal dikhegi.
+  // User khud drag karke crop area create karega.
+  setFreeformCrop(undefined);
+  setCroppedAreaPixels(null);
+
+  setMediaCropX(0);
+  setMediaCropY(0);
+  setMediaCropWidth(0);
+  setMediaCropHeight(0);
 }
 
   const hasProductId = Boolean(productId);
@@ -932,6 +1005,8 @@ function openEditMediaDetails(item: ProductMediaItem) {
 setCropperZoom(1);
 setCroppedAreaPixels(null);
 
+resetFreeformCrop();
+
 setMediaAspectRatio("original");
 setMediaOrientation("portrait");
 setMediaCropX(0);
@@ -1290,10 +1365,7 @@ className={`absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center 
  {isSelected ? <Check className="h-5 w-5" /> : null}
 </button>
 
-               <div className="absolute left-10 top-2 hidden items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-[10px] font-semibold text-neutral-700 shadow ring-1 ring-neutral-200 group-hover:flex">
-                  <GripVertical className="h-3 w-3" />
-                  Drag
-                </div>
+               
 
            <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
                   {index === 0 ? (
@@ -1650,10 +1722,22 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
           </div>
         </ModalShell>
       ) : null}
-{editingMedia ? (
-  <div className="fixed inset-0 z-[9999] h-screen w-screen overflow-hidden bg-[#050505] text-white">
- <div className="grid h-screen w-screen grid-cols-[minmax(0,1fr)_430px] overflow-hidden">
-   <div className="relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-[#050505]">
+{editingMedia && typeof document !== "undefined"
+  ? createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden bg-black/75 p-4 text-white backdrop-blur-sm"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            setEditingMedia(null);
+            setMediaTransformError(null);
+          }
+        }}
+      >
+        <div
+          className="grid h-[min(88vh,820px)] w-full max-w-[1320px] grid-cols-1 overflow-hidden rounded-[28px] border border-white/10 bg-[#050505] shadow-2xl lg:grid-cols-[minmax(0,1fr)_360px]"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-[#050505]">
         <div
           className="absolute inset-0 opacity-40"
           style={{
@@ -1669,7 +1753,7 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
             setEditingMedia(null);
             setMediaTransformError(null);
           }}
-       className="absolute left-5 top-5 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900/90 text-neutral-200 ring-1 ring-white/10 backdrop-blur hover:bg-neutral-800 hover:text-white"
+     className="absolute left-4 top-4 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900/90 text-neutral-200 shadow-lg ring-1 ring-white/10 backdrop-blur transition hover:bg-neutral-800 hover:text-white"
           title="Close"
         >
           <X className="h-5 w-5" />
@@ -1678,24 +1762,60 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
         
 
 
-      <div className="relative z-10 h-[min(78vh,760px)] w-[min(64vw,820px)]">
-          {mediaToolMode === "crop" && !isVideoMedia(editingMedia) ? (
-            <Cropper
-              image={getMediaSrc(editingMedia)}
-              crop={cropperCrop}
-              zoom={cropperZoom}
-              aspect={currentCropAspect}
-              onCropChange={setCropperCrop}
-              onZoomChange={setCropperZoom}
-              onCropComplete={handleCropComplete}
-              showGrid={false}
-              objectFit="contain"
-              classes={{
-                containerClassName: "shahsi-media-cropper-container",
-                cropAreaClassName: "shahsi-media-cropper-area",
-              }}
-            />
-          ) : (
+      <div className="relative z-10 h-[min(66vh,600px)] w-[min(52vw,660px)]">
+      {mediaToolMode === "crop" && !isVideoMedia(editingMedia) ? (
+  mediaAspectRatio === "freeform" ? (
+  <div className="flex h-full w-full min-h-0 items-center justify-center overflow-hidden p-4">
+    <ReactCrop
+      crop={freeformCrop}
+      onChange={(pixelCrop, percentCrop) => {
+        setFreeformCrop(percentCrop);
+        handleFreeformCropComplete(pixelCrop);
+      }}
+      onComplete={(pixelCrop) => {
+        handleFreeformCropComplete(pixelCrop);
+      }}
+      minWidth={20}
+      minHeight={20}
+      keepSelection
+      className="inline-block max-w-full"
+    >
+  <img
+  ref={freeformImageRef}
+  src={getPlayableMediaSrc(editingMedia)}
+        alt={
+          editingMedia.altText ||
+          editingMedia.name ||
+          editingMedia.title ||
+          "Crop media"
+        }
+        onLoad={handleFreeformImageLoad}
+        draggable={false}
+        className="block h-auto w-auto max-w-full select-none object-contain"
+        style={{
+          maxHeight: "min(60vh, 560px)",
+        }}
+      />
+    </ReactCrop>
+  </div>
+) : (
+  <Cropper
+  image={getPlayableMediaSrc(editingMedia)}
+      crop={cropperCrop}
+      zoom={cropperZoom}
+      aspect={currentCropAspect}
+      onCropChange={setCropperCrop}
+      onZoomChange={setCropperZoom}
+      onCropComplete={handleCropComplete}
+      showGrid={false}
+      objectFit="contain"
+      classes={{
+        containerClassName: "shahsi-media-cropper-container",
+        cropAreaClassName: "shahsi-media-cropper-area",
+      }}
+    />
+  )
+) : (
             <div className="flex h-full w-full items-center justify-center">
               <MediaPreview
                 item={editingMedia}
@@ -1705,32 +1825,40 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
           )}
         </div>
 
-        {mediaToolMode === "crop" ? (
-       <div className="absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 items-center gap-4 rounded-[18px] bg-[#1f1f1f]/95 px-5 py-3 shadow-2xl ring-1 ring-white/10 backdrop-blur">
-            <span className="text-sm font-semibold text-white">%</span>
+     {mediaToolMode === "crop" ? (
+  mediaAspectRatio === "freeform" ? (
+    <div className="absolute bottom-5 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap rounded-xl bg-[#1f1f1f]/95 px-4 py-2.5 text-xs font-semibold text-white shadow-2xl ring-1 ring-white/10 backdrop-blur">
+    Drag on the image to create a freeform crop
+    </div>
+  ) : (
+    <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-[#1f1f1f]/95 px-4 py-2.5 shadow-2xl ring-1 ring-white/10 backdrop-blur">
+      <span className="text-sm font-semibold text-white">%</span>
 
-            <input
-              type="range"
-              min={1}
-              max={3}
-              step={0.1}
-              value={cropperZoom}
-              onChange={(event) => setCropperZoom(Number(event.target.value))}
-              className="w-56"
-            />
+      <input
+        type="range"
+        min={1}
+        max={3}
+        step={0.1}
+        value={cropperZoom}
+        onChange={(event) =>
+          setCropperZoom(Number(event.target.value))
+        }
+        className="w-40"
+      />
 
-            <button
-              type="button"
-              disabled
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white/40"
-            >
-              <Maximize2 className="h-4 w-4" />
-              Expand
-            </button>
-          </div>
-        ) : (
-          <div className="absolute bottom-8 left-1/2 z-30 -translate-x-1/2 rounded-2xl bg-neutral-900/95 px-5 py-4 shadow-2xl ring-1 ring-white/10">
-            <label className="flex items-center gap-3 text-sm font-semibold text-white">
+      <button
+        type="button"
+        disabled
+        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-xs font-semibold text-white/40"
+      >
+        <Maximize2 className="h-4 w-4" />
+        Expand
+      </button>
+    </div>
+  )
+) : (
+          <div className="absolute bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-xl bg-neutral-900/95 px-4 py-2.5 shadow-2xl ring-1 ring-white/10">
+         <label className="flex items-center gap-2 text-xs font-semibold text-white">
               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-white" />
               Click image to set focal point
             </label>
@@ -1738,14 +1866,14 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
         )}
       </div>
 
-     <aside className="relative z-20 h-screen min-h-0 overflow-y-auto border-l border-white/10 bg-[#0b0b0b] px-5 py-6">
-        <div className="space-y-4 pb-10">
-          <section className="rounded-[22px] bg-[#1b1b1b] p-5 ring-1 ring-white/10 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+     <aside className="relative z-20 h-full min-h-0 overflow-y-auto border-l border-white/10 bg-[#0b0b0b] px-4 py-4">
+       <div className="space-y-3 pb-4">
+          <section className="rounded-[18px] bg-[#1b1b1b] p-4 ring-1 ring-white/10 shadow-[0_14px_36px_rgba(0,0,0,0.3)]">
             <button
               type="button"
               onClick={() => setMediaToolMode("information")}
              className={[
-  "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-lg font-semibold transition",
+  "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-base font-semibold transition",
   mediaToolMode === "information"
     ? "bg-white/10 text-white"
     : "text-neutral-300 hover:bg-white/5 hover:text-white",
@@ -1765,7 +1893,7 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
                   <input
                     value={mediaName}
                     onChange={(event) => setMediaName(event.target.value)}
-                    className="mt-2 h-11 w-full rounded-xl border border-white/15 bg-neutral-950 px-4 text-sm text-white outline-none focus:border-white/40"
+             className="mt-1.5 h-10 w-full rounded-xl border border-white/15 bg-neutral-950 px-3 text-sm text-white outline-none focus:border-white/40"
                     placeholder="Media name"
                   />
                 </div>
@@ -1778,7 +1906,7 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
                   <textarea
                     value={mediaAltText}
                     onChange={(event) => setMediaAltText(event.target.value)}
-                    className="mt-2 min-h-[110px] w-full rounded-xl border border-white/15 bg-neutral-950 px-4 py-3 text-sm text-white outline-none focus:border-white/40"
+                   className="mt-1.5 min-h-[88px] w-full rounded-xl border border-white/15 bg-neutral-950 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40"
                     placeholder="Alt text"
                   />
                 </div>
@@ -1828,7 +1956,7 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
                   type="button"
                   onClick={handleSaveMediaDetails}
                   disabled={isUploading}
-                  className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-60"
+                 className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:opacity-60"
                 >
                   {isUploading ? "Saving..." : "Save information"}
                 </button>
@@ -1906,6 +2034,12 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
   setMediaToolMode("crop");
   setCroppedAreaPixels(null);
 
+if (option.value === "freeform") {
+  setCropperCrop({ x: 0, y: 0 });
+  setCropperZoom(1);
+  resetFreeformCrop();
+}
+
   if (option.value === "1:1") {
     setMediaCropWidth(1000);
     setMediaCropHeight(1000);
@@ -1974,46 +2108,44 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
                   })}
                 </div>
 
-                {mediaAspectRatio === "freeform" ? (
+     {mediaAspectRatio === "freeform" ? (
   <div className="rounded-2xl border border-white/10 bg-neutral-950/60 p-3">
-    <p className="text-sm font-semibold text-white">Freeform crop size</p>
-    <p className="mt-1 text-xs text-neutral-400">
-      Width aur height change karoge to crop frame ka ratio update hoga.
+    <p className="text-sm font-semibold text-white">
+      Freeform crop
     </p>
 
-    <div className="mt-3 grid grid-cols-2 gap-3">
-      <div>
-        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
-          Width
-        </label>
-        <input
-          type="number"
-          min={1}
-          value={mediaCropWidth}
-          onChange={(event) => {
-            setMediaCropWidth(Number(event.target.value || 1));
-            setCroppedAreaPixels(null);
-          }}
-          className="mt-2 h-10 w-full rounded-xl border border-white/15 bg-neutral-950 px-3 text-sm text-white outline-none focus:border-white/40"
-        />
-      </div>
+    <p className="mt-1 text-xs leading-5 text-neutral-400">
+      Original image par mouse drag karke crop area banao. Selection ke
+      corners aur sides ko pakadkar freely resize kar sakte ho.
+    </p>
 
-      <div>
-        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
-          Height
-        </label>
-        <input
-          type="number"
-          min={1}
-          value={mediaCropHeight}
-          onChange={(event) => {
-            setMediaCropHeight(Number(event.target.value || 1));
-            setCroppedAreaPixels(null);
-          }}
-          className="mt-2 h-10 w-full rounded-xl border border-white/15 bg-neutral-950 px-3 text-sm text-white outline-none focus:border-white/40"
-        />
+    {!freeformCrop || !croppedAreaPixels ? (
+      <div className="mt-3 rounded-xl border border-dashed border-white/15 bg-white/5 px-3 py-3 text-xs leading-5 text-neutral-400">
+        Abhi koi crop area select nahi hai. Original image par drag karo.
       </div>
-    </div>
+    ) : (
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="rounded-xl bg-white/5 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+            Width
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-white">
+            {Math.round(mediaCropWidth)} px
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white/5 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+            Height
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-white">
+            {Math.round(mediaCropHeight)} px
+          </p>
+        </div>
+      </div>
+    )}
   </div>
 ) : null}
 
@@ -2025,14 +2157,23 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
                   </div>
                 ) : null}
 
-                <button
-                  type="button"
-                  onClick={() => handleTransformMedia("crop")}
-                  disabled={isTransformingMedia}
-                  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-neutral-700 px-4 text-sm font-semibold text-white hover:bg-neutral-600 disabled:opacity-60"
-                >
-                  {isTransformingMedia ? "Applying..." : "Apply"}
-                </button>
+               <button
+  type="button"
+  onClick={() => handleTransformMedia("crop")}
+  disabled={
+    isTransformingMedia ||
+    (mediaAspectRatio === "freeform" &&
+      (!freeformCrop || !croppedAreaPixels))
+  }
+  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-neutral-700 px-4 text-sm font-semibold text-white transition hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-40"
+>
+  {isTransformingMedia
+    ? "Applying..."
+    : mediaAspectRatio === "freeform" &&
+        (!freeformCrop || !croppedAreaPixels)
+      ? "Select crop area"
+      : "Apply"}
+</button>
               </div>
             ) : null}
           </section>
@@ -2106,10 +2247,12 @@ className="absolute right-12 top-3 translate-y-1 rounded-full bg-white px-3 py-1
             ) : null}
           </section>
         </div>
-      </aside>
-    </div>
-  </div>
-) : null}
+                </aside>
+        </div>
+      </div>,
+      document.body,
+    )
+  : null}
     </section>
   );
 }

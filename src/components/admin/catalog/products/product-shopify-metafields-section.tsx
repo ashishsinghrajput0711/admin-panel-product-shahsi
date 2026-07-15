@@ -4,6 +4,8 @@ import Link from "next/link";
 
 import { createPortal } from "react-dom";
 
+import { RichTextEditor } from "./rich-text-editor";
+
 import {
   useEffect,
   useMemo,
@@ -3133,7 +3135,7 @@ return createPortal(
           </Button>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[1fr_320px]">
+      <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-neutral-200">
               <label className="text-sm font-medium text-neutral-800">
@@ -3154,21 +3156,23 @@ return createPortal(
                 className="mt-2 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-950"
               />
 
-              <label className="mt-5 block text-sm font-medium text-neutral-800">
-                Content
-              </label>
+<label className="mt-5 block text-sm font-medium text-neutral-800">
+  Content
+</label>
 
-              <textarea
-                value={content}
-                onChange={(event) => setContent(event.target.value)}
-                placeholder="<p>Write page content here...</p>"
-                rows={10}
-                className="mt-2 min-h-[220px] w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm outline-none focus:border-neutral-950"
-              />
+<div className="mt-2 min-w-0 max-w-full">
+  <RichTextEditor
+    value={content}
+    onChange={(html) => setContent(html)}
+    minHeightClass="min-h-[220px]"
+    maxHeightClass="max-h-[360px]"
+    compact
+  />
+</div>
 
-              <p className="mt-2 text-xs text-neutral-400">
-                HTML content allowed hai, jaise &lt;p&gt;Care instructions&lt;/p&gt;.
-              </p>
+<p className="mt-2 text-xs text-neutral-400">
+  Formatted content HTML ke form mein CMS page backend par save hoga.
+</p>
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-neutral-200">

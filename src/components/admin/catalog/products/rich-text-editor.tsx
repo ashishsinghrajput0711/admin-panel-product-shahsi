@@ -768,12 +768,14 @@ export function RichTextEditor({
   productId,
   minHeightClass = "min-h-[420px]",
   maxHeightClass = "",
+  compact = false,
 }: {
   value: string;
   onChange: (html: string) => void;
   productId?: string;
   minHeightClass?: string;
   maxHeightClass?: string;
+  compact?: boolean;
 }) {
   const [mode, setMode] = useState<"visual" | "html" | "preview">("visual");
   const [, forceRender] = useState(0);
@@ -851,7 +853,11 @@ export function RichTextEditor({
     content: value || "",
     editorProps: {
       attributes: {
-        class: `${minHeightClass} px-5 py-5 text-sm leading-7 text-neutral-950 outline-none [&_.ProseMirror-selectednode]:outline [&_.ProseMirror-selectednode]:outline-2 [&_.ProseMirror-selectednode]:outline-blue-500 [&_.ProseMirror-selectednode]:outline-offset-2 [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-4 [&_h1]:mb-4 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:mb-3 [&_h2]:text-3xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-2xl [&_h3]:font-semibold [&_h4]:mb-2 [&_h4]:text-xl [&_h4]:font-semibold [&_h5]:mb-2 [&_h5]:text-lg [&_h5]:font-semibold [&_h6]:mb-2 [&_h6]:text-base [&_h6]:font-semibold [&_iframe]:my-4 [&_iframe]:max-w-full [&_.rte-image-resize-wrapper]:my-4 [&_.rte-image-resize-wrapper_img]:cursor-pointer [&_.rte-image-resize-wrapper_img]:max-w-full [&_.rte-image-resize-handle]:opacity-0 [&_.rte-image-resize-wrapper:hover_.rte-image-resize-handle]:opacity-100 [&_.ProseMirror-selectednode_.rte-image-resize-handle]:opacity-100 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-4 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-neutral-300 [&_td]:p-2 [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:p-2 [&_ul]:list-disc [&_video]:my-4 [&_video]:max-w-full`,
+      class: `${minHeightClass} ${
+  compact
+    ? "px-3 py-3 text-sm leading-6"
+    : "px-5 py-5 text-sm leading-7"
+} text-neutral-950 outline-none [&_.ProseMirror-selectednode]:outline [&_.ProseMirror-selectednode]:outline-2 [&_.ProseMirror-selectednode]:outline-blue-500 [&_.ProseMirror-selectednode]:outline-offset-2 [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-4 [&_h1]:mb-4 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:mb-3 [&_h2]:text-3xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-2xl [&_h3]:font-semibold [&_h4]:mb-2 [&_h4]:text-xl [&_h4]:font-semibold [&_h5]:mb-2 [&_h5]:text-lg [&_h5]:font-semibold [&_h6]:mb-2 [&_h6]:text-base [&_h6]:font-semibold [&_iframe]:my-4 [&_iframe]:max-w-full [&_.rte-image-resize-wrapper]:my-4 [&_.rte-image-resize-wrapper_img]:cursor-pointer [&_.rte-image-resize-wrapper_img]:max-w-full [&_.rte-image-resize-handle]:opacity-0 [&_.rte-image-resize-wrapper:hover_.rte-image-resize-handle]:opacity-100 [&_.ProseMirror-selectednode_.rte-image-resize-handle]:opacity-100 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-4 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-neutral-300 [&_td]:p-2 [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:p-2 [&_ul]:list-disc [&_video]:my-4 [&_video]:max-w-full`,
       },
     },
     onSelectionUpdate() {
@@ -1152,8 +1158,8 @@ export function RichTextEditor({
     setVideoDraft("");
   }
 
-  return (
-    <div className="overflow-visible rounded-lg border border-neutral-300 bg-white">
+return (
+  <div className="min-w-0 max-w-full overflow-visible rounded-lg border border-neutral-300 bg-white">
       <input
         ref={fileInputRef}
         type="file"
@@ -1170,12 +1176,24 @@ export function RichTextEditor({
         onChange={(event) => uploadImageFromDialog(event.target.files)}
       />
 
-      <div className="relative z-20 flex flex-nowrap items-center gap-1 overflow-visible border-b border-neutral-200 bg-neutral-50 p-2">
-        <select
-          value={getHeadingSelectValue(activeEditor)}
-          onChange={(event) => setBlockType(event.target.value)}
-          className="h-8 shrink-0 rounded-md border border-neutral-200 bg-white px-2 text-sm font-medium outline-none"
-        >
+    <div
+  className={[
+    "relative z-20 max-w-full items-center border-b border-neutral-200 bg-neutral-50",
+    compact
+      ? "flex flex-wrap gap-0.5 p-1.5"
+      : "flex flex-nowrap gap-1 overflow-visible p-2",
+  ].join(" ")}
+>
+      <select
+  value={getHeadingSelectValue(activeEditor)}
+  onChange={(event) => setBlockType(event.target.value)}
+  className={[
+    "shrink-0 rounded-md border border-neutral-200 bg-white font-medium outline-none",
+    compact
+      ? "h-7 max-w-[110px] px-1.5 text-xs"
+      : "h-8 px-2 text-sm",
+  ].join(" ")}
+>
           <option value="p">Paragraph</option>
           <option value="h1">Heading 1</option>
           <option value="h2">Heading 2</option>
@@ -1420,14 +1438,20 @@ export function RichTextEditor({
               emitUpdate: false,
             });
           }}
-          className={`${minHeightClass} ${maxHeightClass} w-full bg-neutral-950 p-4 font-mono text-sm leading-6 text-white outline-none ${
+       className={`${minHeightClass} ${maxHeightClass} w-full bg-neutral-950 ${
+  compact ? "p-3" : "p-4"
+} font-mono text-sm leading-6 text-white outline-none ${
             maxHeightClass ? "overflow-y-auto" : ""
           }`}
           spellCheck={false}
         />
       ) : mode === "preview" ? (
         <div
-          className={`${minHeightClass} ${maxHeightClass} px-5 py-5 text-sm leading-7 text-neutral-950 [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-4 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:text-3xl [&_h2]:font-semibold [&_h3]:text-2xl [&_h3]:font-semibold [&_h4]:text-xl [&_h4]:font-semibold [&_h5]:text-lg [&_h5]:font-semibold [&_h6]:text-base [&_h6]:font-semibold [&_iframe]:my-4 [&_iframe]:max-w-full [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-4 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_ul]:list-disc [&_video]:my-4 [&_video]:max-w-full ${
+        className={`${minHeightClass} ${maxHeightClass} ${
+  compact
+    ? "px-3 py-3 text-sm leading-6"
+    : "px-5 py-5 text-sm leading-7"
+} text-neutral-950 [&_a]:text-blue-700 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-neutral-300 [&_blockquote]:pl-4 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:text-3xl [&_h2]:font-semibold [&_h3]:text-2xl [&_h3]:font-semibold [&_h4]:text-xl [&_h4]:font-semibold [&_h5]:text-lg [&_h5]:font-semibold [&_h6]:text-base [&_h6]:font-semibold [&_iframe]:my-4 [&_iframe]:max-w-full [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-4 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_ul]:list-disc [&_video]:my-4 [&_video]:max-w-full ${
             maxHeightClass ? "overflow-y-auto" : ""
           }`}
           dangerouslySetInnerHTML={{ __html: value || "" }}

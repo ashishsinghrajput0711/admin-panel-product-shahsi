@@ -47,6 +47,25 @@ export type AttributeGroup =
   | "CUSTOM"
   | string;
 
+  export type CatalogAttributeGroupSummary = {
+  id: string;
+
+  key?: string | null;
+  code?: string | null;
+  slug?: string | null;
+
+  name?: string | null;
+  label?: string | null;
+  description?: string | null;
+
+  sortOrder?: number | null;
+  isActive?: boolean | null;
+  status?: string | null;
+
+  usageCount?: number | null;
+  attributeCount?: number | null;
+};
+
 export type AttributeOption = {
   id?: string;
   label?: string | null;
@@ -77,6 +96,14 @@ export type Attribute = {
 
   scope?: AttributeScope | string | null;
   group?: AttributeGroup | string | null;
+
+  groupId?: string | null;
+groupKey?: string | null;
+groupSlug?: string | null;
+
+attributeGroup?: CatalogAttributeGroupSummary | null;
+catalogAttributeGroup?: CatalogAttributeGroupSummary | null;
+groupDetails?: CatalogAttributeGroupSummary | null;
 
   isRequired?: boolean | null;
   isFilterable?: boolean | null;
