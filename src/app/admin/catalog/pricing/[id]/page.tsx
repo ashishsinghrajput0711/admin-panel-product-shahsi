@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Trash2 } from "lucide-react";
-
+import { ProductPageMotion } from "@/components/admin/catalog/products/product-page-motion";
 import {
   deletePricingRule,
   getPricingRuleById,
@@ -154,7 +154,8 @@ export default function EditPricingRulePage() {
     }
   }
 
-  return (
+return (
+  <ProductPageMotion className="min-h-screen">
     <main className="min-h-screen bg-[#fbfaf6] p-6">
       <div className="mb-6 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
         <div>
@@ -210,6 +211,7 @@ export default function EditPricingRulePage() {
           onSubmit={handleSubmit}
         />
       ) : null}
-    </main>
-  );
+       </main>
+  </ProductPageMotion>
+);
 }

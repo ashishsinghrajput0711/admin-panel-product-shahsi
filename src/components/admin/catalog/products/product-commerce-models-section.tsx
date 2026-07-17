@@ -10,14 +10,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  getProductRentalPricingRule,
   saveProductCommerceConfig,
   saveProductMtoConfig,
   saveProductRentalConfig,
+  saveProductRentalPricingRule,
   saveProductResaleConfig,
   saveProductShopConfig,
   saveProductSubscriptionConfig,
   type ProductCommerceType,
 } from "@/lib/admin/product-commerce-config-api";
+
+
 
 type CommerceProduct = {
   mode?: string | null;
@@ -103,6 +107,30 @@ type CommerceFormState = {
   subscriptionAllowedPlansText: string;
   subscriptionFreeCleaningIncluded: boolean;
   subscriptionPriorityDelivery: boolean;
+};
+
+type RentalPricingRuleFormState = {
+  minimumRentalDays: number;
+  priceFor4Days: number;
+  priceFor7Days: number;
+  priceFor28Days: number;
+  securityDeposit: number;
+  lateFeePerDay: number;
+  allowedInSubscription: boolean;
+  monthlyCreditCost: number;
+  premiumSurcharge: number;
+};
+
+const initialRentalPricingRuleState: RentalPricingRuleFormState = {
+  minimumRentalDays: 4,
+  priceFor4Days: 0,
+  priceFor7Days: 0,
+  priceFor28Days: 0,
+  securityDeposit: 0,
+  lateFeePerDay: 0,
+  allowedInSubscription: false,
+  monthlyCreditCost: 0,
+  premiumSurcharge: 0,
 };
 
 const commerceOptions: {
@@ -197,6 +225,20 @@ function buildInitialState(product: CommerceProduct): CommerceFormState {
   const shopSettings = product.shopSettings || {};
   const rentalSettings = product.rentalSettings || {};
   const resaleSettings = product.resaleSettings || {};
+
+
+
+  
+  
+  const rentalExtra =
+  getRecordValue(rentalSettings, "extra") &&
+  typeof getRecordValue(rentalSettings, "extra") === "object" &&
+  !Array.isArray(getRecordValue(rentalSettings, "extra"))
+    ? (getRecordValue(
+        rentalSettings,
+        "extra",
+      ) as Record<string, unknown>)
+    : {};
   const mtoSettings = product.madeToOrderSettings || {};
   const subscriptionSettings = product.subscriptionSettings || {};
 
@@ -252,12 +294,18 @@ function buildInitialState(product: CommerceProduct): CommerceFormState {
         product.rentalCondition ||
         "DRY_CLEANED",
     ),
-    rentalMinDays: numberValue(getRecordValue(rentalSettings, "minRentalDays"), 3),
-    rentalMaxDays: numberValue(getRecordValue(rentalSettings, "maxRentalDays"), 15),
-    rentalLateFeePerDay: numberValue(
-      getRecordValue(rentalSettings, "lateFeePerDay"),
-      500,
-    ),
+    rentalMinDays: numberValue(
+  getRecordValue(rentalExtra, "minRentalDays"),
+  3,
+),
+rentalMaxDays: numberValue(
+  getRecordValue(rentalExtra, "maxRentalDays"),
+  15,
+),
+rentalLateFeePerDay: numberValue(
+  getRecordValue(rentalExtra, "lateFeePerDay"),
+  500,
+),
 
     resaleCondition: String(
       getRecordValue(resaleSettings, "resaleCondition") ||
@@ -377,6 +425,26 @@ export function ProductCommerceModelsSection({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [pricingRuleId, setPricingRuleId] =
+  useState<string | null>(null);
+
+const [pricingRuleValues, setPricingRuleValues] =
+  useState<RentalPricingRuleFormState>(
+    initialRentalPricingRuleState,
+  );
+
+const [isLoadingPricingRule, setIsLoadingPricingRule] =
+  useState(false);
+
+const [isSavingPricingRule, setIsSavingPricingRule] =
+  useState(false);
+
+const [pricingRuleMessage, setPricingRuleMessage] =
+  useState<string | null>(null);
+
+const [pricingRuleError, setPricingRuleError] =
+  useState<string | null>(null);
+
   const [activeCommerceTypes, setActiveCommerceTypes] = useState<
   CommerceTypeMaster[]
 >([]);
@@ -404,6 +472,9 @@ const allowedSelectedTypes = useMemo(() => {
     activeCommerceTypeCodes.has(item),
   );
 }, [values.selectedTypes, activeCommerceTypeCodes]);
+
+const isRentalSelected =
+  allowedSelectedTypes.includes("RENTAL");
 
   const [openConfigSections, setOpenConfigSections] = useState<
   Record<ProductCommerceType, boolean>
@@ -447,6 +518,105 @@ useEffect(() => {
     isMounted = false;
   };
 }, []);
+
+useEffect(() => {
+  let isMounted = true;
+
+  async function loadRentalPricingRule() {
+    if (!isRentalSelected || !productId) {
+      setPricingRuleId(null);
+      setPricingRuleValues(
+        initialRentalPricingRuleState,
+      );
+      setPricingRuleError(null);
+      setPricingRuleMessage(null);
+      return;
+    }
+
+    try {
+      setIsLoadingPricingRule(true);
+      setPricingRuleError(null);
+
+      const rule =
+        await getProductRentalPricingRule({
+          apiRootUrl,
+          productId,
+          token,
+        });
+
+      if (!isMounted) return;
+
+      if (!rule) {
+        setPricingRuleId(null);
+
+      setPricingRuleValues({
+  ...initialRentalPricingRuleState,
+  minimumRentalDays:
+    initialState.rentalMinDays > 0
+      ? initialState.rentalMinDays
+      : 4,
+  securityDeposit:
+    initialState.rentalSecurityDeposit,
+  lateFeePerDay:
+    initialState.rentalLateFeePerDay,
+  allowedInSubscription:
+    initialState.rentalSubscriptionEnabled,
+});
+
+        return;
+      }
+
+      setPricingRuleId(rule.id);
+
+      setPricingRuleValues({
+        minimumRentalDays:
+          numberValue(rule.minimumRentalDays, 4),
+        priceFor4Days:
+          numberValue(rule.priceFor4Days, 0),
+        priceFor7Days:
+          numberValue(rule.priceFor7Days, 0),
+        priceFor28Days:
+          numberValue(rule.priceFor28Days, 0),
+        securityDeposit:
+          numberValue(rule.securityDeposit, 0),
+        lateFeePerDay:
+          numberValue(rule.lateFeePerDay, 0),
+        allowedInSubscription:
+          Boolean(rule.allowedInSubscription),
+        monthlyCreditCost:
+          numberValue(rule.monthlyCreditCost, 0),
+        premiumSurcharge:
+          numberValue(rule.premiumSurcharge, 0),
+      });
+    } catch (loadError) {
+      if (!isMounted) return;
+
+      setPricingRuleId(null);
+
+      setPricingRuleError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Failed to load the rental pricing rule.",
+      );
+    } finally {
+      if (isMounted) {
+        setIsLoadingPricingRule(false);
+      }
+    }
+  }
+
+  void loadRentalPricingRule();
+
+  return () => {
+    isMounted = false;
+  };
+}, [
+  apiRootUrl,
+  productId,
+  token,
+  isRentalSelected,
+  initialState,
+]);
 
 useEffect(() => {
   if (isLoadingCommerceTypes) return;
@@ -496,6 +666,18 @@ useEffect(() => {
     }));
   }
 
+  function updatePricingRuleValue<
+  K extends keyof RentalPricingRuleFormState,
+>(
+  key: K,
+  value: RentalPricingRuleFormState[K],
+) {
+  setPricingRuleValues((current) => ({
+    ...current,
+    [key]: value,
+  }));
+}
+
   function toggleConfigSection(code: ProductCommerceType) {
   setOpenConfigSections((current) => ({
     ...current,
@@ -505,7 +687,7 @@ useEffect(() => {
 function toggleCommerceType(code: ProductCommerceType) {
   if (!activeCommerceTypeCodes.has(code)) {
     setError(
-      `${code} global Commerce Models master me active nahi hai. Pehle master me create/activate karo.`,
+   `${code} is not active in the global Commerce Models master. Create or activate it first.`,
     );
     return;
   }
@@ -553,7 +735,7 @@ const selectedTypes: ProductCommerceType[] = values.selectedTypes.filter(
 
 if (!selectedTypes.length) {
   throw new Error(
-    "Koi active commerce model selected nahi hai. Pehle Commerce Models master me commerce type create/activate karo.",
+   "No active commerce model is selected. Create or activate a commerce type in the Commerce Models master.",
   );
 }
 
@@ -603,28 +785,96 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
         });
       }
 
-      if (selectedTypes.includes("RENTAL")) {
-        await saveProductRentalConfig({
-          apiRootUrl,
-          productId,
-          token,
-          payload: {
-            enabled: true,
-            dailyRentalEnabled: values.rentalDailyEnabled,
-            subscriptionRentalEnabled: values.rentalSubscriptionEnabled,
-            dailyPrice: values.rentalDailyPrice,
-            subscriptionPrice: values.rentalSubscriptionPrice,
-            securityDeposit: values.rentalSecurityDeposit,
-            cleaningBufferDays: values.rentalCleaningBufferDays,
-            rentalCondition: values.rentalCondition,
-            extra: {
-              minRentalDays: values.rentalMinDays,
-              maxRentalDays: values.rentalMaxDays,
-              lateFeePerDay: values.rentalLateFeePerDay,
-            },
-          },
-        });
-      }
+   if (selectedTypes.includes("RENTAL")) {
+  if (
+    values.rentalDailyEnabled &&
+    values.rentalDailyPrice <= 0
+  ) {
+    throw new Error(
+      "Daily Rental enabled hai, isliye Daily Price 0 se greater hona chahiye.",
+    );
+  }
+
+  if (
+    values.rentalSubscriptionEnabled &&
+    values.rentalSubscriptionPrice <= 0
+  ) {
+    throw new Error(
+      "Subscription Rental enabled hai, isliye Subscription Price 0 se greater hona chahiye.",
+    );
+  }
+
+  if (values.rentalMinDays < 1) {
+    throw new Error(
+      "Minimum rental days kam se kam 1 hona chahiye.",
+    );
+  }
+
+  if (
+    values.rentalMaxDays <
+    values.rentalMinDays
+  ) {
+    throw new Error(
+      "Maximum rental days, minimum rental days se kam nahi ho sakta.",
+    );
+  }
+
+  await saveProductRentalConfig({
+    apiRootUrl,
+    productId,
+    token,
+    payload: {
+      enabled: true,
+      dailyRentalEnabled:
+        values.rentalDailyEnabled,
+      subscriptionRentalEnabled:
+        values.rentalSubscriptionEnabled,
+      dailyPrice: values.rentalDailyPrice,
+      subscriptionPrice:
+        values.rentalSubscriptionPrice,
+      securityDeposit:
+        values.rentalSecurityDeposit,
+      cleaningBufferDays:
+        values.rentalCleaningBufferDays,
+      rentalCondition:
+        values.rentalCondition.trim(),
+      extra: {
+        minRentalDays: values.rentalMinDays,
+        maxRentalDays: values.rentalMaxDays,
+        lateFeePerDay:
+          values.rentalLateFeePerDay,
+      },
+    },
+  });
+} else if (
+  initialState.selectedTypes.includes("RENTAL")
+) {
+  await saveProductRentalConfig({
+    apiRootUrl,
+    productId,
+    token,
+    payload: {
+      enabled: false,
+      dailyRentalEnabled: false,
+      subscriptionRentalEnabled: false,
+      dailyPrice: values.rentalDailyPrice,
+      subscriptionPrice:
+        values.rentalSubscriptionPrice,
+      securityDeposit:
+        values.rentalSecurityDeposit,
+      cleaningBufferDays:
+        values.rentalCleaningBufferDays,
+      rentalCondition:
+        values.rentalCondition.trim(),
+      extra: {
+        minRentalDays: values.rentalMinDays,
+        maxRentalDays: values.rentalMaxDays,
+        lateFeePerDay:
+          values.rentalLateFeePerDay,
+      },
+    },
+  });
+}
 
       if (selectedTypes.includes("RESALE")) {
         await saveProductResaleConfig({
@@ -690,8 +940,7 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
           },
         });
       }
-
-      setMessage("Product commerce models save ho gaye.");
+setMessage("Product commerce models saved successfully.");
       onSaved();
     } catch (saveError) {
       setError(
@@ -703,6 +952,164 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
       setIsSaving(false);
     }
   }
+
+  async function handleSaveRentalPricingRule() {
+  try {
+    setIsSavingPricingRule(true);
+    setPricingRuleError(null);
+    setPricingRuleMessage(null);
+
+    if (!productId.trim()) {
+      throw new Error("Product ID is missing.");
+    }
+
+    if (pricingRuleValues.minimumRentalDays < 1) {
+      throw new Error(
+        "Minimum rental days must be at least 1.",
+      );
+    }
+
+    if (pricingRuleValues.priceFor4Days < 0) {
+      throw new Error(
+        "Price for 4 days cannot be negative.",
+      );
+    }
+
+    if (pricingRuleValues.priceFor7Days < 0) {
+      throw new Error(
+        "Price for 7 days cannot be negative.",
+      );
+    }
+
+    if (pricingRuleValues.priceFor28Days < 0) {
+      throw new Error(
+        "Price for 28 days cannot be negative.",
+      );
+    }
+
+    if (pricingRuleValues.securityDeposit < 0) {
+      throw new Error(
+        "Security deposit cannot be negative.",
+      );
+    }
+
+    if (pricingRuleValues.lateFeePerDay < 0) {
+      throw new Error(
+        "Late fee per day cannot be negative.",
+      );
+    }
+
+    if (pricingRuleValues.monthlyCreditCost < 0) {
+      throw new Error(
+        "Monthly credit cost cannot be negative.",
+      );
+    }
+
+    if (pricingRuleValues.premiumSurcharge < 0) {
+      throw new Error(
+        "Premium surcharge cannot be negative.",
+      );
+    }
+
+    await saveProductRentalPricingRule({
+      apiRootUrl,
+      token,
+      payload: {
+        productId,
+        minimumRentalDays:
+          pricingRuleValues.minimumRentalDays,
+        priceFor4Days:
+          pricingRuleValues.priceFor4Days,
+        priceFor7Days:
+          pricingRuleValues.priceFor7Days,
+        priceFor28Days:
+          pricingRuleValues.priceFor28Days,
+        securityDeposit:
+          pricingRuleValues.securityDeposit,
+        lateFeePerDay:
+          pricingRuleValues.lateFeePerDay,
+        allowedInSubscription:
+          pricingRuleValues.allowedInSubscription,
+        monthlyCreditCost:
+          pricingRuleValues.monthlyCreditCost,
+        premiumSurcharge:
+          pricingRuleValues.premiumSurcharge,
+      },
+    });
+
+    const refreshedRule =
+      await getProductRentalPricingRule({
+        apiRootUrl,
+        productId,
+        token,
+      });
+
+    if (refreshedRule) {
+      setPricingRuleId(refreshedRule.id);
+
+      setPricingRuleValues({
+        minimumRentalDays:
+          numberValue(
+            refreshedRule.minimumRentalDays,
+            4,
+          ),
+        priceFor4Days:
+          numberValue(
+            refreshedRule.priceFor4Days,
+            0,
+          ),
+        priceFor7Days:
+          numberValue(
+            refreshedRule.priceFor7Days,
+            0,
+          ),
+        priceFor28Days:
+          numberValue(
+            refreshedRule.priceFor28Days,
+            0,
+          ),
+        securityDeposit:
+          numberValue(
+            refreshedRule.securityDeposit,
+            0,
+          ),
+        lateFeePerDay:
+          numberValue(
+            refreshedRule.lateFeePerDay,
+            0,
+          ),
+        allowedInSubscription:
+          Boolean(
+            refreshedRule.allowedInSubscription,
+          ),
+        monthlyCreditCost:
+          numberValue(
+            refreshedRule.monthlyCreditCost,
+            0,
+          ),
+        premiumSurcharge:
+          numberValue(
+            refreshedRule.premiumSurcharge,
+            0,
+          ),
+      });
+    }
+
+    setPricingRuleMessage(
+      pricingRuleId
+        ? "Rental pricing rule updated successfully."
+        : "Rental pricing rule created successfully.",
+    );
+  } catch (saveError) {
+    setPricingRuleError(
+      saveError instanceof Error
+        ? saveError.message
+        : "Failed to save the rental pricing rule.",
+    );
+  } finally {
+    setIsSavingPricingRule(false);
+  }
+}
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
@@ -754,12 +1161,12 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
 
      {isLoadingCommerceTypes ? (
   <div className="mt-5 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-600">
-    Active commerce models load ho rahe hain...
+Active commerce models are loading...
   </div>
 ) : !visibleCommerceOptions.length ? (
   <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-    Koi active Commerce Model master me available nahi hai. Pehle Catalog
-    Management &gt; Commerce Models me commerce type create/activate karo.
+  No active commerce model is available. Create or activate a commerce
+type under Catalog Management &gt; Commerce Models.
   </div>
 ) : (
   <div className="mt-5 grid gap-3 md:grid-cols-5">
@@ -923,6 +1330,196 @@ const defaultCommerceType: ProductCommerceType = selectedTypes.includes(
             />
           </ConfigCard>
         ) : null}
+
+        {isRentalSelected ? (
+  <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-[#fbfaf6]">
+    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-neutral-200 px-4 py-4">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold text-neutral-950">
+            Rental Pricing Rule
+          </h3>
+
+          <span className="rounded-full border border-[#e0c18a] bg-[#fff4df] px-2.5 py-1 text-xs font-medium text-[#6f4a16]">
+            {pricingRuleId
+              ? "EXISTING RULE"
+              : "NEW RULE"}
+          </span>
+        </div>
+
+        <p className="mt-1 text-xs text-neutral-500">
+          Configure product-level rental prices.
+          Saving uses the backend product-level upsert.
+        </p>
+
+        {pricingRuleId ? (
+          <p className="mt-1 text-[11px] text-neutral-400">
+            Rule ID: {pricingRuleId}
+          </p>
+        ) : null}
+      </div>
+
+      <Button
+        type="button"
+        onClick={handleSaveRentalPricingRule}
+        disabled={
+          isSavingPricingRule ||
+          isLoadingPricingRule
+        }
+        className="rounded-full bg-neutral-950 text-white hover:bg-neutral-800"
+      >
+        {isSavingPricingRule ? (
+          <>
+            <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+            Saving...
+          </>
+        ) : (
+          <>
+            <Save className="mr-2 h-4 w-4" />
+            Save Pricing Rule
+          </>
+        )}
+      </Button>
+    </div>
+
+    {pricingRuleMessage ? (
+      <div className="mx-4 mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        {pricingRuleMessage}
+      </div>
+    ) : null}
+
+    {pricingRuleError ? (
+      <div className="mx-4 mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        {pricingRuleError}
+      </div>
+    ) : null}
+
+    {isLoadingPricingRule ? (
+      <div className="p-6 text-sm text-neutral-500">
+        Loading rental pricing rule...
+      </div>
+    ) : (
+      <div className="grid gap-4 p-4 md:grid-cols-3">
+        <NumberField
+          label="Minimum Rental Days"
+          value={
+            pricingRuleValues.minimumRentalDays
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "minimumRentalDays",
+              value,
+            )
+          }
+        />
+
+        <NumberField
+          label="Price for 4 Days"
+          value={
+            pricingRuleValues.priceFor4Days
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "priceFor4Days",
+              value,
+            )
+          }
+        />
+
+        <NumberField
+          label="Price for 7 Days"
+          value={
+            pricingRuleValues.priceFor7Days
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "priceFor7Days",
+              value,
+            )
+          }
+        />
+
+        <NumberField
+          label="Price for 28 Days"
+          value={
+            pricingRuleValues.priceFor28Days
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "priceFor28Days",
+              value,
+            )
+          }
+        />
+
+        <NumberField
+          label="Security Deposit"
+          value={
+            pricingRuleValues.securityDeposit
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "securityDeposit",
+              value,
+            )
+          }
+        />
+
+        <NumberField
+          label="Late Fee Per Day"
+          value={
+            pricingRuleValues.lateFeePerDay
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "lateFeePerDay",
+              value,
+            )
+          }
+        />
+
+        <CheckboxField
+          label="Allowed in Subscription"
+          checked={
+            pricingRuleValues.allowedInSubscription
+          }
+          onChange={(checked) =>
+            updatePricingRuleValue(
+              "allowedInSubscription",
+              checked,
+            )
+          }
+        />
+
+        <NumberField
+          label="Monthly Credit Cost"
+          value={
+            pricingRuleValues.monthlyCreditCost
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "monthlyCreditCost",
+              value,
+            )
+          }
+        />
+
+        <NumberField
+          label="Premium Surcharge"
+          value={
+            pricingRuleValues.premiumSurcharge
+          }
+          onChange={(value) =>
+            updatePricingRuleValue(
+              "premiumSurcharge",
+              value,
+            )
+          }
+        />
+      </div>
+    )}
+  </div>
+) : null}
 
         {allowedSelectedTypes.includes("RESALE") ? (
         <ConfigCard

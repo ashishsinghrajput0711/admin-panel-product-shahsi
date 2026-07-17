@@ -140,16 +140,16 @@ async function postProductCommerceConfig<TPayload>({
 
   const json = await readJson<ApiResponse<unknown>>(response);
 
-  if (!response.ok) {
-    throw new Error(
-      getErrorMessage(
-        json,
-        `${endpoint} save failed: ${response.status} ${response.statusText}`,
-      ),
-    );
-  }
+if (!response.ok || json.success === false) {
+  throw new Error(
+    getErrorMessage(
+      json,
+      `${endpoint} save failed: ${response.status} ${response.statusText}`,
+    ),
+  );
+}
 
-  return json;
+return json;
 }
 
 export function saveProductCommerceConfig(args: {
@@ -222,4 +222,153 @@ export function saveProductSubscriptionConfig(args: {
     ...args,
     endpoint: "subscription-config",
   });
+}
+
+export type RentalPricingRule = {
+  id: string;
+  productId: string;
+  minimumRentalDays: number;
+  priceFor4Days: number;
+  priceFor7Days: number;
+  priceFor28Days: number;
+  securityDeposit: number | null;
+  lateFeePerDay: number | null;
+  allowedInSubscription: boolean;
+  monthlyCreditCost: number | null;
+  premiumSurcharge: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+  product?: {
+    id?: string;
+    title?: string;
+    sku?: string;
+    slug?: string;
+  } | null;
+};
+
+export type RentalPricingRulePayload = {
+  productId: string;
+  minimumRentalDays: number;
+  priceFor4Days: number;
+  priceFor7Days: number;
+  priceFor28Days: number;
+  securityDeposit?: number;
+  lateFeePerDay?: number;
+  allowedInSubscription?: boolean;
+  monthlyCreditCost?: number;
+  premiumSurcharge?: number;
+};
+
+type RentalPricingRuleListResponse = {
+  data: RentalPricingRule[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+};
+
+function isApiEnvelope(
+  value: unknown,
+): value is ApiResponse<unknown> {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "success" in value,
+  );
+}
+
+export async function getProductRentalPricingRule({
+  apiRootUrl,
+  productId,
+  token,
+}: {
+  apiRootUrl: string;
+  productId: string;
+  token?: string | null;
+}) {
+  const query = new URLSearchParams({
+    page: "1",
+    limit: "1",
+    productId,
+  });
+
+  const response = await fetch(
+    `${apiRootUrl}/admin/rental/pricing-rules?${query.toString()}`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+      cache: "no-store",
+    },
+  );
+
+  const raw = await readJson<unknown>(response);
+
+  if (
+    !response.ok ||
+    (isApiEnvelope(raw) && raw.success === false)
+  ) {
+    throw new Error(
+      getErrorMessage(
+        raw as ApiResponse<unknown>,
+        `Rental pricing rule load failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  const payload = isApiEnvelope(raw)
+    ? raw.data
+    : raw;
+
+  const listResponse =
+    payload as RentalPricingRuleListResponse;
+
+  if (
+    !listResponse ||
+    !Array.isArray(listResponse.data)
+  ) {
+    throw new Error(
+      "Rental pricing rules API returned an invalid response.",
+    );
+  }
+
+  return listResponse.data[0] || null;
+}
+
+export async function saveProductRentalPricingRule({
+  apiRootUrl,
+  payload,
+  token,
+}: {
+  apiRootUrl: string;
+  payload: RentalPricingRulePayload;
+  token?: string | null;
+}) {
+  const response = await fetch(
+    `${apiRootUrl}/admin/rental/pricing-rule`,
+    {
+      method: "POST",
+      headers: getHeaders(token),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  const raw = await readJson<unknown>(response);
+
+  if (
+    !response.ok ||
+    (isApiEnvelope(raw) && raw.success === false)
+  ) {
+    throw new Error(
+      getErrorMessage(
+        raw as ApiResponse<unknown>,
+        `Rental pricing rule save failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+
+  return isApiEnvelope(raw)
+    ? (raw.data as RentalPricingRule | undefined)
+    : (raw as RentalPricingRule);
 }

@@ -243,7 +243,23 @@ export type AdminCatalogVariant = {
   status?: string | null;
   productionType?: string | null;
 };
+export type CreateRentalInventoryUnitPayload = {
+  productId: string;
+  variantId?: string;
+  skuCode: string;
+  condition?: string;
+};
 
+export type RentalInventoryUnitResponse = {
+  id?: string;
+  productId?: string;
+  variantId?: string | null;
+  skuCode?: string;
+  condition?: string | null;
+  status?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
 export type ProductPickerQuery = {
   ids?: string;
   search?: string;
@@ -358,7 +374,7 @@ async function inventoryRequest<T>(
   const rawText = await response.text();
   const json = rawText ? JSON.parse(rawText) : null;
 
-  if (!response.ok) {
+ if (!response.ok || json?.success === false) {
  console.warn("INVENTORY API WARNING:", {
   method,
   endpoint,
@@ -550,4 +566,20 @@ export async function getAdminProductVariants(productId: string) {
   }>(`/admin/catalog/${productId}/variants`);
 
   return response.data ?? [];
+}
+
+export async function createRentalInventoryUnit(
+  payload: CreateRentalInventoryUnitPayload,
+) {
+  const response = await inventoryRequest<{
+    success?: boolean;
+    data?: RentalInventoryUnitResponse;
+    error?: unknown;
+    message?: string;
+  }>("/admin/rental/inventory-unit", {
+    method: "POST",
+    body: payload,
+  });
+
+  return response.data;
 }

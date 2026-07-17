@@ -83,15 +83,18 @@ export function PricingTable({
   <th className="w-[8%] px-5 py-4">Priority</th>
   <th className="w-[16%] px-5 py-4">Schedule</th>
   <th className="w-[9%] px-5 py-4">Status</th>
-  <th className="w-[10%] px-5 py-4 text-right">Action</th>
+<th className="w-[10%] px-5 py-4 text-right">Actions</th>
 </tr>
           </thead>
 
           <tbody className="divide-y divide-neutral-200">
             {rules.map((rule) => (
-              <tr key={rule.id} className="align-top hover:bg-[#fbfaf6]">
+           <tr
+  key={rule.id}
+  className="group align-top transition-colors duration-300 hover:bg-[#fbfaf6]"
+>
           <td className="px-5 py-4">
-  <p className="line-clamp-2 font-semibold leading-6 text-neutral-950">
+ <p className="line-clamp-2 font-semibold leading-6 text-neutral-950 transition-transform duration-300 group-hover:translate-x-1">
     {rule.name}
   </p>
                   {getRuleTargetId(rule) ? (
@@ -148,7 +151,7 @@ export function PricingTable({
       href={`/admin/catalog/pricing/${rule.id}`}
       title="Edit pricing rule"
       aria-label="Edit pricing rule"
-      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-200 text-neutral-700 transition hover:border-neutral-950 hover:text-neutral-950"
+     className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-200 text-neutral-700 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-neutral-950 hover:bg-neutral-950 hover:text-white hover:shadow-md active:scale-95"
     >
       <Pencil className="h-4 w-4" />
     </Link>
@@ -158,7 +161,7 @@ export function PricingTable({
       onClick={() => onDelete(rule.id)}
       title="Delete pricing rule"
       aria-label="Delete pricing rule"
-      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-200 text-red-600 transition hover:bg-red-50"
+    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-200 text-red-600 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-red-50 hover:shadow-md active:scale-95"
     >
       <Trash2 className="h-4 w-4" />
     </button>

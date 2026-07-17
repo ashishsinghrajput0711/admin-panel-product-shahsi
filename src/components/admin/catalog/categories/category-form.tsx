@@ -792,202 +792,7 @@ const hasLocalSelection = selectedId === "__local__" && Boolean(localPreviewUrl)
                 />
               </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-  <div className="relative">
-    <button
-      type="button"
-      onClick={() =>
-        setOpenFilter((current) =>
-          current === "fileSize" ? null : "fileSize",
-        )
-      }
-      className="inline-flex h-9 items-center gap-2 rounded-full border border-dashed border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
-    >
-      File size
-      <ChevronDown className="h-4 w-4" />
-    </button>
-
-    {openFilter === "fileSize" ? (
-      <div className="absolute left-0 top-11 z-30 w-[300px] rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl">
-        <label className="block text-sm font-medium text-neutral-700">
-          Min size (MB)
-        </label>
-        <input
-          value={minSizeMb}
-          onChange={(event) => setMinSizeMb(event.target.value)}
-          inputMode="decimal"
-          className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-950"
-        />
-
-        <label className="mt-4 block text-sm font-medium text-neutral-700">
-          Max size (MB)
-        </label>
-        <input
-          value={maxSizeMb}
-          onChange={(event) => setMaxSizeMb(event.target.value)}
-          inputMode="decimal"
-          className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-950"
-        />
-
-        <button
-          type="button"
-          onClick={() => {
-            setMinSizeMb("");
-            setMaxSizeMb("");
-          }}
-          disabled={!minSizeMb && !maxSizeMb}
-          className="mt-3 text-sm font-semibold text-neutral-500 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Clear
-        </button>
-      </div>
-    ) : null}
-  </div>
-
-  <div className="relative">
-    <button
-      type="button"
-      onClick={() =>
-        setOpenFilter((current) => (current === "usedIn" ? null : "usedIn"))
-      }
-      className="inline-flex h-9 items-center gap-2 rounded-full border border-dashed border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
-    >
-      Used in
-      <ChevronDown className="h-4 w-4" />
-    </button>
-
-    {openFilter === "usedIn" ? (
-      <div className="absolute left-0 top-11 z-30 w-[260px] rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl">
-        {[
-          { label: "Product media", value: "PRODUCT" },
-          { label: "Other", value: "OTHER" },
-        ].map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() =>
-              setUsedInFilter((current) =>
-                current === option.value ? "" : (option.value as "PRODUCT" | "OTHER"),
-              )
-            }
-            className="flex w-full items-center gap-3 rounded-xl px-1 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50"
-          >
-            <span
-              className={`h-5 w-5 rounded-full border ${
-                usedInFilter === option.value
-                  ? "border-neutral-950 bg-neutral-950 shadow-[inset_0_0_0_5px_white]"
-                  : "border-neutral-300"
-              }`}
-            />
-            {option.label}
-          </button>
-        ))}
-
-        <button
-          type="button"
-          onClick={() => setUsedInFilter("")}
-          disabled={!usedInFilter}
-          className="mt-2 text-sm font-semibold text-neutral-500 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Clear
-        </button>
-      </div>
-    ) : null}
-  </div>
-
-  <div className="relative">
-    <button
-      type="button"
-      onClick={() =>
-        setOpenFilter((current) => (current === "product" ? null : "product"))
-      }
-      className="inline-flex h-9 items-center gap-2 rounded-full border border-dashed border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
-    >
-      Product
-      <ChevronDown className="h-4 w-4" />
-    </button>
-
-    {openFilter === "product" ? (
-      <div className="absolute left-0 top-11 z-30 max-h-[430px] w-[360px] overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-          <input
-            value={productSearch}
-            onChange={(event) => setProductSearch(event.target.value)}
-            placeholder="Search for products"
-            className="h-11 w-full rounded-xl border border-neutral-300 pl-9 pr-3 text-sm outline-none focus:border-neutral-950"
-          />
-        </div>
-
-        <div className="mt-3 space-y-1">
-          {isProductsLoading ? (
-            <div className="flex items-center justify-center py-6 text-sm text-neutral-500">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading products...
-            </div>
-          ) : productItems.length ? (
-            productItems.map((product) => {
-              const checked = selectedProductIds.includes(product.id);
-
-              return (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedProductIds((current) =>
-                      current.includes(product.id)
-                        ? current.filter((id) => id !== product.id)
-                        : [...current, product.id],
-                    );
-                  }}
-                  className="flex w-full items-start gap-3 rounded-xl px-1 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50"
-                >
-                  <span
-                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
-                      checked
-                        ? "border-neutral-950 bg-neutral-950 text-white"
-                        : "border-neutral-300 bg-white text-transparent"
-                    }`}
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </span>
-
-                  <span>
-                    <span className="block font-medium">
-                      {product.title || product.name}
-                    </span>
-                    {product.sku ? (
-                      <span className="mt-0.5 block text-xs text-neutral-500">
-                        {product.sku}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              );
-            })
-          ) : (
-            <div className="py-6 text-center text-sm text-neutral-500">
-              No products found.
-            </div>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-          setSelectedProductIds([]);
-setProductMediaItems([]);
-setProductSearch("");
-          }}
-          disabled={!selectedProductIds.length && !productSearch}
-          className="mt-3 text-sm font-semibold text-neutral-500 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Clear
-        </button>
-      </div>
-    ) : null}
-  </div>
-</div>
+     
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -1593,16 +1398,20 @@ function handleSlugChange(slug: string) {
               </div>
             </div>
 
-            <div className="mt-4">
-              <InputLabel>Description</InputLabel>
+          <div className="mt-4 min-w-0">
+  <InputLabel>Description</InputLabel>
+
+  <div className="mt-2 min-w-0 max-w-full overflow-hidden rounded-lg">
     <RichTextEditor
-  value={values.description}
-  onChange={(value) => updateValue("description", value)}
-  productId={values.id}
-  minHeightClass="min-h-[260px]"
-  maxHeightClass="max-h-[420px]"
-/>
-            </div>
+      value={values.description || ""}
+      onChange={(value) =>
+        updateValue("description", value)
+      }
+      minHeightClass="min-h-[260px]"
+      maxHeightClass="max-h-[420px]"
+    />
+  </div>
+</div>
           </section>
 
        <section className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-neutral-200">

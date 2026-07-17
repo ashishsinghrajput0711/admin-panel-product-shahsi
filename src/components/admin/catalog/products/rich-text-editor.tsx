@@ -1176,23 +1176,23 @@ return (
         onChange={(event) => uploadImageFromDialog(event.target.files)}
       />
 
-    <div
+<div
   className={[
-    "relative z-20 max-w-full items-center border-b border-neutral-200 bg-neutral-50",
+    "relative z-20 flex min-w-0 max-w-full flex-wrap items-center border-b border-neutral-200 bg-neutral-50",
     compact
-      ? "flex flex-wrap gap-0.5 p-1.5"
-      : "flex flex-nowrap gap-1 overflow-visible p-2",
+      ? "gap-0.5 p-1.5"
+      : "gap-1 p-2",
   ].join(" ")}
 >
       <select
   value={getHeadingSelectValue(activeEditor)}
   onChange={(event) => setBlockType(event.target.value)}
-  className={[
-    "shrink-0 rounded-md border border-neutral-200 bg-white font-medium outline-none",
-    compact
-      ? "h-7 max-w-[110px] px-1.5 text-xs"
-      : "h-8 px-2 text-sm",
-  ].join(" ")}
+ className={[
+  "min-w-0 shrink-0 rounded-md border border-neutral-200 bg-white font-medium outline-none",
+  compact
+    ? "h-7 max-w-[110px] px-1.5 text-xs"
+    : "h-8 max-w-[140px] px-2 text-sm",
+].join(" ")}
 >
           <option value="p">Paragraph</option>
           <option value="h1">Heading 1</option>
@@ -1414,7 +1414,7 @@ return (
           <Redo2 className="h-4 w-4" />
         </ToolbarButton>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center gap-1 max-sm:ml-0">
           <ToolbarButton
             active={mode === "html"}
             title={mode === "html" ? "Switch to preview" : "Switch to HTML"}

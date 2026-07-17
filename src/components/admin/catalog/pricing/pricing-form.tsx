@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { CalendarDays, Plus, Tag, X } from "lucide-react";
+
 import { PricingVariantPicker } from "./pricing-variant-picker";
 import {
   ADJUSTMENT_TYPES,
@@ -31,9 +33,86 @@ export type PricingFormValues = {
   priority: string;
   isActive: boolean;
   startsAt: string;
-  endsAt: string;
-  conditionsText: string;
+endsAt: string;
+
+conditionDays: PricingDay[];
+conditionTags: string[];
+
+/*
+ * Edit page se existing backend conditions JSON isi field mein aati rahegi.
+ * UI mein raw JSON show nahi karenge.
+ */
+conditionsText: string;
 };
+
+const PRICING_DAYS = [
+  { value: "MONDAY", label: "Mon", fullLabel: "Monday" },
+  { value: "TUESDAY", label: "Tue", fullLabel: "Tuesday" },
+  { value: "WEDNESDAY", label: "Wed", fullLabel: "Wednesday" },
+  { value: "THURSDAY", label: "Thu", fullLabel: "Thursday" },
+  { value: "FRIDAY", label: "Fri", fullLabel: "Friday" },
+  { value: "SATURDAY", label: "Sat", fullLabel: "Saturday" },
+  { value: "SUNDAY", label: "Sun", fullLabel: "Sunday" },
+] as const;
+
+type PricingDay = (typeof PRICING_DAYS)[number]["value"];
+
+function parseConditionsText(value?: string) {
+  if (!value?.trim()) {
+    return {} as Record<string, unknown>;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed)
+    ) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Existing invalid JSON ko structured UI mein expose nahi karenge.
+  }
+
+  return {} as Record<string, unknown>;
+}
+
+function getConditionDays(
+  conditions: Record<string, unknown>,
+): PricingDay[] {
+  const rawDays = Array.isArray(conditions.daysOfWeek)
+    ? conditions.daysOfWeek
+    : [];
+
+  const allowedDays = new Set<string>(
+    PRICING_DAYS.map((day) => day.value),
+  );
+
+  return rawDays
+    .map((day) => String(day).trim().toUpperCase())
+    .filter(
+      (day): day is PricingDay =>
+        allowedDays.has(day),
+    );
+}
+
+function getConditionTags(
+  conditions: Record<string, unknown>,
+) {
+  const rawTags = Array.isArray(conditions.tags)
+    ? conditions.tags
+    : [];
+
+  return Array.from(
+    new Set(
+      rawTags
+        .map((tag) => String(tag).trim())
+        .filter(Boolean),
+    ),
+  );
+}
 
 const defaultValues: PricingFormValues = {
   name: "",
@@ -47,9 +126,11 @@ const defaultValues: PricingFormValues = {
   maxBasePrice: "",
   priority: "0",
   isActive: true,
-  startsAt: "",
-  endsAt: "",
-  conditionsText: "",
+startsAt: "",
+endsAt: "",
+conditionDays: [],
+conditionTags: [],
+conditionsText: "",
 };
 
 export function PricingForm({
@@ -61,13 +142,26 @@ export function PricingForm({
   submitLabel?: string;
   onSubmit: (values: DynamicPricingRulePayload) => Promise<void> | void;
 }) {
-  const [values, setValues] = useState<PricingFormValues>({
+const [values, setValues] = useState<PricingFormValues>(() => {
+  const mergedValues = {
     ...defaultValues,
     ...initialValues,
-  });
+  };
 
-  const [error, setError] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
+  const savedConditions = parseConditionsText(
+    mergedValues.conditionsText,
+  );
+
+  return {
+    ...mergedValues,
+    conditionDays: getConditionDays(savedConditions),
+    conditionTags: getConditionTags(savedConditions),
+  };
+});
+
+const [conditionTagInput, setConditionTagInput] = useState("");
+const [error, setError] = useState("");
+const [isSaving, setIsSaving] = useState(false);
 
   function updateValue<K extends keyof PricingFormValues>(
     key: K,
@@ -78,7 +172,69 @@ export function PricingForm({
       [key]: value,
     }));
   }
+function toggleConditionDay(day: PricingDay) {
+  setValues((current) => {
+    const alreadySelected =
+      current.conditionDays.includes(day);
 
+    return {
+      ...current,
+      conditionDays: alreadySelected
+        ? current.conditionDays.filter(
+            (selectedDay) => selectedDay !== day,
+          )
+        : [...current.conditionDays, day],
+    };
+  });
+}
+
+function addConditionTag() {
+  const cleanTag = conditionTagInput.trim();
+
+  if (!cleanTag) {
+    return;
+  }
+
+  setValues((current) => {
+    const alreadyExists = current.conditionTags.some(
+      (tag) =>
+        tag.toLowerCase() === cleanTag.toLowerCase(),
+    );
+
+    if (alreadyExists) {
+      return current;
+    }
+
+    return {
+      ...current,
+      conditionTags: [
+        ...current.conditionTags,
+        cleanTag,
+      ],
+    };
+  });
+
+  setConditionTagInput("");
+}
+
+function removeConditionTag(tagToRemove: string) {
+  setValues((current) => ({
+    ...current,
+    conditionTags: current.conditionTags.filter(
+      (tag) => tag !== tagToRemove,
+    ),
+  }));
+}
+
+function clearConditions() {
+  setValues((current) => ({
+    ...current,
+    conditionDays: [],
+    conditionTags: [],
+  }));
+
+  setConditionTagInput("");
+}
 function buildPayload(): DynamicPricingRulePayload {
   const adjustmentValue = Number(values.adjustmentValue);
   const priority = Number(values.priority || 0);
@@ -95,20 +251,30 @@ function buildPayload(): DynamicPricingRulePayload {
     throw new Error(`${values.scope} scope ke liye target ID required hai.`);
   }
 
- let conditions: Record<string, unknown> = {};
+/*
+ * Existing backend object ke unknown keys preserve rahenge.
+ * Sirf daysOfWeek aur tags clean UI controls se manage honge.
+ */
+const savedConditions = parseConditionsText(
+  values.conditionsText,
+);
 
-if (values.conditionsText.trim()) {
-  try {
-    const parsed = JSON.parse(values.conditionsText);
+const {
+  daysOfWeek: _savedDays,
+  tags: _savedTags,
+  ...preservedConditions
+} = savedConditions;
 
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error();
-    }
+const conditions: Record<string, unknown> = {
+  ...preservedConditions,
+};
 
-    conditions = parsed as Record<string, unknown>;
-  } catch {
-    throw new Error("Conditions JSON valid object hona chahiye.");
-  }
+if (values.conditionDays.length > 0) {
+  conditions.daysOfWeek = values.conditionDays;
+}
+
+if (values.conditionTags.length > 0) {
+  conditions.tags = values.conditionTags;
 }
 
   const minBasePrice = values.minBasePrice.trim()
@@ -435,20 +601,125 @@ return payload;
         </label>
       </section>
 
-      <section className="rounded-[1.5rem] border border-neutral-200 bg-white p-6">
-        <h2 className="text-2xl font-medium">Conditions JSON</h2>
+    <section
+  data-product-section
+  className="rounded-[1.5rem] border border-neutral-200 bg-white p-6"
+>
+  <div>
+    <h2 className="text-2xl font-medium text-neutral-950">
+      Rule Conditions
+    </h2>
 
-        <p className="mt-2 text-sm text-neutral-500">
-          Weekend / rental duration conditions yahan JSON format me daal sakte ho.
-        </p>
+    <p className="mt-2 text-sm leading-6 text-neutral-500">
+      Optional conditions select karo. Koi condition select nahi hogi to
+      rule selected scope par normally apply hoga.
+    </p>
+  </div>
 
-        <textarea
-          value={values.conditionsText}
-          onChange={(event) => updateValue("conditionsText", event.target.value)}
-          placeholder={`{\n  "daysOfWeek": ["SATURDAY", "SUNDAY"]\n}`}
-          className="mt-5 min-h-40 w-full rounded-xl border border-neutral-200 px-3 py-3 font-mono text-sm outline-none focus:border-neutral-950"
-        />
-      </section>
+  <div className="mt-6">
+    <p className="text-sm font-medium text-neutral-800">
+      Apply on specific days
+    </p>
+
+    <p className="mt-1 text-xs text-neutral-500">
+      Selected days par hi pricing rule apply hoga.
+    </p>
+
+   <div className="mt-3 flex flex-wrap gap-2">
+  {PRICING_DAYS.map((day) => {
+    const isSelected = values.conditionDays.includes(day.value);
+
+    return (
+      <button
+        key={day.value}
+        type="button"
+        onClick={() => toggleConditionDay(day.value)}
+        aria-pressed={isSelected}
+        title={day.fullLabel}
+        className={[
+          "inline-flex h-10 min-w-14 items-center justify-center rounded-full border px-4 text-sm font-medium transition-all duration-200 active:scale-95",
+          isSelected
+            ? "border-neutral-950 bg-neutral-950 text-white shadow-sm"
+            : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400 hover:bg-neutral-50",
+        ].join(" ")}
+      >
+        {day.label}
+      </button>
+    );
+  })}
+</div>
+  </div>
+
+  <div className="mt-7 border-t border-neutral-100 pt-6">
+    <p className="text-sm font-medium text-neutral-800">
+      Required product tags
+    </p>
+
+    <p className="mt-1 text-xs text-neutral-500">
+      Rule sirf matching product tags ke liye apply hoga.
+    </p>
+
+    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+      <input
+        value={conditionTagInput}
+        onChange={(event) => setConditionTagInput(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === ",") {
+            event.preventDefault();
+            addConditionTag();
+          }
+        }}
+        placeholder="Example: bridal, premium"
+        className="h-11 min-w-0 flex-1 rounded-xl border border-neutral-200 px-3 text-sm outline-none transition focus:border-neutral-950"
+      />
+
+      <button
+        type="button"
+        onClick={addConditionTag}
+        disabled={!conditionTagInput.trim()}
+        className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-neutral-950 px-5 text-sm font-medium text-white transition-all hover:bg-neutral-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Plus className="mr-2 h-4 w-4" />
+        Add tag
+      </button>
+    </div>
+
+  {values.conditionTags.length > 0 ? (
+  <div className="mt-4 flex flex-wrap gap-2">
+    {values.conditionTags.map((tag) => (
+      <span
+        key={tag}
+        className="inline-flex h-9 items-center gap-2 rounded-full border border-neutral-200 bg-[#fbfaf6] pl-4 pr-2 text-sm text-neutral-700"
+      >
+        {tag}
+
+        <button
+          type="button"
+          onClick={() => removeConditionTag(tag)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 transition hover:bg-white hover:text-red-600"
+          aria-label={`Remove ${tag} tag`}
+          title={`Remove ${tag}`}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </span>
+    ))}
+  </div>
+) : (
+  <div className="mt-4 rounded-xl border border-dashed border-neutral-200 bg-[#fbfaf6] px-4 py-3 text-sm text-neutral-500">
+    No product tags selected.
+  </div>
+)}
+  </div>
+
+{values.conditionDays.length === 0 &&
+values.conditionTags.length === 0 ? (
+    <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+      No conditions selected — rule selected scope ke sab eligible records par
+      apply hoga.
+    </div>
+  ) : null}
+</section>
 
       <div className="sticky bottom-4 rounded-full bg-neutral-950 p-3 text-right shadow-xl">
         <button

@@ -12,6 +12,7 @@ import {
   RefreshCcw,
   Search,
   Warehouse,
+  PackagePlus,
   X,
 } from "lucide-react";
 
@@ -19,6 +20,7 @@ import {
   createAdminLocation,
   createAdminWarehouse,
   createInventoryAsset,
+  createRentalInventoryUnit,
   createWarehouseBin,
   deleteInventoryAsset,
   getAdminLocations,
@@ -43,7 +45,12 @@ import {
   type WarehouseBin,
 } from "@/lib/admin/inventory-api";
 
-type InventoryTab = "assets" | "locations" | "warehouses" | "bins";
+type InventoryTab =
+  | "assets"
+  | "rentalUnits"
+  | "locations"
+  | "warehouses"
+  | "bins";
 
 const tabs: Array<{
   id: InventoryTab;
@@ -55,6 +62,11 @@ const tabs: Array<{
     label: "Assets",
     icon: Boxes,
   },
+  {
+  id: "rentalUnits",
+  label: "Rental Units",
+  icon: PackagePlus,
+},
   {
     id: "locations",
     label: "Locations",
@@ -127,6 +139,13 @@ const initialBinForm = {
   isActive: true,
 };
 
+const initialRentalUnitForm = {
+  productId: "",
+  variantId: "",
+  skuCode: "",
+  condition: "",
+};
+
 
 const initialAssetForm = {
   productId: "",
@@ -188,7 +207,7 @@ export default function InventoryPage() {
         </section>
 
         <section className="rounded-[2rem] border border-neutral-200 bg-white p-2 shadow-sm">
-          <div className="grid gap-2 md:grid-cols-4">
+         <div className="grid gap-2 md:grid-cols-5">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -213,10 +232,11 @@ export default function InventoryPage() {
           </div>
         </section>
 
-        {activeTab === "locations" ? <LocationsTab /> : null}
-    {activeTab === "warehouses" ? <WarehousesTab /> : null}
-     {activeTab === "bins" ? <BinsTab /> : null}
-   {activeTab === "assets" ? <AssetsTab /> : null}
+     {activeTab === "locations" ? <LocationsTab /> : null}
+{activeTab === "warehouses" ? <WarehousesTab /> : null}
+{activeTab === "bins" ? <BinsTab /> : null}
+{activeTab === "assets" ? <AssetsTab /> : null}
+{activeTab === "rentalUnits" ? <RentalUnitsTab /> : null}
       </div>
     </main>
   );
@@ -1909,6 +1929,534 @@ await loadBins(1, form.warehouseId);
           </button>
         </div>
       </form>
+      </div>
+    </section>
+  );
+}
+
+function RentalUnitsTab() {
+  const [productSearch, setProductSearch] = useState("");
+  const [productResults, setProductResults] = useState<
+    AdminProductPickerItem[]
+  >([]);
+
+  const [selectedProduct, setSelectedProduct] =
+    useState<AdminProductPickerItem | null>(null);
+
+  const [variants, setVariants] = useState<
+    AdminCatalogVariant[]
+  >([]);
+
+  const [selectedVariant, setSelectedVariant] =
+    useState<AdminCatalogVariant | null>(null);
+
+  const [form, setForm] = useState(
+    initialRentalUnitForm,
+  );
+
+  const [isSearchingProducts, setIsSearchingProducts] =
+    useState(false);
+
+  const [isLoadingVariants, setIsLoadingVariants] =
+    useState(false);
+
+  const [isCreating, setIsCreating] =
+    useState(false);
+
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] =
+    useState("");
+
+  async function searchProducts(
+    searchText = productSearch,
+  ) {
+    try {
+      setIsSearchingProducts(true);
+      setError("");
+
+      const response =
+        await getAdminProductPicker({
+          search:
+            searchText.trim() || undefined,
+          searchBy: "all",
+          status: "ACTIVE",
+          page: 1,
+          limit: 10,
+        });
+
+      setProductResults(response.items);
+    } catch (err) {
+      setProductResults([]);
+
+      setError(
+        err instanceof Error
+          ? err.message
+         : "An error occurred while loading products.",
+      );
+    } finally {
+      setIsSearchingProducts(false);
+    }
+  }
+
+  async function loadVariants(productId: string) {
+    if (!productId) {
+      setVariants([]);
+      setSelectedVariant(null);
+      return;
+    }
+
+    try {
+      setIsLoadingVariants(true);
+      setError("");
+
+      const response =
+        await getAdminProductVariants(productId);
+
+      const activeVariants = response.filter(
+        (variant) =>
+          variant.status !== "INACTIVE" &&
+          variant.isActive !== false,
+      );
+
+      setVariants(activeVariants);
+    } catch (err) {
+      setVariants([]);
+      setSelectedVariant(null);
+
+      setError(
+        err instanceof Error
+          ? err.message
+     : "An error occurred while loading product variants.",
+      );
+    } finally {
+      setIsLoadingVariants(false);
+    }
+  }
+
+  async function selectProduct(
+    product: AdminProductPickerItem,
+  ) {
+    setSelectedProduct(product);
+    setSelectedVariant(null);
+    setProductSearch(product.title);
+    setProductResults([]);
+
+    setForm({
+      productId: product.id,
+      variantId: "",
+      skuCode: "",
+      condition: "",
+    });
+
+    await loadVariants(product.id);
+  }
+
+  function clearProduct() {
+    setSelectedProduct(null);
+    setSelectedVariant(null);
+    setVariants([]);
+    setProductSearch("");
+    setProductResults([]);
+    setForm(initialRentalUnitForm);
+    setError("");
+    setSuccessMessage("");
+  }
+
+  function selectVariant(variantId: string) {
+    const variant =
+      variants.find(
+        (item) => item.id === variantId,
+      ) || null;
+
+    setSelectedVariant(variant);
+
+    setForm((current) => ({
+      ...current,
+      variantId: variant?.id || "",
+      skuCode: "",
+    }));
+  }
+
+  async function handleCreateRentalUnit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    setError("");
+    setSuccessMessage("");
+
+    const productId = form.productId.trim();
+    const skuCode = form.skuCode.trim();
+    const condition = form.condition.trim();
+
+    if (!productId) {
+     setError("Please select a product.");
+      return;
+    }
+
+    if (!skuCode) {
+   setError(
+  "A unique physical inventory unit SKU is required.",
+);
+      return;
+    }
+
+    try {
+      setIsCreating(true);
+
+      await createRentalInventoryUnit({
+        productId,
+        skuCode,
+        ...(form.variantId.trim()
+          ? {
+              variantId:
+                form.variantId.trim(),
+            }
+          : {}),
+        ...(condition
+          ? {
+              condition,
+            }
+          : {}),
+      });
+
+    setSuccessMessage(
+  "Rental inventory unit created successfully.",
+);
+
+      setForm((current) => ({
+        ...current,
+        skuCode: "",
+        condition: "",
+      }));
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+: "Failed to create the rental inventory unit.",
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  useEffect(() => {
+    void searchProducts("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <section className="min-w-0">
+      <div className="rounded-[2rem] border border-neutral-200 bg-white p-5 shadow-sm">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-neutral-500">
+            Rental Inventory
+          </p>
+
+          <h2 className="mt-3 text-2xl font-semibold text-neutral-950">
+            Create Physical Rental Unit
+          </h2>
+
+         <p className="mt-2 max-w-3xl text-sm text-neutral-500">
+  Create a unique inventory unit for each physical rental item.
+  The backend currently provides only the create endpoint, so
+  this section is create-only for now.
+</p>
+        </div>
+
+        {error ? (
+          <AlertBox
+            type="error"
+            message={error}
+          />
+        ) : null}
+
+        {successMessage ? (
+          <AlertBox
+            type="success"
+            message={successMessage}
+          />
+        ) : null}
+
+        <form
+          onSubmit={handleCreateRentalUnit}
+          className="mt-6 grid gap-5"
+        >
+          <Field label="Product" required>
+            <div className="rounded-3xl border border-neutral-200 bg-neutral-50 p-3">
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <input
+                  value={productSearch}
+                  onChange={(event) =>
+                    setProductSearch(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Search rental product by title or SKU..."
+                  className="h-11 min-w-0 rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
+                />
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void searchProducts(
+                      productSearch,
+                    )
+                  }
+                  disabled={isSearchingProducts}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSearchingProducts ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                  Search
+                </button>
+              </div>
+
+              {selectedProduct ? (
+                <div className="mt-3 flex min-w-0 items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                  {selectedProduct.thumbnail ||
+                  selectedProduct.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={
+                        selectedProduct.thumbnail ||
+                        selectedProduct.imageUrl ||
+                        ""
+                      }
+                      alt={selectedProduct.title}
+                      className="h-14 w-14 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white text-[10px] text-neutral-400">
+                      No img
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-neutral-950">
+                      {selectedProduct.title}
+                    </p>
+
+                    <p className="mt-1 truncate text-xs text-neutral-600">
+                      SKU:{" "}
+                      {selectedProduct.sku || "-"}
+                    </p>
+
+                    <p className="mt-1 truncate text-xs text-neutral-500">
+                      ID: {selectedProduct.id}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={clearProduct}
+                    className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : null}
+
+              {!selectedProduct ? (
+                <div className="mt-3 max-h-72 overflow-y-auto rounded-2xl border border-neutral-200 bg-white">
+                  {isSearchingProducts ? (
+                    <div className="px-4 py-8 text-center text-sm text-neutral-500">
+                      Products loading...
+                    </div>
+                  ) : productResults.length ? (
+                    productResults.map(
+                      (product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() =>
+                            void selectProduct(
+                              product,
+                            )
+                          }
+                          className="flex w-full min-w-0 items-center gap-3 border-b border-neutral-100 px-3 py-3 text-left transition last:border-b-0 hover:bg-neutral-50"
+                        >
+                          {product.thumbnail ||
+                          product.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={
+                                product.thumbnail ||
+                                product.imageUrl ||
+                                ""
+                              }
+                              alt={product.title}
+                              className="h-12 w-12 rounded-xl object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-[10px] text-neutral-400">
+                              No img
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-neutral-950">
+                              {product.title}
+                            </p>
+
+                            <p className="mt-1 truncate text-xs text-neutral-500">
+                              SKU:{" "}
+                              {product.sku || "-"}
+                            </p>
+                          </div>
+                        </button>
+                      ),
+                    )
+                  ) : (
+                    <div className="px-4 py-8 text-center text-sm text-neutral-500">
+                      No products found.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </Field>
+
+          <Field label="Variant">
+            <select
+              value={form.variantId}
+              onChange={(event) =>
+                selectVariant(event.target.value)
+              }
+              disabled={
+                !selectedProduct ||
+                isLoadingVariants
+              }
+              className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-100"
+            >
+              <option value="">
+                {!selectedProduct
+                  ? "Select product first"
+                  : isLoadingVariants
+                    ? "Variants loading..."
+                    : "Product-level unit — no variant"}
+              </option>
+
+              {variants.map((variant) => (
+                <option
+                  key={variant.id}
+                  value={variant.id}
+                >
+                  {[
+                    variant.size
+                      ? `Size ${variant.size}`
+                      : null,
+                    variant.color || null,
+                    variant.variantSku ||
+                      variant.sku ||
+                      null,
+                    variant.status || null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {selectedVariant ? (
+            <div className="grid gap-3 rounded-3xl border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <p className="text-sm text-neutral-600">
+                Size:{" "}
+                <strong className="text-neutral-950">
+                  {selectedVariant.size || "-"}
+                </strong>
+              </p>
+
+              <p className="text-sm text-neutral-600">
+                Color:{" "}
+                <strong className="text-neutral-950">
+                  {selectedVariant.color || "-"}
+                </strong>
+              </p>
+
+              <p className="text-sm text-neutral-600">
+                SKU:{" "}
+                <strong className="text-neutral-950">
+                  {selectedVariant.variantSku ||
+                    selectedVariant.sku ||
+                    "-"}
+                </strong>
+              </p>
+
+              <p className="text-sm text-neutral-600">
+                Status:{" "}
+                <strong className="text-neutral-950">
+                  {selectedVariant.status || "-"}
+                </strong>
+              </p>
+            </div>
+          ) : null}
+
+          <Field
+            label="Physical Unit SKU"
+            required
+          >
+            <input
+              value={form.skuCode}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  skuCode: event.target.value,
+                }))
+              }
+              placeholder={
+                selectedVariant?.variantSku ||
+                selectedVariant?.sku
+                  ? `${selectedVariant.variantSku || selectedVariant.sku}-UNIT-001`
+                  : "Example: RENT-DRESS-M-UNIT-001"
+              }
+              className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
+            />
+
+        <span className="text-xs text-neutral-500">
+  Use a unique SKU for every physical rental item.
+  The placeholder value is not saved automatically.
+</span>
+          </Field>
+
+          <Field label="Condition">
+            <input
+              value={form.condition}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  condition:
+                    event.target.value,
+                }))
+              }
+              placeholder="Example: Excellent"
+              className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
+            />
+          </Field>
+
+          <button
+            type="submit"
+            disabled={
+              isCreating ||
+              !selectedProduct
+            }
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          >
+            {isCreating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <PackagePlus className="h-4 w-4" />
+            )}
+
+            {isCreating
+              ? "Creating..."
+              : "Create Rental Unit"}
+          </button>
+        </form>
       </div>
     </section>
   );

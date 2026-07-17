@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 
+import { RichTextEditor } from "@/components/admin/catalog/products/rich-text-editor";
+
 import {
   type ReactNode,
   useEffect,
@@ -731,15 +733,25 @@ groupSlug: String(values.groupSlug || "").trim(),
             </select>
           </Field>
 
-          <div className="md:col-span-2">
-            <Field label="Description">
-              <textarea
-                {...form.register("description")}
-                className="min-h-28 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-950/10"
-                placeholder="Attribute description..."
-              />
-            </Field>
-          </div>
+       <div className="md:col-span-2">
+  <Field
+    label="Description"
+    error={form.formState.errors.description?.message}
+  >
+    <RichTextEditor
+      value={form.watch("description") || ""}
+      onChange={(html) => {
+        form.setValue("description", html, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      }}
+      minHeightClass="min-h-[220px]"
+      maxHeightClass="max-h-[380px]"
+      compact
+    />
+  </Field>
+</div>
         </div>
       </section>
 

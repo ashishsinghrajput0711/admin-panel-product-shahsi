@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCcw, SlidersHorizontal } from "lucide-react";
 
+import { ProductPageMotion } from "@/components/admin/catalog/products/product-page-motion";
+
 import { PricingSimulator } from "@/components/admin/catalog/pricing/pricing-simulator";
 
 import {
@@ -94,8 +96,12 @@ export default function PricingPage() {
   }
 
   return (
+  <ProductPageMotion className="min-h-screen">
     <main className="min-h-screen bg-[#fbfaf6] p-6">
-      <section className="mb-6 rounded-[2rem] bg-neutral-950 p-8 text-white">
+   <section
+  data-product-section
+  className="mb-6 rounded-[2rem] bg-neutral-950 p-8 text-white"
+>
         <p className="text-xs uppercase tracking-[0.22em] text-white/60">
           Admin / Catalog / Pricing
         </p>
@@ -133,14 +139,20 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="mb-6 grid gap-4 md:grid-cols-4">
+<section
+  data-product-section
+  className="mb-6 grid gap-4 md:grid-cols-4"
+>
         <StatCard label="Total Rules" value={stats.total} />
         <StatCard label="Active Rules" value={stats.active} />
         <StatCard label="Rental Rules" value={stats.rental} />
         <StatCard label="Shop Rules" value={stats.shop} />
       </section>
 
-      <section className="mb-6 rounded-[1.5rem] border border-neutral-200 bg-white p-5">
+     <section
+  data-product-section
+  className="mb-6 rounded-[1.5rem] border border-neutral-200 bg-white p-5"
+>
   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
     <h2 className="flex items-center gap-2 text-lg font-medium text-neutral-950">
       <SlidersHorizontal className="h-4 w-4" />
@@ -196,9 +208,11 @@ export default function PricingPage() {
   </div>
 </section>
 
-<PricingSimulator />
+<div data-product-section>
+  <PricingSimulator />
+</div>
 
-<section className="w-full">
+<section data-product-section className="w-full">
   {error ? (
     <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
       {error}
@@ -211,17 +225,26 @@ export default function PricingPage() {
     onDelete={handleDelete}
   />
 </section>
-    </main>
-  );
+      </main>
+  </ProductPageMotion>
+);
 }
 
 function StatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[1.5rem] border border-neutral-200 bg-white p-5">
-      <p className="text-sm text-neutral-500">{label}</p>
-      <p className="mt-2 text-3xl font-semibold text-neutral-950">{value}</p>
-    </div>
-  );
+return (
+  <article
+    data-product-section
+    className="group rounded-[1.5rem] border border-neutral-200 bg-white p-5 transition-[transform,box-shadow,border-color] duration-300 ease-out hover:-translate-y-1 hover:border-neutral-300 hover:shadow-[0_18px_45px_rgba(15,15,15,0.08)]"
+  >
+    <p className="text-sm text-neutral-500 transition-colors duration-300 group-hover:text-neutral-700">
+      {label}
+    </p>
+
+    <p className="mt-2 text-3xl font-semibold text-neutral-950 transition-transform duration-300 group-hover:translate-x-1">
+      {value}
+    </p>
+  </article>
+);
 }
 
 function FilterSelect({

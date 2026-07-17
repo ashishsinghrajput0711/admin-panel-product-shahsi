@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { syncProductCategories } from "@/lib/admin/category-product-sync";
 import { ProductFitDataSection } from "@/components/admin/catalog/products/product-fit-data-section";
 
+
 import { ProductPageMotion } from "@/components/admin/catalog/products/product-page-motion";
 import { useParams, useRouter } from "next/navigation";
 
@@ -1383,6 +1384,8 @@ setSuccessMessage(
     onSaved={() => loadProduct({ silent: true })}
   />
 ) : null}
+
+
 
 
 {product ? (

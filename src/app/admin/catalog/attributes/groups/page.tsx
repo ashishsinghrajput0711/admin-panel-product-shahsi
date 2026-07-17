@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { ProductPageMotion } from "@/components/admin/catalog/products/product-page-motion";
+import { RichTextEditor } from "@/components/admin/catalog/products/rich-text-editor";
 import {
   createCatalogAttributeGroup,
   deleteCatalogAttributeGroup,
@@ -119,6 +120,23 @@ function getAttributeName(
       attribute.id ||
       "Attribute",
   );
+}
+
+function getDescriptionPreview(
+  description?: string | null,
+) {
+  return String(description || "")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export default function AttributeGroupsPage() {
@@ -686,10 +704,10 @@ setPagination(result.pagination);
                           </p>
                         ) : null}
 
-                        <p className="mt-2 text-sm leading-6 text-neutral-500">
-                          {group.description ||
-                            "No group description."}
-                        </p>
+                 <p className="mt-2 line-clamp-3 text-sm leading-6 text-neutral-500">
+  {getDescriptionPreview(group.description) ||
+    "No group description."}
+</p>
                       </div>
 
                       <div className="flex shrink-0 gap-2">
@@ -991,25 +1009,28 @@ setPagination(result.pagination);
                       </span>
                     </label>
 
-                    <label className="block text-sm font-medium text-neutral-800">
-                      Description
+                <div>
+  <p className="mb-2 text-sm font-medium text-neutral-800">
+    Description
+  </p>
 
-                      <textarea
-                        value={form.description}
-                        onChange={(event) =>
-                          setForm(
-                            (current) => ({
-                              ...current,
-                              description:
-                                event.target
-                                  .value,
-                            }),
-                          )
-                        }
-                        placeholder="Style, silhouette, neckline and occasion attributes."
-                        className="mt-2 min-h-[120px] w-full resize-y rounded-xl border border-neutral-300 px-3 py-3 text-sm outline-none focus:border-neutral-950"
-                      />
-                    </label>
+  <RichTextEditor
+    value={form.description}
+    onChange={(html) =>
+      setForm((current) => ({
+        ...current,
+        description: html,
+      }))
+    }
+    minHeightClass="min-h-[180px]"
+    maxHeightClass="max-h-[300px]"
+    compact
+  />
+
+  <p className="mt-2 text-xs text-neutral-500">
+    Formatting, headings, lists, links, images aur videos supported hain.
+  </p>
+</div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <label className="block text-sm font-medium text-neutral-800">
