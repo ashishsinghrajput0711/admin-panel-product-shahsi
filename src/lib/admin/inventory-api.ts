@@ -250,15 +250,119 @@ export type CreateRentalInventoryUnitPayload = {
   condition?: string;
 };
 
-export type RentalInventoryUnitResponse = {
-  id?: string;
-  productId?: string;
-  variantId?: string | null;
-  skuCode?: string;
-  condition?: string | null;
-  status?: string | null;
+export type RentalRequestStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "CANCELLED"
+  | "COMPLETED";
+
+export type RentalRequest = {
+  id: string;
+  productId: string;
+  renterId: string;
+  sellerId?: string | null;
+  startDate: string;
+  endDate: string;
+  status: RentalRequestStatus;
+  message?: string | null;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type RentalRequestQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+};
+
+export type RentalInventoryUnit = {
+  id: string;
+  productId: string;
+  variantId?: string | null;
+  
+  skuCode: string;
+ status: RentalInventoryUnitStatus;
+ condition?: RentalInventoryCondition | null;
+  currentBookingId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+
+  product?: {
+    id: string;
+    title: string;
+    sku?: string | null;
+    slug?: string | null;
+  } | null;
+
+  variant?: {
+    id: string;
+    sku?: string | null;
+    size?: string | null;
+    color?: string | null;
+  } | null;
+
+  bookings?: Array<{
+  id?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  customerId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+}>;
+};
+
+export type RentalInventoryUnitStatus =
+  | "AVAILABLE"
+  | "RESERVED"
+  | "RENTED"
+  | "RETURNED"
+  | "CLEANING"
+  | "DAMAGED"
+  | "LOST";
+
+  export type RentalInventoryCondition =
+  | "Excellent"
+  | "Good"
+  | "Fair"
+  | "Needs Repair";
+
+export type UpdateRentalInventoryUnitConditionPayload = {
+  condition: RentalInventoryCondition;
+};
+
+export type UpdateRentalInventoryUnitStatusPayload = {
+  status: RentalInventoryUnitStatus;
+};
+
+export type RentalInventoryUnitResponse =
+  RentalInventoryUnit;
+
+export type RentalInventoryUnitQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  productId?: string;
+  variantId?: string;
+  status?: string;
+  isActive?: boolean;
+};
+
+export type RentalOptions = {
+  inventoryUnitStatuses: string[];
+  inventoryConditions: string[];
+  requestStatuses: string[];
+  bookingStatuses: string[];
+  damageStatuses: string[];
+  validBookingTransitions: Record<
+    string,
+    string[]
+  >;
+  pricingSourcePriority: string[];
+  inventorySource: string;
+  pricingRuleCardinality: string;
 };
 export type ProductPickerQuery = {
   ids?: string;
@@ -348,7 +452,55 @@ function buildProductPickerQuery(query?: ProductPickerQuery) {
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
 }
+function buildRentalInventoryUnitQuery(
+  query?: RentalInventoryUnitQuery,
+) {
+  const params = new URLSearchParams();
 
+  Object.entries(query ?? {}).forEach(
+    ([key, value]) => {
+      if (
+        value === undefined ||
+        value === null ||
+        value === "" ||
+        value === "ALL"
+      ) {
+        return;
+      }
+
+      params.set(key, String(value));
+    },
+  );
+
+  const queryString = params.toString();
+
+  return queryString
+    ? `?${queryString}`
+    : "";
+}
+
+
+function buildRentalRequestQuery(
+  query?: RentalRequestQuery,
+) {
+  const params = new URLSearchParams();
+
+  Object.entries(query ?? {}).forEach(([key, value]) => {
+    if (
+      value === undefined ||
+      value === null ||
+      value === ""
+    ) {
+      return;
+    }
+
+    params.set(key, String(value));
+  });
+
+  const queryString = params.toString();
+
+  return queryString ? `?${queryString}` : "";
+}
 async function inventoryRequest<T>(
   endpoint: string,
   options: InventoryRequestOptions = {}
@@ -423,6 +575,28 @@ function unwrapInventoryList<T>(response: unknown): InventoryListResponse<T> {
       totalPages: Number(value.meta?.totalPages ?? 1),
     },
   };
+}
+
+
+function unwrapInventoryItem<T>(
+  response: unknown,
+): T | null {
+  if (
+    !response ||
+    typeof response !== "object"
+  ) {
+    return null;
+  }
+
+  const value = response as {
+    data?: unknown;
+  };
+
+  if ("data" in value) {
+    return (value.data ?? null) as T | null;
+  }
+
+  return response as T;
 }
 
 export async function getAdminLocations(query?: InventoryQuery) {
@@ -582,4 +756,149 @@ export async function createRentalInventoryUnit(
   });
 
   return response.data;
+}
+
+
+export async function getRentalOptions() {
+  return inventoryRequest<RentalOptions>(
+    "/admin/rental/options",
+  );
+}
+
+export async function getRentalInventoryUnits(
+  query?: RentalInventoryUnitQuery,
+) {
+  const response =
+    await inventoryRequest<unknown>(
+      `/admin/rental/inventory-units${buildRentalInventoryUnitQuery(
+        query,
+      )}`,
+    );
+
+  return unwrapInventoryList<RentalInventoryUnit>(
+    response,
+  );
+}
+
+export async function getRentalInventoryUnitById(
+  unitId: string,
+) {
+  const response =
+    await inventoryRequest<unknown>(
+      `/admin/rental/inventory-units/${encodeURIComponent(
+        unitId,
+      )}`,
+    );
+
+  return unwrapInventoryItem<RentalInventoryUnit>(
+    response,
+  );
+}
+
+export async function deleteRentalInventoryUnit(
+  unitId: string,
+) {
+  return inventoryRequest<unknown>(
+    `/admin/rental/inventory-units/${encodeURIComponent(
+      unitId,
+    )}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+
+export async function updateRentalInventoryUnitStatus(
+  unitId: string,
+  payload: UpdateRentalInventoryUnitStatusPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/inventory-units/${encodeURIComponent(unitId)}/status`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalInventoryUnit>(response);
+}
+
+
+export async function updateRentalInventoryUnitCondition(
+  unitId: string,
+  payload: UpdateRentalInventoryUnitConditionPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/inventory-units/${encodeURIComponent(unitId)}/condition`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalInventoryUnit>(response);
+}
+
+
+export async function archiveRentalInventoryUnit(
+  unitId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/inventory-units/${encodeURIComponent(unitId)}/archive`,
+    {
+      method: "PATCH",
+    },
+  );
+
+  return unwrapInventoryItem<RentalInventoryUnit>(
+    response,
+  );
+}
+
+export async function getRentalRequests(
+  query?: RentalRequestQuery,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/requests${buildRentalRequestQuery(query)}`,
+  );
+
+  return unwrapInventoryList<RentalRequest>(response);
+}
+
+export async function getRentalRequestById(
+  requestId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/requests/${encodeURIComponent(requestId)}`,
+  );
+
+  return unwrapInventoryItem<RentalRequest>(response);
+}
+
+export async function acceptRentalRequest(
+  requestId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/requests/${encodeURIComponent(requestId)}/accept`,
+    {
+      method: "PATCH",
+    },
+  );
+
+  return unwrapInventoryItem<RentalRequest>(response);
+}
+
+export async function declineRentalRequest(
+  requestId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/requests/${encodeURIComponent(requestId)}/decline`,
+    {
+      method: "PATCH",
+      body: {},
+    },
+  );
+
+  return unwrapInventoryItem<RentalRequest>(response);
 }

@@ -3,9 +3,12 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  Archive,
   Boxes,
+  ClipboardList,
   Building2,
   CheckCircle2,
+  Eye,
   Loader2,
   MapPin,
   Plus,
@@ -17,20 +20,30 @@ import {
 } from "lucide-react";
 
 import {
+  acceptRentalRequest,
+  archiveRentalInventoryUnit,
   createAdminLocation,
   createAdminWarehouse,
   createInventoryAsset,
   createRentalInventoryUnit,
   createWarehouseBin,
+  declineRentalRequest,
   deleteInventoryAsset,
+  deleteRentalInventoryUnit,
   getAdminLocations,
   getAdminProductPicker,
   getAdminProductVariants,
   getAdminWarehouses,
   getInventoryAssetById,
   getInventoryAssets,
+  getRentalInventoryUnits,
+  getRentalOptions,
+  getRentalRequestById,
+  getRentalRequests,
   getWarehouseBins,
   updateInventoryAsset,
+  updateRentalInventoryUnitCondition,
+  updateRentalInventoryUnitStatus,
   type AdminCatalogVariant,
   type AdminLocation,
   type AdminProductPickerItem,
@@ -41,6 +54,11 @@ import {
   type CreateWarehouseBinPayload,
   type InventoryAsset,
   type InventoryListMeta,
+  type RentalInventoryCondition,
+  type RentalInventoryUnit,
+  type RentalInventoryUnitStatus,
+  type RentalOptions,
+  type RentalRequest,
   type UpdateInventoryAssetPayload,
   type WarehouseBin,
 } from "@/lib/admin/inventory-api";
@@ -48,6 +66,7 @@ import {
 type InventoryTab =
   | "assets"
   | "rentalUnits"
+  | "rentalRequests"
   | "locations"
   | "warehouses"
   | "bins";
@@ -67,6 +86,12 @@ const tabs: Array<{
   label: "Rental Units",
   icon: PackagePlus,
 },
+{
+  id: "rentalRequests",
+  label: "Rental Requests",
+  icon: ClipboardList,
+},
+
   {
     id: "locations",
     label: "Locations",
@@ -180,7 +205,8 @@ function optionalText(value: string) {
 }
 
 export default function InventoryPage() {
-  const [activeTab, setActiveTab] = useState<InventoryTab>("locations");
+const [activeTab, setActiveTab] =
+  useState<InventoryTab>("rentalUnits");
 
   return (
    <main className="min-h-screen overflow-x-hidden bg-[#fbfaf6] px-4 py-6 lg:px-6">
@@ -207,7 +233,7 @@ export default function InventoryPage() {
         </section>
 
         <section className="rounded-[2rem] border border-neutral-200 bg-white p-2 shadow-sm">
-         <div className="grid gap-2 md:grid-cols-5">
+      <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -237,6 +263,7 @@ export default function InventoryPage() {
 {activeTab === "bins" ? <BinsTab /> : null}
 {activeTab === "assets" ? <AssetsTab /> : null}
 {activeTab === "rentalUnits" ? <RentalUnitsTab /> : null}
+{activeTab === "rentalRequests" ? <RentalRequestsTab /> : null}
       </div>
     </main>
   );
@@ -1935,6 +1962,21 @@ await loadBins(1, form.warehouseId);
 }
 
 function RentalUnitsTab() {
+  const [units, setUnits] = useState<RentalInventoryUnit[]>([]);
+  const [meta, setMeta] = useState<InventoryListMeta>(emptyMeta);
+
+  const [rentalOptions, setRentalOptions] =
+    useState<RentalOptions | null>(null);
+
+  const [filterProducts, setFilterProducts] = useState<
+    AdminProductPickerItem[]
+  >([]);
+
+  const [listSearch, setListSearch] = useState("");
+  const [productFilter, setProductFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+
   const [productSearch, setProductSearch] = useState("");
   const [productResults, setProductResults] = useState<
     AdminProductPickerItem[]
@@ -1943,60 +1985,137 @@ function RentalUnitsTab() {
   const [selectedProduct, setSelectedProduct] =
     useState<AdminProductPickerItem | null>(null);
 
-  const [variants, setVariants] = useState<
-    AdminCatalogVariant[]
-  >([]);
+  const [variants, setVariants] = useState<AdminCatalogVariant[]>([]);
 
   const [selectedVariant, setSelectedVariant] =
     useState<AdminCatalogVariant | null>(null);
 
-  const [form, setForm] = useState(
-    initialRentalUnitForm,
-  );
+  const [form, setForm] = useState(initialRentalUnitForm);
 
-  const [isSearchingProducts, setIsSearchingProducts] =
-    useState(false);
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSearchingProducts, setIsSearchingProducts] = useState(false);
+  const [isLoadingVariants, setIsLoadingVariants] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const [isLoadingVariants, setIsLoadingVariants] =
-    useState(false);
-
-  const [isCreating, setIsCreating] =
-    useState(false);
+  const [updatingUnitId, setUpdatingUnitId] = useState("");
+  const [archivingUnitId, setArchivingUnitId] = useState("");
+  const [deletingUnitId, setDeletingUnitId] = useState("");
 
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] =
-    useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  async function searchProducts(
-    searchText = productSearch,
-  ) {
+  const statusOptions =
+    rentalOptions?.inventoryUnitStatuses ?? [];
+
+  const conditionOptions =
+    rentalOptions?.inventoryConditions ?? [];
+
+  const availableCount = useMemo(
+    () => units.filter((unit) => unit.status === "AVAILABLE").length,
+    [units],
+  );
+
+  const unavailableCount = useMemo(
+    () => units.filter((unit) => unit.status !== "AVAILABLE").length,
+    [units],
+  );
+
+  async function loadRentalDependencies() {
     try {
-      setIsSearchingProducts(true);
-      setError("");
-
-      const response =
-        await getAdminProductPicker({
-          search:
-            searchText.trim() || undefined,
-          searchBy: "all",
+      const [optionsResponse, productsResponse] = await Promise.all([
+        getRentalOptions(),
+        getAdminProductPicker({
           status: "ACTIVE",
           page: 1,
-          limit: 10,
-        });
+          limit: 100,
+        }),
+      ]);
 
-      setProductResults(response.items);
+      setRentalOptions(optionsResponse);
+      setFilterProducts(productsResponse.items);
+
+      setForm((current) => ({
+        ...current,
+        condition:
+          current.condition ||
+          optionsResponse.inventoryConditions[0] ||
+          "",
+      }));
     } catch (err) {
-      setProductResults([]);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load rental inventory options.",
+      );
+    }
+  }
+
+  async function loadRentalUnits(nextPage = page) {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const response = await getRentalInventoryUnits({
+        page: nextPage,
+        limit: 20,
+        search: listSearch.trim() || undefined,
+        productId:
+          productFilter === "ALL" ? undefined : productFilter,
+        status:
+          statusFilter === "ALL" ? undefined : statusFilter,
+      });
+
+      setUnits(response.data);
+      setMeta(response.meta);
+      setPage(response.meta.page || nextPage);
+    } catch (err) {
+      setUnits([]);
+      setMeta(emptyMeta);
 
       setError(
         err instanceof Error
           ? err.message
-         : "An error occurred while loading products.",
+          : "Failed to load rental inventory units.",
       );
     } finally {
-      setIsSearchingProducts(false);
+      setIsLoading(false);
     }
   }
+
+  async function handleListSearch(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    await loadRentalUnits(1);
+  }
+
+ async function searchProducts(searchText = productSearch) {
+  try {
+    setIsSearchingProducts(true);
+    setError("");
+
+    const cleanSearch = searchText.trim();
+
+    const response = await getAdminProductPicker({
+      search: cleanSearch || undefined,
+      page: 1,
+      limit: 50,
+    });
+
+    setProductResults(response.items);
+  } catch (err) {
+    setProductResults([]);
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to load products.",
+    );
+  } finally {
+    setIsSearchingProducts(false);
+  }
+}
 
   async function loadVariants(productId: string) {
     if (!productId) {
@@ -2009,8 +2128,7 @@ function RentalUnitsTab() {
       setIsLoadingVariants(true);
       setError("");
 
-      const response =
-        await getAdminProductVariants(productId);
+      const response = await getAdminProductVariants(productId);
 
       const activeVariants = response.filter(
         (variant) =>
@@ -2026,27 +2144,58 @@ function RentalUnitsTab() {
       setError(
         err instanceof Error
           ? err.message
-     : "An error occurred while loading product variants.",
+          : "Failed to load product variants.",
       );
     } finally {
       setIsLoadingVariants(false);
     }
   }
 
-  async function selectProduct(
-    product: AdminProductPickerItem,
-  ) {
+  function openCreateDrawer() {
+    setSelectedProduct(null);
+    setSelectedVariant(null);
+    setVariants([]);
+    setProductSearch("");
+    setProductResults([]);
+
+    setForm({
+      ...initialRentalUnitForm,
+      condition: conditionOptions[0] || "",
+    });
+
+    setError("");
+    setSuccessMessage("");
+    setIsCreateDrawerOpen(true);
+
+    void searchProducts("");
+  }
+
+  function closeCreateDrawer() {
+    setIsCreateDrawerOpen(false);
+    setSelectedProduct(null);
+    setSelectedVariant(null);
+    setVariants([]);
+    setProductSearch("");
+    setProductResults([]);
+
+    setForm({
+      ...initialRentalUnitForm,
+      condition: conditionOptions[0] || "",
+    });
+  }
+
+  async function selectProduct(product: AdminProductPickerItem) {
     setSelectedProduct(product);
     setSelectedVariant(null);
     setProductSearch(product.title);
     setProductResults([]);
 
-    setForm({
+    setForm((current) => ({
+      ...current,
       productId: product.id,
       variantId: "",
       skuCode: "",
-      condition: "",
-    });
+    }));
 
     await loadVariants(product.id);
   }
@@ -2057,16 +2206,20 @@ function RentalUnitsTab() {
     setVariants([]);
     setProductSearch("");
     setProductResults([]);
-    setForm(initialRentalUnitForm);
-    setError("");
-    setSuccessMessage("");
+
+    setForm((current) => ({
+      ...current,
+      productId: "",
+      variantId: "",
+      skuCode: "",
+    }));
+
+    void searchProducts("");
   }
 
   function selectVariant(variantId: string) {
     const variant =
-      variants.find(
-        (item) => item.id === variantId,
-      ) || null;
+      variants.find((item) => item.id === variantId) || null;
 
     setSelectedVariant(variant);
 
@@ -2086,18 +2239,17 @@ function RentalUnitsTab() {
     setSuccessMessage("");
 
     const productId = form.productId.trim();
+    const variantId = form.variantId.trim();
     const skuCode = form.skuCode.trim();
     const condition = form.condition.trim();
 
     if (!productId) {
-     setError("Please select a product.");
+      setError("Please select a product.");
       return;
     }
 
     if (!skuCode) {
-   setError(
-  "A unique physical inventory unit SKU is required.",
-);
+      setError("A unique physical inventory unit SKU is required.");
       return;
     }
 
@@ -2107,175 +2259,724 @@ function RentalUnitsTab() {
       await createRentalInventoryUnit({
         productId,
         skuCode,
-        ...(form.variantId.trim()
-          ? {
-              variantId:
-                form.variantId.trim(),
-            }
-          : {}),
-        ...(condition
-          ? {
-              condition,
-            }
-          : {}),
+        ...(variantId ? { variantId } : {}),
+        ...(condition ? { condition } : {}),
       });
 
-    setSuccessMessage(
-  "Rental inventory unit created successfully.",
-);
+      closeCreateDrawer();
 
-      setForm((current) => ({
-        ...current,
-        skuCode: "",
-        condition: "",
-      }));
+      setSuccessMessage(
+        "Rental inventory unit created successfully.",
+      );
+
+      await loadRentalUnits(1);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-: "Failed to create the rental inventory unit.",
+          : "Failed to create the rental inventory unit.",
       );
     } finally {
       setIsCreating(false);
     }
   }
 
+  async function handleStatusChange(
+    unit: RentalInventoryUnit,
+    nextStatus: RentalInventoryUnitStatus,
+  ) {
+    if (nextStatus === unit.status) return;
+
+    try {
+      setUpdatingUnitId(unit.id);
+      setError("");
+      setSuccessMessage("");
+
+      await updateRentalInventoryUnitStatus(unit.id, {
+        status: nextStatus,
+      });
+
+      setSuccessMessage(
+        `Rental unit status updated to ${nextStatus}.`,
+      );
+
+      await loadRentalUnits(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update the rental unit status.",
+      );
+    } finally {
+      setUpdatingUnitId("");
+    }
+  }
+
+  async function handleConditionChange(
+    unit: RentalInventoryUnit,
+    nextCondition: RentalInventoryCondition,
+  ) {
+    if (nextCondition === unit.condition) return;
+
+    try {
+      setUpdatingUnitId(unit.id);
+      setError("");
+      setSuccessMessage("");
+
+      await updateRentalInventoryUnitCondition(unit.id, {
+        condition: nextCondition,
+      });
+
+      setSuccessMessage(
+        `Rental unit condition updated to ${nextCondition}.`,
+      );
+
+      await loadRentalUnits(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update the rental unit condition.",
+      );
+    } finally {
+      setUpdatingUnitId("");
+    }
+  }
+
+  async function handleMarkLost(unit: RentalInventoryUnit) {
+    const confirmed = window.confirm(
+      `Mark rental unit "${unit.skuCode}" as LOST?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setArchivingUnitId(unit.id);
+      setError("");
+      setSuccessMessage("");
+
+      await archiveRentalInventoryUnit(unit.id);
+
+      setSuccessMessage(
+        `Rental unit ${unit.skuCode} marked as LOST.`,
+      );
+
+      await loadRentalUnits(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to mark the rental unit as lost.",
+      );
+    } finally {
+      setArchivingUnitId("");
+    }
+  }
+
+  async function handleDeleteUnit(unit: RentalInventoryUnit) {
+    const confirmed = window.confirm(
+      `Delete rental unit "${unit.skuCode}" permanently?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingUnitId(unit.id);
+      setError("");
+      setSuccessMessage("");
+
+      await deleteRentalInventoryUnit(unit.id);
+
+      setSuccessMessage(
+        `Rental unit ${unit.skuCode} deleted successfully.`,
+      );
+
+      const nextPage =
+        units.length === 1 && page > 1
+          ? page - 1
+          : page;
+
+      await loadRentalUnits(nextPage);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to delete the rental inventory unit.",
+      );
+    } finally {
+      setDeletingUnitId("");
+    }
+  }
+
   useEffect(() => {
-    void searchProducts("");
+    void loadRentalDependencies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    void loadRentalUnits(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productFilter, statusFilter]);
+
   return (
     <section className="min-w-0">
-      <div className="rounded-[2rem] border border-neutral-200 bg-white p-5 shadow-sm">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-neutral-500">
-            Rental Inventory
-          </p>
+      <div className="flex min-w-0 flex-col gap-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <StatsCard
+            label="Total Rental Units"
+            value={meta.total}
+          />
 
-          <h2 className="mt-3 text-2xl font-semibold text-neutral-950">
-            Create Physical Rental Unit
-          </h2>
+          <StatsCard
+            label="Available On This Page"
+            value={availableCount}
+          />
 
-         <p className="mt-2 max-w-3xl text-sm text-neutral-500">
-  Create a unique inventory unit for each physical rental item.
-  The backend currently provides only the create endpoint, so
-  this section is create-only for now.
-</p>
+          <StatsCard
+            label="Unavailable On This Page"
+            value={unavailableCount}
+          />
         </div>
 
-        {error ? (
-          <AlertBox
-            type="error"
-            message={error}
-          />
-        ) : null}
+        <div className="min-w-0 rounded-[2rem] border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Inventory
+              </p>
 
-        {successMessage ? (
-          <AlertBox
-            type="success"
-            message={successMessage}
-          />
-        ) : null}
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Physical Rental Units
+              </h2>
 
-        <form
-          onSubmit={handleCreateRentalUnit}
-          className="mt-6 grid gap-5"
-        >
-          <Field label="Product" required>
-            <div className="rounded-3xl border border-neutral-200 bg-neutral-50 p-3">
-              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <input
-                  value={productSearch}
-                  onChange={(event) =>
-                    setProductSearch(
-                      event.target.value,
-                    )
-                  }
-                  placeholder="Search rental product by title or SKU..."
-                  className="h-11 min-w-0 rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
-                />
+              <p className="mt-1 text-sm text-neutral-500">
+                Manage individual rentable items, their status and condition.
+              </p>
+            </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    void searchProducts(
-                      productSearch,
-                    )
-                  }
-                  disabled={isSearchingProducts}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSearchingProducts ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Search className="h-4 w-4" />
-                  )}
-                  Search
-                </button>
-              </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={openCreateDrawer}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-800"
+              >
+                <PackagePlus className="h-4 w-4" />
+                Create Rental Unit
+              </button>
 
-              {selectedProduct ? (
-                <div className="mt-3 flex min-w-0 items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
-                  {selectedProduct.thumbnail ||
-                  selectedProduct.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={
-                        selectedProduct.thumbnail ||
-                        selectedProduct.imageUrl ||
-                        ""
+              <button
+                type="button"
+                onClick={() => void loadRentalUnits(page)}
+                disabled={isLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <form
+            onSubmit={handleListSearch}
+            className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_190px_auto]"
+          >
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+
+              <input
+                value={listSearch}
+                onChange={(event) =>
+                  setListSearch(event.target.value)
+                }
+                placeholder="Search by unit SKU or product..."
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white pl-11 pr-4 text-sm outline-none transition focus:border-neutral-950"
+              />
+            </div>
+
+            <select
+              value={productFilter}
+              onChange={(event) =>
+                setProductFilter(event.target.value)
+              }
+              className="h-11 rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
+            >
+              <option value="ALL">All Products</option>
+
+              {filterProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.title}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(event.target.value)
+              }
+              className="h-11 rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
+            >
+              <option value="ALL">All Statuses</option>
+
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="inline-flex h-11 items-center justify-center rounded-2xl bg-neutral-950 px-5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Search
+            </button>
+          </form>
+
+          {error ? (
+            <AlertBox type="error" message={error} />
+          ) : null}
+
+          {successMessage ? (
+            <AlertBox
+              type="success"
+              message={successMessage}
+            />
+          ) : null}
+
+       <div className="mt-5 overflow-hidden rounded-3xl border border-neutral-200 bg-white">
+  <div className="w-full overflow-x-auto">
+    <table className="w-full table-fixed divide-y divide-neutral-200 text-sm">
+      <thead className="bg-neutral-50">
+        <tr>
+          <TableHead className="w-[22%]">Product</TableHead>
+          <TableHead className="w-[15%]">Unit SKU</TableHead>
+          <TableHead className="w-[13%]">Variant</TableHead>
+          <TableHead className="w-[13%]">Status</TableHead>
+          <TableHead className="w-[13%]">Condition</TableHead>
+          <TableHead className="w-[10%]">Booking</TableHead>
+          <TableHead className="w-[14%]">Actions</TableHead>
+        </tr>
+      </thead>
+
+      <tbody className="divide-y divide-neutral-100 bg-white">
+        {isLoading ? (
+          <tr>
+            <td
+              colSpan={7}
+              className="px-4 py-12 text-center text-sm text-neutral-500"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Rental units loading...
+              </span>
+            </td>
+          </tr>
+        ) : units.length ? (
+          units.map((unit) => {
+            const isUpdating = updatingUnitId === unit.id;
+            const isArchiving = archivingUnitId === unit.id;
+            const isDeleting = deletingUnitId === unit.id;
+
+            return (
+              <tr
+                key={unit.id}
+                className="hover:bg-neutral-50/70"
+              >
+                <TableCell>
+                  <div className="min-w-0">
+                    <p
+                      title={
+                        unit.product?.title ||
+                        "Product unavailable"
                       }
-                      alt={selectedProduct.title}
-                      className="h-14 w-14 rounded-xl object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white text-[10px] text-neutral-400">
-                      No img
-                    </div>
-                  )}
-
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-neutral-950">
-                      {selectedProduct.title}
+                      className="line-clamp-2 text-xs font-semibold leading-5 text-neutral-950"
+                    >
+                      {unit.product?.title ||
+                        "Product unavailable"}
                     </p>
 
-                    <p className="mt-1 truncate text-xs text-neutral-600">
-                      SKU:{" "}
-                      {selectedProduct.sku || "-"}
-                    </p>
-
-                    <p className="mt-1 truncate text-xs text-neutral-500">
-                      ID: {selectedProduct.id}
+                    <p
+                      title={unit.product?.sku || ""}
+                      className="mt-1 truncate text-[11px] text-neutral-500"
+                    >
+                      SKU: {unit.product?.sku || "-"}
                     </p>
                   </div>
+                </TableCell>
+
+                <TableCell>
+                  <div className="min-w-0">
+                    <p
+                      title={unit.skuCode}
+                      className="break-words text-xs font-semibold leading-5 text-neutral-900"
+                    >
+                      {unit.skuCode}
+                    </p>
+
+                    <p
+                      title={unit.id}
+                      className="mt-1 truncate text-[10px] text-neutral-400"
+                    >
+                      ID: {unit.id.slice(0, 8)}…
+                    </p>
+                  </div>
+                </TableCell>
+
+                <TableCell>
+                  {unit.variant ? (
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-neutral-800">
+                        {[
+                          unit.variant.size
+                            ? `Size ${unit.variant.size}`
+                            : null,
+                          unit.variant.color || null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "-"}
+                      </p>
+
+                      <p
+                        title={unit.variant.sku || ""}
+                        className="mt-1 truncate text-[10px] text-neutral-500"
+                      >
+                        {unit.variant.sku || "-"}
+                      </p>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-neutral-500">
+                      Product level
+                    </span>
+                  )}
+                </TableCell>
+
+                <TableCell>
+                  <select
+                    value={unit.status}
+                    disabled={
+                      isUpdating ||
+                      isArchiving ||
+                      isDeleting ||
+                      !statusOptions.length
+                    }
+                    onChange={(event) =>
+                      void handleStatusChange(
+                        unit,
+                        event.target
+                          .value as RentalInventoryUnitStatus,
+                      )
+                    }
+                    className="h-9 w-full min-w-0 rounded-xl border border-neutral-200 bg-white px-2 text-[11px] font-semibold outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-100"
+                  >
+                    {!statusOptions.includes(unit.status) ? (
+                      <option value={unit.status}>
+                        {unit.status}
+                      </option>
+                    ) : null}
+
+                    {statusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </TableCell>
+
+                <TableCell>
+                  <select
+                    value={unit.condition || ""}
+                    disabled={
+                      isUpdating ||
+                      isArchiving ||
+                      isDeleting ||
+                      !conditionOptions.length
+                    }
+                    onChange={(event) => {
+                      if (!event.target.value) return;
+
+                      void handleConditionChange(
+                        unit,
+                        event.target
+                          .value as RentalInventoryCondition,
+                      );
+                    }}
+                    className="h-9 w-full min-w-0 rounded-xl border border-neutral-200 bg-white px-2 text-[11px] font-semibold outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-100"
+                  >
+                    {!unit.condition ? (
+                      <option value="">Not set</option>
+                    ) : null}
+
+                    {unit.condition &&
+                    !conditionOptions.includes(unit.condition) ? (
+                      <option value={unit.condition}>
+                        {unit.condition}
+                      </option>
+                    ) : null}
+
+                    {conditionOptions.map((condition) => (
+                      <option
+                        key={condition}
+                        value={condition}
+                      >
+                        {condition}
+                      </option>
+                    ))}
+                  </select>
+                </TableCell>
+
+                <TableCell>
+                  {unit.currentBookingId ? (
+                    <span
+                      title={unit.currentBookingId}
+                      className="block truncate text-[10px] font-medium text-neutral-700"
+                    >
+                      {unit.currentBookingId}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-neutral-400">
+                      No booking
+                    </span>
+                  )}
+                </TableCell>
+
+                <TableCell>
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      disabled={
+                        unit.status === "LOST" ||
+                        isUpdating ||
+                        isArchiving ||
+                        isDeleting
+                      }
+                      onClick={() =>
+                        void handleMarkLost(unit)
+                      }
+                      className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[10px] font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isArchiving ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Archive className="h-3 w-3" />
+                      )}
+
+                      {unit.status === "LOST"
+                        ? "Lost"
+                        : "Mark Lost"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        isUpdating ||
+                        isArchiving ||
+                        isDeleting
+                      }
+                      onClick={() =>
+                        void handleDeleteUnit(unit)
+                      }
+                      className="h-8 rounded-lg border border-red-200 bg-red-50 px-2 text-[10px] font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isDeleting
+                        ? "Deleting..."
+                        : "Delete"}
+                    </button>
+                  </div>
+                </TableCell>
+              </tr>
+            );
+          })
+        ) : (
+          <tr>
+            <td
+              colSpan={7}
+              className="px-4 py-12 text-center text-sm text-neutral-500"
+            >
+              No rental inventory units found.
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-neutral-500">
+              Page {meta.page} of {meta.totalPages || 1} · Total{" "}
+              {meta.total}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isLoading || page <= 1}
+                onClick={() =>
+                  void loadRentalUnits(page - 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  isLoading ||
+                  page >= (meta.totalPages || 1)
+                }
+                onClick={() =>
+                  void loadRentalUnits(page + 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+<div
+  className={[
+    "fixed inset-0 z-50 flex items-center justify-center p-4 transition",
+    isCreateDrawerOpen
+      ? "pointer-events-auto"
+      : "pointer-events-none",
+  ].join(" ")}
+>
+  <button
+    type="button"
+    aria-label="Close create rental unit modal"
+    onClick={closeCreateDrawer}
+    className={[
+      "absolute inset-0 bg-black/45 backdrop-blur-sm transition-opacity duration-300 ease-out",
+      isCreateDrawerOpen
+        ? "opacity-100"
+        : "opacity-0",
+    ].join(" ")}
+  />
+
+  <form
+    onSubmit={handleCreateRentalUnit}
+   className={[
+  "relative z-10 max-h-[84vh] w-full max-w-2xl overflow-y-auto overflow-x-hidden rounded-[1.75rem] bg-white p-4 shadow-2xl transition-all duration-300 ease-out sm:p-5",
+  isCreateDrawerOpen
+    ? "translate-y-0 scale-100 opacity-100"
+    : "translate-y-4 scale-95 opacity-0",
+].join(" ")}
+  >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Inventory
+              </p>
+
+             <h2 className="mt-1 text-xl font-semibold text-neutral-950">
+  Create Rental Unit
+</h2>
+
+<p className="mt-1 text-xs text-neutral-500">
+  Create one record for each physical rentable item.
+</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeCreateDrawer}
+              className="rounded-2xl border border-neutral-200 bg-white p-2 text-neutral-600 transition hover:bg-neutral-50 hover:text-neutral-950"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+       <div className="mt-4 grid gap-4">
+            <Field label="Product" required>
+           <div className="min-w-0 rounded-2xl border border-neutral-200 bg-neutral-50 p-2.5">
+  <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_105px]">
+                  <input
+                    value={productSearch}
+                    onChange={(event) =>
+                      setProductSearch(event.target.value)
+                    }
+                    placeholder="Search product by title or SKU..."
+                    className="h-10 min-w-0 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+                  />
 
                   <button
                     type="button"
-                    onClick={clearProduct}
-                    className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700"
+                    onClick={() =>
+                      void searchProducts(productSearch)
+                    }
+                    disabled={isSearchingProducts}
+             className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-neutral-950 px-3 text-xs font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Clear
+                    {isSearchingProducts ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                    Search
                   </button>
                 </div>
-              ) : null}
 
-              {!selectedProduct ? (
-                <div className="mt-3 max-h-72 overflow-y-auto rounded-2xl border border-neutral-200 bg-white">
-                  {isSearchingProducts ? (
-                    <div className="px-4 py-8 text-center text-sm text-neutral-500">
-                      Products loading...
+                {selectedProduct ? (
+                <div className="mt-2 flex min-w-0 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2">
+                    {selectedProduct.thumbnail ||
+                    selectedProduct.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={
+                          selectedProduct.thumbnail ||
+                          selectedProduct.imageUrl ||
+                          ""
+                        }
+                        alt={selectedProduct.title}
+                    className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-[9px] text-neutral-400">
+                        No image
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-neutral-950">
+                        {selectedProduct.title}
+                      </p>
+
+                      <p className="mt-0.5 truncate text-[11px] text-neutral-600">
+                        SKU: {selectedProduct.sku || "-"}
+                      </p>
                     </div>
-                  ) : productResults.length ? (
-                    productResults.map(
-                      (product) => (
+
+                    <button
+                      type="button"
+                      onClick={clearProduct}
+                     className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : (
+               <div className="mt-2 max-h-[190px] overflow-y-auto overflow-x-hidden rounded-xl border border-neutral-200 bg-white">
+                    {isSearchingProducts ? (
+                      <div className="px-4 py-8 text-center text-sm text-neutral-500">
+                        Products loading...
+                      </div>
+                    ) : productResults.length ? (
+                      productResults.map((product) => (
                         <button
                           key={product.id}
                           type="button"
                           onClick={() =>
-                            void selectProduct(
-                              product,
-                            )
+                            void selectProduct(product)
                           }
                           className="flex w-full min-w-0 items-center gap-3 border-b border-neutral-100 px-3 py-3 text-left transition last:border-b-0 hover:bg-neutral-50"
                         >
@@ -2293,7 +2994,7 @@ function RentalUnitsTab() {
                             />
                           ) : (
                             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-[10px] text-neutral-400">
-                              No img
+                              No image
                             </div>
                           )}
 
@@ -2303,160 +3004,851 @@ function RentalUnitsTab() {
                             </p>
 
                             <p className="mt-1 truncate text-xs text-neutral-500">
-                              SKU:{" "}
-                              {product.sku || "-"}
+                              SKU: {product.sku || "-"}
                             </p>
                           </div>
                         </button>
-                      ),
-                    )
-                  ) : (
-                    <div className="px-4 py-8 text-center text-sm text-neutral-500">
-                      No products found.
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          </Field>
+                      ))
+                    ) : (
+                      <div className="px-4 py-8 text-center text-sm text-neutral-500">
+                        No products found.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Field>
 
-          <Field label="Variant">
-            <select
-              value={form.variantId}
-              onChange={(event) =>
-                selectVariant(event.target.value)
-              }
-              disabled={
-                !selectedProduct ||
-                isLoadingVariants
-              }
-              className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-100"
-            >
-              <option value="">
-                {!selectedProduct
-                  ? "Select product first"
-                  : isLoadingVariants
-                    ? "Variants loading..."
-                    : "Product-level unit — no variant"}
-              </option>
-
-              {variants.map((variant) => (
-                <option
-                  key={variant.id}
-                  value={variant.id}
-                >
-                  {[
-                    variant.size
-                      ? `Size ${variant.size}`
-                      : null,
-                    variant.color || null,
-                    variant.variantSku ||
-                      variant.sku ||
-                      null,
-                    variant.status || null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+            <Field label="Variant">
+              <select
+                value={form.variantId}
+                onChange={(event) =>
+                  selectVariant(event.target.value)
+                }
+                disabled={
+                  !selectedProduct ||
+                  isLoadingVariants
+                }
+             className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-100"
+              >
+                <option value="">
+                  {!selectedProduct
+                    ? "Select product first"
+                    : isLoadingVariants
+                      ? "Variants loading..."
+                      : "Product-level unit — no variant"}
                 </option>
-              ))}
-            </select>
-          </Field>
 
-          {selectedVariant ? (
-            <div className="grid gap-3 rounded-3xl border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
-              <p className="text-sm text-neutral-600">
-                Size:{" "}
-                <strong className="text-neutral-950">
-                  {selectedVariant.size || "-"}
-                </strong>
+                {variants.map((variant) => (
+                  <option
+                    key={variant.id}
+                    value={variant.id}
+                  >
+                    {[
+                      variant.size
+                        ? `Size ${variant.size}`
+                        : null,
+                      variant.color || null,
+                      variant.variantSku ||
+                        variant.sku ||
+                        null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {selectedVariant ? (
+              <div className="grid gap-3 rounded-3xl border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-3">
+                <p className="text-sm text-neutral-600">
+                  Size:{" "}
+                  <strong className="text-neutral-950">
+                    {selectedVariant.size || "-"}
+                  </strong>
+                </p>
+
+                <p className="text-sm text-neutral-600">
+                  Color:{" "}
+                  <strong className="text-neutral-950">
+                    {selectedVariant.color || "-"}
+                  </strong>
+                </p>
+
+                <p className="text-sm text-neutral-600">
+                  SKU:{" "}
+                  <strong className="text-neutral-950">
+                    {selectedVariant.variantSku ||
+                      selectedVariant.sku ||
+                      "-"}
+                  </strong>
+                </p>
+              </div>
+            ) : null}
+
+            <Field label="Physical Unit SKU" required>
+              <input
+                value={form.skuCode}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    skuCode: event.target.value,
+                  }))
+                }
+                placeholder={
+                  selectedVariant?.variantSku ||
+                  selectedVariant?.sku
+                    ? `${
+                        selectedVariant.variantSku ||
+                        selectedVariant.sku
+                      }-UNIT-001`
+                    : "Example: RENT-DRESS-M-UNIT-001"
+                }
+              className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950"
+              />
+            </Field>
+
+            <Field label="Condition">
+              <select
+                value={form.condition}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    condition: event.target.value,
+                  }))
+                }
+                disabled={!conditionOptions.length}
+           className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none transition focus:border-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-100"
+              >
+                {!conditionOptions.length ? (
+                  <option value="">
+                    Conditions loading...
+                  </option>
+                ) : null}
+
+                {conditionOptions.map((condition) => (
+                  <option
+                    key={condition}
+                    value={condition}
+                  >
+                    {condition}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+         <div className="sticky bottom-0 -mx-4 mt-4 flex gap-3 border-t border-neutral-200 bg-white px-4 pb-1 pt-3 sm:-mx-5 sm:px-5">
+            <button
+              type="button"
+              onClick={closeCreateDrawer}
+           className="h-10 flex-1 rounded-xl border border-neutral-200 bg-white text-xs font-semibold text-neutral-700 transition hover:bg-neutral-50"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={
+                isCreating ||
+                !selectedProduct
+              }
+          className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 text-xs font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isCreating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <PackagePlus className="h-4 w-4" />
+              )}
+
+              {isCreating
+                ? "Creating..."
+                : "Create Rental Unit"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function RentalRequestsTab() {
+  const [requests, setRequests] = useState<RentalRequest[]>([]);
+  const [meta, setMeta] = useState<InventoryListMeta>(emptyMeta);
+
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const [selectedRequest, setSelectedRequest] =
+    useState<RentalRequest | null>(null);
+
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionRequestId, setActionRequestId] = useState("");
+
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const pendingCount = useMemo(
+    () =>
+      requests.filter((request) => request.status === "PENDING")
+        .length,
+    [requests],
+  );
+
+  const processedCount = useMemo(
+    () =>
+      requests.filter((request) => request.status !== "PENDING")
+        .length,
+    [requests],
+  );
+
+  function formatRequestDate(value?: string | null) {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return value;
+
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(date);
+  }
+
+  function getRequestStatusClass(status: string) {
+    switch (status) {
+      case "PENDING":
+        return "border-amber-200 bg-amber-50 text-amber-800";
+
+      case "ACCEPTED":
+        return "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+      case "DECLINED":
+        return "border-red-200 bg-red-50 text-red-700";
+
+      case "COMPLETED":
+        return "border-blue-200 bg-blue-50 text-blue-700";
+
+      case "CANCELLED":
+        return "border-neutral-200 bg-neutral-100 text-neutral-600";
+
+      default:
+        return "border-neutral-200 bg-neutral-100 text-neutral-600";
+    }
+  }
+
+  async function loadRentalRequests(nextPage = page) {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const response = await getRentalRequests({
+        page: nextPage,
+        limit: 20,
+        search: search.trim() || undefined,
+      });
+
+      setRequests(response.data);
+      setMeta(response.meta);
+      setPage(response.meta.page || nextPage);
+    } catch (err) {
+      setRequests([]);
+      setMeta(emptyMeta);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load rental requests.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleSearch(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    await loadRentalRequests(1);
+  }
+
+  async function openRequestDetail(request: RentalRequest) {
+    try {
+      setIsDetailOpen(true);
+      setIsDetailLoading(true);
+      setSelectedRequest(request);
+      setError("");
+
+      const detail = await getRentalRequestById(request.id);
+
+      if (!detail) {
+        throw new Error("Rental request detail not found.");
+      }
+
+      setSelectedRequest(detail);
+    } catch (err) {
+      setIsDetailOpen(false);
+      setSelectedRequest(null);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load rental request detail.",
+      );
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
+
+  function closeRequestDetail() {
+    setIsDetailOpen(false);
+    setSelectedRequest(null);
+  }
+
+  async function handleAccept(request: RentalRequest) {
+    if (request.status !== "PENDING") return;
+
+    const confirmed = window.confirm(
+      `Accept rental request "${request.id}"?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setActionRequestId(request.id);
+      setError("");
+      setSuccessMessage("");
+
+      const updatedRequest = await acceptRentalRequest(request.id);
+
+      if (updatedRequest) {
+        setSelectedRequest((current) =>
+          current?.id === updatedRequest.id
+            ? updatedRequest
+            : current,
+        );
+      }
+
+      setSuccessMessage(
+        "Rental request accepted successfully.",
+      );
+
+      await loadRentalRequests(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to accept the rental request.",
+      );
+    } finally {
+      setActionRequestId("");
+    }
+  }
+
+  async function handleDecline(request: RentalRequest) {
+    if (request.status !== "PENDING") return;
+
+    const confirmed = window.confirm(
+      `Decline rental request "${request.id}"?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setActionRequestId(request.id);
+      setError("");
+      setSuccessMessage("");
+
+      const updatedRequest = await declineRentalRequest(request.id);
+
+      if (updatedRequest) {
+        setSelectedRequest((current) =>
+          current?.id === updatedRequest.id
+            ? updatedRequest
+            : current,
+        );
+      }
+
+      setSuccessMessage(
+        "Rental request declined successfully.",
+      );
+
+      await loadRentalRequests(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to decline the rental request.",
+      );
+    } finally {
+      setActionRequestId("");
+    }
+  }
+
+  useEffect(() => {
+    void loadRentalRequests(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <section className="min-w-0">
+      <div className="flex min-w-0 flex-col gap-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <StatsCard
+            label="Total Rental Requests"
+            value={meta.total}
+          />
+
+          <StatsCard
+            label="Pending On This Page"
+            value={pendingCount}
+          />
+
+          <StatsCard
+            label="Processed On This Page"
+            value={processedCount}
+          />
+        </div>
+
+        <div className="min-w-0 rounded-[2rem] border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Management
               </p>
 
-              <p className="text-sm text-neutral-600">
-                Color:{" "}
-                <strong className="text-neutral-950">
-                  {selectedVariant.color || "-"}
-                </strong>
-              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Rental Requests
+              </h2>
 
-              <p className="text-sm text-neutral-600">
-                SKU:{" "}
-                <strong className="text-neutral-950">
-                  {selectedVariant.variantSku ||
-                    selectedVariant.sku ||
-                    "-"}
-                </strong>
-              </p>
-
-              <p className="text-sm text-neutral-600">
-                Status:{" "}
-                <strong className="text-neutral-950">
-                  {selectedVariant.status || "-"}
-                </strong>
+              <p className="mt-1 text-sm text-neutral-500">
+                Review customer rental requests and accept or decline pending requests.
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => void loadRentalRequests(page)}
+              disabled={isLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+
+              Refresh
+            </button>
+          </div>
+
+          <form
+            onSubmit={handleSearch}
+            className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"
+          >
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search rental requests..."
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white pl-11 pr-4 text-sm outline-none transition focus:border-neutral-950"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="inline-flex h-11 items-center justify-center rounded-2xl bg-neutral-950 px-6 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Search
+            </button>
+          </form>
+
+          {error ? (
+            <AlertBox type="error" message={error} />
           ) : null}
 
-          <Field
-            label="Physical Unit SKU"
-            required
-          >
-            <input
-              value={form.skuCode}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  skuCode: event.target.value,
-                }))
-              }
-              placeholder={
-                selectedVariant?.variantSku ||
-                selectedVariant?.sku
-                  ? `${selectedVariant.variantSku || selectedVariant.sku}-UNIT-001`
-                  : "Example: RENT-DRESS-M-UNIT-001"
-              }
-              className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
+          {successMessage ? (
+            <AlertBox
+              type="success"
+              message={successMessage}
             />
+          ) : null}
 
-        <span className="text-xs text-neutral-500">
-  Use a unique SKU for every physical rental item.
-  The placeholder value is not saved automatically.
-</span>
-          </Field>
+          <div className="mt-5 overflow-hidden rounded-3xl border border-neutral-200 bg-white">
+            <div className="w-full overflow-x-auto">
+              <table className="w-full min-w-[1050px] table-fixed divide-y divide-neutral-200 text-sm">
+                <thead className="bg-neutral-50">
+                  <tr>
+                    <TableHead className="w-[12%]">
+                      Request
+                    </TableHead>
 
-          <Field label="Condition">
-            <input
-              value={form.condition}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  condition:
-                    event.target.value,
-                }))
-              }
-              placeholder="Example: Excellent"
-              className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
-            />
-          </Field>
+                    <TableHead className="w-[14%]">
+                      Product
+                    </TableHead>
 
-          <button
-            type="submit"
-            disabled={
-              isCreating ||
-              !selectedProduct
-            }
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-          >
-            {isCreating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <PackagePlus className="h-4 w-4" />
-            )}
+                    <TableHead className="w-[14%]">
+                      Renter
+                    </TableHead>
 
-            {isCreating
-              ? "Creating..."
-              : "Create Rental Unit"}
-          </button>
-        </form>
+                    <TableHead className="w-[16%]">
+                      Rental Period
+                    </TableHead>
+
+                    <TableHead className="w-[16%]">
+                      Message
+                    </TableHead>
+
+                    <TableHead className="w-[12%]">
+                      Status
+                    </TableHead>
+
+                    <TableHead className="w-[16%]">
+                      Actions
+                    </TableHead>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-neutral-100 bg-white">
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-12 text-center text-sm text-neutral-500"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Rental requests loading...
+                        </span>
+                      </td>
+                    </tr>
+                  ) : requests.length ? (
+                    requests.map((request) => {
+                      const isActing =
+                        actionRequestId === request.id;
+
+                      return (
+                        <tr
+                          key={request.id}
+                          className="hover:bg-neutral-50/70"
+                        >
+                          <TableCell>
+                            <p
+                              title={request.id}
+                              className="truncate text-xs font-semibold text-neutral-950"
+                            >
+                              {request.id.slice(0, 8)}…
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-neutral-500">
+                              {formatRequestDate(request.createdAt)}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p
+                              title={request.productId}
+                              className="truncate text-xs font-medium text-neutral-800"
+                            >
+                              {request.productId}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p
+                              title={request.renterId}
+                              className="truncate text-xs font-medium text-neutral-800"
+                            >
+                              {request.renterId}
+                            </p>
+
+                            {request.sellerId ? (
+                              <p
+                                title={request.sellerId}
+                                className="mt-1 truncate text-[10px] text-neutral-500"
+                              >
+                                Seller: {request.sellerId}
+                              </p>
+                            ) : null}
+                          </TableCell>
+
+                          <TableCell>
+                            <p className="text-xs font-medium text-neutral-800">
+                              {formatRequestDate(request.startDate)}
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-neutral-500">
+                              to {formatRequestDate(request.endDate)}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p
+                              title={request.message || ""}
+                              className="line-clamp-2 text-xs leading-5 text-neutral-600"
+                            >
+                              {request.message || "No message"}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <span
+                              className={[
+                                "inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold",
+                                getRequestStatusClass(request.status),
+                              ].join(" ")}
+                            >
+                              {request.status}
+                            </span>
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="grid gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void openRequestDetail(request)
+                                }
+                                disabled={isActing}
+                                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2 text-[10px] font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                View
+                              </button>
+
+                              {request.status === "PENDING" ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleAccept(request)
+                                    }
+                                    disabled={isActing}
+                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[10px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isActing ? "..." : "Accept"}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleDecline(request)
+                                    }
+                                    disabled={isActing}
+                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 text-[10px] font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isActing ? "..." : "Decline"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-12 text-center text-sm text-neutral-500"
+                      >
+                        No rental requests found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-neutral-500">
+              Page {meta.page} of {meta.totalPages || 1} · Total{" "}
+              {meta.total}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isLoading || page <= 1}
+                onClick={() =>
+                  void loadRentalRequests(page - 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  isLoading ||
+                  page >= (meta.totalPages || 1)
+                }
+                onClick={() =>
+                  void loadRentalRequests(page + 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className={[
+          "fixed inset-0 z-50 flex items-center justify-center p-4 transition",
+          isDetailOpen
+            ? "pointer-events-auto"
+            : "pointer-events-none",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          aria-label="Close rental request detail"
+          onClick={closeRequestDetail}
+          className={[
+            "absolute inset-0 bg-black/45 backdrop-blur-sm transition-opacity duration-300",
+            isDetailOpen ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
+
+        <div
+          className={[
+            "relative z-10 max-h-[86vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl transition-all duration-300 sm:p-6",
+            isDetailOpen
+              ? "translate-y-0 scale-100 opacity-100"
+              : "translate-y-5 scale-95 opacity-0",
+          ].join(" ")}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Request
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Request Details
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeRequestDetail}
+              className="rounded-2xl border border-neutral-200 bg-white p-2 text-neutral-600 transition hover:bg-neutral-50 hover:text-neutral-950"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {isDetailLoading ? (
+            <div className="flex min-h-64 items-center justify-center">
+              <span className="inline-flex items-center gap-2 text-sm text-neutral-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Request detail loading...
+              </span>
+            </div>
+          ) : selectedRequest ? (
+            <>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <RequestDetailItem
+                  label="Request ID"
+                  value={selectedRequest.id}
+                />
+
+                <RequestDetailItem
+                  label="Status"
+                  value={selectedRequest.status}
+                />
+
+                <RequestDetailItem
+                  label="Product ID"
+                  value={selectedRequest.productId}
+                />
+
+                <RequestDetailItem
+                  label="Renter ID"
+                  value={selectedRequest.renterId}
+                />
+
+                <RequestDetailItem
+                  label="Seller ID"
+                  value={selectedRequest.sellerId || "-"}
+                />
+
+                <RequestDetailItem
+                  label="Created"
+                  value={formatRequestDate(
+                    selectedRequest.createdAt,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="Start Date"
+                  value={formatRequestDate(
+                    selectedRequest.startDate,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="End Date"
+                  value={formatRequestDate(
+                    selectedRequest.endDate,
+                  )}
+                />
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Customer Message
+                </p>
+
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-800">
+                  {selectedRequest.message || "No message provided."}
+                </p>
+              </div>
+
+              {selectedRequest.status === "PENDING" ? (
+                <div className="mt-5 grid gap-3 border-t border-neutral-200 pt-5 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDecline(selectedRequest)
+                    }
+                    disabled={
+                      actionRequestId === selectedRequest.id
+                    }
+                    className="h-11 rounded-2xl border border-red-200 bg-red-50 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Decline Request
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleAccept(selectedRequest)
+                    }
+                    disabled={
+                      actionRequestId === selectedRequest.id
+                    }
+                    className="h-11 rounded-2xl bg-neutral-950 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Accept Request
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -2613,25 +4005,27 @@ const [successMessage, setSuccessMessage] = useState("");
 }
 
 
-  async function searchProducts(searchText = productSearch) {
+async function searchProducts(searchText = productSearch) {
   try {
     setIsSearchingProducts(true);
     setError("");
 
+    const cleanSearch = searchText.trim();
+
     const response = await getAdminProductPicker({
-      search: searchText.trim() || undefined,
-      searchBy: "all",
-      status: "ACTIVE",
+      search: cleanSearch || undefined,
       page: 1,
-      limit: 10,
+      limit: 50,
     });
 
     setProductResults(response.items);
   } catch (err) {
+    setProductResults([]);
+
     setError(
       err instanceof Error
         ? err.message
-        : "Product picker load karte time error aa gaya."
+        : "Failed to load products.",
     );
   } finally {
     setIsSearchingProducts(false);
@@ -3276,26 +4670,26 @@ return (
   if (editingAssetId) return;
   void selectProduct(product);
 }}
-                      className="flex w-full min-w-0 items-center gap-3 border-b border-neutral-100 px-3 py-3 text-left transition last:border-b-0 hover:bg-neutral-50"
+            className="flex w-full min-w-0 items-center gap-2.5 border-b border-neutral-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-neutral-50"
                     >
                       {product.thumbnail || product.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={product.thumbnail || product.imageUrl || ""}
                           alt={product.title}
-                          className="h-12 w-12 rounded-xl object-cover"
+                         className="h-10 w-10 shrink-0 rounded-lg object-cover"
                         />
                       ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-[10px] text-neutral-400">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-[9px] text-neutral-400">
                           No img
                         </div>
                       )}
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-neutral-950">
+                        <p className="truncate text-xs font-semibold text-neutral-950">
                           {product.title}
                         </p>
-                        <p className="mt-1 truncate text-xs text-neutral-500">
+                        <p className="mt-0.5 truncate text-[11px] text-neutral-500">
                           SKU: {product.sku || "-"} ·{" "}
                           {product.vendor || product.brand || "-"}
                         </p>
@@ -3721,6 +5115,29 @@ function ComingSoonTab({ title }: { title: string }) {
         hai.
       </p>
     </section>
+  );
+}
+
+function RequestDetailItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        {label}
+      </p>
+
+      <p
+        title={value}
+        className="mt-2 break-words text-sm font-medium text-neutral-900"
+      >
+        {value}
+      </p>
+    </div>
   );
 }
 
