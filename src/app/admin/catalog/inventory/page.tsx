@@ -5,6 +5,7 @@ import {
   AlertCircle,
   Archive,
   Boxes,
+  CalendarDays,
   ClipboardList,
   Building2,
   CheckCircle2,
@@ -22,6 +23,7 @@ import {
 import {
   acceptRentalRequest,
   archiveRentalInventoryUnit,
+  completeRentalBookingCleaning,
   createAdminLocation,
   createAdminWarehouse,
   createInventoryAsset,
@@ -36,12 +38,17 @@ import {
   getAdminWarehouses,
   getInventoryAssetById,
   getInventoryAssets,
+  getRentalBookingById,
+  getRentalBookings,
+  getRentalBookingTimeline,
   getRentalInventoryUnits,
   getRentalOptions,
   getRentalRequestById,
   getRentalRequests,
   getWarehouseBins,
+  returnRentalBooking,
   updateInventoryAsset,
+  updateRentalBookingStatus,
   updateRentalInventoryUnitCondition,
   updateRentalInventoryUnitStatus,
   type AdminCatalogVariant,
@@ -54,6 +61,9 @@ import {
   type CreateWarehouseBinPayload,
   type InventoryAsset,
   type InventoryListMeta,
+  type RentalBooking,
+  type RentalBookingStatus,
+  type RentalBookingTimeline,
   type RentalInventoryCondition,
   type RentalInventoryUnit,
   type RentalInventoryUnitStatus,
@@ -67,6 +77,7 @@ type InventoryTab =
   | "assets"
   | "rentalUnits"
   | "rentalRequests"
+  | "rentalBookings"
   | "locations"
   | "warehouses"
   | "bins";
@@ -91,7 +102,11 @@ const tabs: Array<{
   label: "Rental Requests",
   icon: ClipboardList,
 },
-
+{
+  id: "rentalBookings",
+  label: "Rental Bookings",
+  icon: CalendarDays,
+},
   {
     id: "locations",
     label: "Locations",
@@ -233,7 +248,7 @@ const [activeTab, setActiveTab] =
         </section>
 
         <section className="rounded-[2rem] border border-neutral-200 bg-white p-2 shadow-sm">
-      <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+<div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-7">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -244,7 +259,7 @@ const [activeTab, setActiveTab] =
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={[
-                    "flex items-center justify-center gap-2 rounded-3xl px-4 py-3 text-sm font-semibold transition",
+                "flex min-w-0 items-center justify-center gap-2 rounded-3xl px-3 py-3 text-xs font-semibold transition xl:text-sm",
                     isActive
                       ? "bg-neutral-950 text-white shadow-sm"
                       : "bg-neutral-50 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-950",
@@ -264,6 +279,7 @@ const [activeTab, setActiveTab] =
 {activeTab === "assets" ? <AssetsTab /> : null}
 {activeTab === "rentalUnits" ? <RentalUnitsTab /> : null}
 {activeTab === "rentalRequests" ? <RentalRequestsTab /> : null}
+{activeTab === "rentalBookings" ? <RentalBookingsTab /> : null}
       </div>
     </main>
   );
@@ -3854,6 +3870,1176 @@ function RentalRequestsTab() {
   );
 }
 
+function RentalBookingsTab() {
+  const [bookings, setBookings] = useState<RentalBooking[]>([]);
+  const [meta, setMeta] = useState<InventoryListMeta>(emptyMeta);
+  const [rentalOptions, setRentalOptions] =
+    useState<RentalOptions | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const [selectedBooking, setSelectedBooking] =
+    useState<RentalBooking | null>(null);
+
+  const [timeline, setTimeline] =
+    useState<RentalBookingTimeline | null>(null);
+
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [actionBookingId, setActionBookingId] = useState("");
+
+  const [isReturnFormOpen, setIsReturnFormOpen] = useState(false);
+  const [returnCondition, setReturnCondition] =
+    useState<RentalInventoryCondition>("Good");
+  const [returnNotes, setReturnNotes] = useState("");
+
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const activeCount = useMemo(
+    () =>
+      bookings.filter(
+        (booking) =>
+          booking.status !== "COMPLETED" &&
+          booking.status !== "CANCELLED",
+      ).length,
+    [bookings],
+  );
+
+  const completedCount = useMemo(
+    () =>
+      bookings.filter(
+        (booking) => booking.status === "COMPLETED",
+      ).length,
+    [bookings],
+  );
+
+  function formatBookingDate(value?: string | null) {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return value;
+
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(date);
+  }
+
+  function formatBookingDateTime(value?: string | null) {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return value;
+
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  }
+
+  function formatBookingMoney(
+    amount: number,
+    currency?: string | null,
+  ) {
+    const numericAmount = Number(amount || 0);
+
+    if (!currency) {
+      return numericAmount.toFixed(2);
+    }
+
+    try {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+      }).format(numericAmount);
+    } catch {
+      return `${currency} ${numericAmount.toFixed(2)}`;
+    }
+  }
+
+  function getBookingStatusClass(status: string) {
+    switch (status) {
+      case "PENDING":
+        return "border-amber-200 bg-amber-50 text-amber-800";
+
+      case "RESERVED":
+        return "border-blue-200 bg-blue-50 text-blue-700";
+
+      case "PAID":
+        return "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+      case "SHIPPED":
+        return "border-violet-200 bg-violet-50 text-violet-700";
+
+      case "ACTIVE":
+        return "border-cyan-200 bg-cyan-50 text-cyan-700";
+
+      case "RETURNED":
+        return "border-orange-200 bg-orange-50 text-orange-700";
+
+      case "CLEANING":
+        return "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700";
+
+      case "COMPLETED":
+        return "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+      case "CANCELLED":
+        return "border-red-200 bg-red-50 text-red-700";
+
+      default:
+        return "border-neutral-200 bg-neutral-100 text-neutral-600";
+    }
+  }
+
+  async function loadRentalBookingOptions() {
+    try {
+      const response = await getRentalOptions();
+
+      setRentalOptions(response);
+
+      const firstCondition =
+        response.inventoryConditions.find(
+          (condition) => condition === "Good",
+        ) ||
+        response.inventoryConditions[0] ||
+        "Good";
+
+      setReturnCondition(
+        firstCondition as RentalInventoryCondition,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load rental booking options.",
+      );
+    }
+  }
+
+  async function loadRentalBookings(nextPage = page) {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const response = await getRentalBookings({
+        page: nextPage,
+        limit: 20,
+        search: search.trim() || undefined,
+      });
+
+      setBookings(response.data);
+      setMeta(response.meta);
+      setPage(response.meta.page || nextPage);
+    } catch (err) {
+      setBookings([]);
+      setMeta(emptyMeta);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load rental bookings.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function refreshBookingDetail(bookingId: string) {
+    const [detail, timelineResponse] = await Promise.all([
+      getRentalBookingById(bookingId),
+      getRentalBookingTimeline(bookingId),
+    ]);
+
+    if (!detail) {
+      throw new Error("Rental booking detail not found.");
+    }
+
+    setSelectedBooking(detail);
+    setTimeline(timelineResponse);
+  }
+
+  async function openBookingDetail(booking: RentalBooking) {
+    try {
+      setSelectedBooking(booking);
+      setTimeline(null);
+      setIsDetailOpen(true);
+      setIsDetailLoading(true);
+      setIsReturnFormOpen(false);
+      setReturnNotes("");
+      setError("");
+
+      await refreshBookingDetail(booking.id);
+    } catch (err) {
+      setIsDetailOpen(false);
+      setSelectedBooking(null);
+      setTimeline(null);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load rental booking detail.",
+      );
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
+
+  function closeBookingDetail() {
+    setIsDetailOpen(false);
+    setSelectedBooking(null);
+    setTimeline(null);
+    setIsReturnFormOpen(false);
+    setReturnNotes("");
+  }
+
+  async function handleSearch(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    await loadRentalBookings(1);
+  }
+
+  async function handleBookingStatusChange(
+    booking: RentalBooking,
+    nextStatus: RentalBookingStatus,
+  ) {
+    if (nextStatus === booking.status) return;
+
+    const confirmed = window.confirm(
+      `Change booking status from ${booking.status} to ${nextStatus}?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setActionBookingId(booking.id);
+      setError("");
+      setSuccessMessage("");
+
+      await updateRentalBookingStatus(booking.id, {
+        status: nextStatus,
+      });
+
+      setSuccessMessage(
+        `Rental booking status updated to ${nextStatus}.`,
+      );
+
+      await loadRentalBookings(page);
+
+      if (isDetailOpen) {
+        await refreshBookingDetail(booking.id);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update the rental booking status.",
+      );
+    } finally {
+      setActionBookingId("");
+    }
+  }
+
+  async function handleReturnBooking() {
+    if (!selectedBooking) return;
+
+    try {
+      setActionBookingId(selectedBooking.id);
+      setError("");
+      setSuccessMessage("");
+
+      const response = await returnRentalBooking(
+        selectedBooking.id,
+        {
+          condition: returnCondition,
+          ...(returnNotes.trim()
+            ? { notes: returnNotes.trim() }
+            : {}),
+        },
+      );
+
+      setSuccessMessage(
+        response.message ||
+          "Rental returned and moved to cleaning.",
+      );
+
+      setIsReturnFormOpen(false);
+      setReturnNotes("");
+
+      await loadRentalBookings(page);
+      await refreshBookingDetail(selectedBooking.id);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to process the rental return.",
+      );
+    } finally {
+      setActionBookingId("");
+    }
+  }
+
+  async function handleCompleteCleaning(
+    booking: RentalBooking,
+  ) {
+    const confirmed = window.confirm(
+      `Mark cleaning complete for booking "${booking.id}"?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setActionBookingId(booking.id);
+      setError("");
+      setSuccessMessage("");
+
+      const response =
+        await completeRentalBookingCleaning(booking.id);
+
+      setSuccessMessage(
+        response.message ||
+          "Cleaning completed. Inventory is available again.",
+      );
+
+      await loadRentalBookings(page);
+
+      if (isDetailOpen) {
+        await refreshBookingDetail(booking.id);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to complete rental cleaning.",
+      );
+    } finally {
+      setActionBookingId("");
+    }
+  }
+
+  useEffect(() => {
+    void loadRentalBookingOptions();
+    void loadRentalBookings(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedNextStatuses = selectedBooking
+    ? (
+        rentalOptions?.validBookingTransitions[
+          selectedBooking.status
+        ] ?? []
+      ).filter(
+        (status) =>
+          status !== "RETURNED" &&
+          status !== "COMPLETED",
+      )
+    : [];
+
+  const canProcessReturn = selectedBooking
+    ? (
+        rentalOptions?.validBookingTransitions[
+          selectedBooking.status
+        ] ?? []
+      ).includes("RETURNED")
+    : false;
+
+  const canCompleteCleaning =
+    selectedBooking?.status === "CLEANING" &&
+    (
+      rentalOptions?.validBookingTransitions.CLEANING ?? []
+    ).includes("COMPLETED");
+
+  const selectedPayment =
+    selectedBooking?.payments?.[0] ?? null;
+
+  return (
+    <section className="min-w-0">
+      <div className="flex min-w-0 flex-col gap-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <StatsCard
+            label="Total Rental Bookings"
+            value={meta.total}
+          />
+
+          <StatsCard
+            label="Active On This Page"
+            value={activeCount}
+          />
+
+          <StatsCard
+            label="Completed On This Page"
+            value={completedCount}
+          />
+        </div>
+
+        <div className="min-w-0 rounded-[2rem] border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Management
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Rental Bookings
+              </h2>
+
+              <p className="mt-1 text-sm text-neutral-500">
+                Manage booking lifecycle, payments, returns and cleaning.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void loadRentalBookings(page)}
+              disabled={isLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+
+              Refresh
+            </button>
+          </div>
+
+          <form
+            onSubmit={handleSearch}
+            className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"
+          >
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search rental bookings..."
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white pl-11 pr-4 text-sm outline-none transition focus:border-neutral-950"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="inline-flex h-11 items-center justify-center rounded-2xl bg-neutral-950 px-6 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Search
+            </button>
+          </form>
+
+          {error ? (
+            <AlertBox type="error" message={error} />
+          ) : null}
+
+          {successMessage ? (
+            <AlertBox
+              type="success"
+              message={successMessage}
+            />
+          ) : null}
+
+         <div className="mt-5 overflow-hidden rounded-3xl border border-neutral-200 bg-white">
+  <div className="w-full overflow-x-auto">
+    <table className="w-full min-w-[980px] table-fixed divide-y divide-neutral-200 text-sm xl:min-w-0">
+      <thead className="bg-neutral-50">
+        <tr>
+          <TableHead className="w-[16%]">
+            Booking / Customer
+          </TableHead>
+
+          <TableHead className="w-[17%]">
+            Product / Variant
+          </TableHead>
+
+          <TableHead className="w-[14%]">
+            Rental Period
+          </TableHead>
+
+          <TableHead className="w-[19%]">
+            Inventory Unit
+          </TableHead>
+
+          <TableHead className="w-[14%]">
+            Payment / Total
+          </TableHead>
+
+          <TableHead className="w-[10%]">
+            Status
+          </TableHead>
+
+          <TableHead className="w-[10%]">
+            Actions
+          </TableHead>
+        </tr>
+      </thead>
+
+      <tbody className="divide-y divide-neutral-100 bg-white">
+        {isLoading ? (
+          <tr>
+            <td
+              colSpan={7}
+              className="px-4 py-12 text-center text-sm text-neutral-500"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Rental bookings loading...
+              </span>
+            </td>
+          </tr>
+        ) : bookings.length ? (
+          bookings.map((booking) => {
+            const payment =
+              booking.payments?.[0] ?? null;
+
+            const isActing =
+              actionBookingId === booking.id;
+
+            return (
+              <tr
+                key={booking.id}
+                className="hover:bg-neutral-50/70"
+              >
+                <TableCell>
+                  <div className="min-w-0">
+                    <p
+                      title={booking.id}
+                      className="truncate text-xs font-semibold text-neutral-950"
+                    >
+                      {booking.id.slice(0, 8)}…
+                    </p>
+
+                    <p className="mt-1 text-[10px] text-neutral-500">
+                      {formatBookingDate(
+                        booking.createdAt,
+                      )}
+                    </p>
+
+                    <p className="mt-2 text-[9px] font-semibold uppercase tracking-wide text-neutral-400">
+                      Customer
+                    </p>
+
+                    <p
+                      title={booking.userId}
+                      className="mt-0.5 truncate text-[10px] text-neutral-600"
+                    >
+                      {booking.userId}
+                    </p>
+                  </div>
+                </TableCell>
+
+                <TableCell>
+                  <div className="min-w-0">
+                    <p
+                      title={booking.productId}
+                      className="truncate text-xs font-semibold text-neutral-900"
+                    >
+                      {booking.productId}
+                    </p>
+
+                    <p
+                      title={booking.variantId || ""}
+                      className="mt-1 truncate text-[10px] text-neutral-500"
+                    >
+                      Variant:{" "}
+                      {booking.variantId || "-"}
+                    </p>
+                  </div>
+                </TableCell>
+
+                <TableCell>
+                  <p className="text-xs font-medium text-neutral-800">
+                    {formatBookingDate(
+                      booking.rentalStartDate,
+                    )}
+                  </p>
+
+                  <p className="mt-1 text-[10px] text-neutral-500">
+                    to{" "}
+                    {formatBookingDate(
+                      booking.rentalEndDate,
+                    )}
+                  </p>
+
+                  <p className="mt-1 text-[10px] text-neutral-400">
+                    {booking.rentalDays} days
+                  </p>
+                </TableCell>
+
+                <TableCell>
+                  <div className="min-w-0">
+                    <p
+                      title={
+                        booking.inventoryUnit?.skuCode ||
+                        booking.inventoryUnitId ||
+                        ""
+                      }
+                      className="truncate text-xs font-semibold text-neutral-800"
+                    >
+                      {booking.inventoryUnit?.skuCode ||
+                        booking.inventoryUnitId ||
+                        "Not assigned"}
+                    </p>
+
+                    <p className="mt-1 text-[10px] text-neutral-500">
+                      {booking.inventoryUnit?.status ||
+                        "No unit status"}
+                    </p>
+                  </div>
+                </TableCell>
+
+                <TableCell>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-neutral-900">
+                      {payment?.status ||
+                        "No payment"}
+                    </p>
+
+                    <p className="mt-1 truncate text-[10px] text-neutral-500">
+                      {payment?.paymentType || "-"}
+                    </p>
+
+                    <p className="mt-2 text-xs font-semibold text-neutral-950">
+                      {formatBookingMoney(
+                        booking.total,
+                        payment?.currency,
+                      )}
+                    </p>
+                  </div>
+                </TableCell>
+
+                <TableCell>
+                  <span
+                    className={[
+                      "inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold",
+                      getBookingStatusClass(
+                        booking.status,
+                      ),
+                    ].join(" ")}
+                  >
+                    {booking.status}
+                  </span>
+                </TableCell>
+
+                <TableCell>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openBookingDetail(
+                        booking,
+                      )
+                    }
+                    disabled={isActing}
+                    className="inline-flex h-9 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-neutral-200 bg-white px-2 text-[10px] font-semibold text-neutral-700 transition hover:border-neutral-400 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    View
+                  </button>
+                </TableCell>
+              </tr>
+            );
+          })
+        ) : (
+          <tr>
+            <td
+              colSpan={7}
+              className="px-4 py-12 text-center text-sm text-neutral-500"
+            >
+              No rental bookings found.
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-neutral-500">
+              Page {meta.page} of {meta.totalPages || 1} · Total{" "}
+              {meta.total}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isLoading || page <= 1}
+                onClick={() =>
+                  void loadRentalBookings(page - 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  isLoading ||
+                  page >= (meta.totalPages || 1)
+                }
+                onClick={() =>
+                  void loadRentalBookings(page + 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className={[
+          "fixed inset-0 z-50 flex items-center justify-center p-4 transition",
+          isDetailOpen
+            ? "pointer-events-auto"
+            : "pointer-events-none",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          aria-label="Close rental booking detail"
+          onClick={closeBookingDetail}
+          className={[
+            "absolute inset-0 bg-black/45 backdrop-blur-sm transition-opacity duration-300",
+            isDetailOpen ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
+
+        <div
+          className={[
+         "relative z-10 max-h-[86vh] w-full max-w-3xl overflow-y-auto rounded-[1.75rem] bg-white p-4 shadow-2xl transition-all duration-300 sm:p-5",
+            isDetailOpen
+              ? "translate-y-0 scale-100 opacity-100"
+              : "translate-y-5 scale-95 opacity-0",
+          ].join(" ")}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Booking
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Booking Details
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeBookingDetail}
+              className="rounded-2xl border border-neutral-200 bg-white p-2 text-neutral-600 transition hover:bg-neutral-50 hover:text-neutral-950"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {isDetailLoading ? (
+            <div className="flex min-h-72 items-center justify-center">
+              <span className="inline-flex items-center gap-2 text-sm text-neutral-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Booking detail loading...
+              </span>
+            </div>
+          ) : selectedBooking ? (
+            <>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <RequestDetailItem
+                  label="Booking ID"
+                  value={selectedBooking.id}
+                />
+
+                <RequestDetailItem
+                  label="Status"
+                  value={selectedBooking.status}
+                />
+
+                <RequestDetailItem
+                  label="Product ID"
+                  value={selectedBooking.productId}
+                />
+
+                <RequestDetailItem
+                  label="Customer ID"
+                  value={selectedBooking.userId}
+                />
+
+                <RequestDetailItem
+                  label="Variant ID"
+                  value={selectedBooking.variantId || "-"}
+                />
+
+                <RequestDetailItem
+                  label="Inventory Unit"
+                  value={
+                    selectedBooking.inventoryUnit?.skuCode ||
+                    selectedBooking.inventoryUnitId ||
+                    "-"
+                  }
+                />
+
+                <RequestDetailItem
+                  label="Rental Start"
+                  value={formatBookingDate(
+                    selectedBooking.rentalStartDate,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="Rental End"
+                  value={formatBookingDate(
+                    selectedBooking.rentalEndDate,
+                  )}
+                />
+              </div>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <RequestDetailItem
+                  label="Subtotal"
+                  value={formatBookingMoney(
+                    selectedBooking.subtotal,
+                    selectedPayment?.currency,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="Security Deposit"
+                  value={formatBookingMoney(
+                    selectedBooking.securityDeposit,
+                    selectedPayment?.currency,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="Premium Surcharge"
+                  value={formatBookingMoney(
+                    selectedBooking.premiumSurcharge,
+                    selectedPayment?.currency,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="Late Fee"
+                  value={formatBookingMoney(
+                    selectedBooking.lateFee,
+                    selectedPayment?.currency,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="Damage Fee"
+                  value={formatBookingMoney(
+                    selectedBooking.damageFee,
+                    selectedPayment?.currency,
+                  )}
+                />
+
+                <RequestDetailItem
+                  label="Total"
+                  value={formatBookingMoney(
+                    selectedBooking.total,
+                    selectedPayment?.currency,
+                  )}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Payment
+                  </p>
+
+                  <p className="mt-3 text-sm font-semibold text-neutral-950">
+                    {selectedPayment?.status ||
+                      "No payment record"}
+                  </p>
+
+                  <p className="mt-1 text-xs text-neutral-500">
+                    {selectedPayment?.paymentType || "-"}
+                  </p>
+
+                  <p className="mt-2 text-sm text-neutral-800">
+                    {selectedPayment
+                      ? formatBookingMoney(
+                          selectedPayment.amount,
+                          selectedPayment.currency,
+                        )
+                      : "-"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Inventory Unit
+                  </p>
+
+                  <p className="mt-3 text-sm font-semibold text-neutral-950">
+                    {selectedBooking.inventoryUnit?.skuCode ||
+                      "Not assigned"}
+                  </p>
+
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Status:{" "}
+                    {selectedBooking.inventoryUnit?.status || "-"}
+                  </p>
+
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Condition:{" "}
+                    {selectedBooking.inventoryUnit?.condition ||
+                      "-"}
+                  </p>
+                </div>
+              </div>
+
+              {selectedBooking.returns?.length ? (
+                <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Return Details
+                  </p>
+
+                  {selectedBooking.returns.map(
+                    (returnRecord) => (
+                      <div
+                        key={returnRecord.id}
+                        className="mt-3 grid gap-3 sm:grid-cols-2"
+                      >
+                        <p className="text-sm text-neutral-700">
+                          Condition:{" "}
+                          <strong className="text-neutral-950">
+                            {returnRecord.condition || "-"}
+                          </strong>
+                        </p>
+
+                        <p className="text-sm text-neutral-700">
+                          Received:{" "}
+                          <strong className="text-neutral-950">
+                            {formatBookingDateTime(
+                              returnRecord.receivedAt,
+                            )}
+                          </strong>
+                        </p>
+
+                        <p className="text-sm text-neutral-700">
+                          Cleaning Started:{" "}
+                          <strong className="text-neutral-950">
+                            {formatBookingDateTime(
+                              returnRecord.cleaningStartedAt,
+                            )}
+                          </strong>
+                        </p>
+
+                        <p className="text-sm text-neutral-700">
+                          Cleaning Completed:{" "}
+                          <strong className="text-neutral-950">
+                            {formatBookingDateTime(
+                              returnRecord.cleaningCompletedAt,
+                            )}
+                          </strong>
+                        </p>
+
+                        <p className="sm:col-span-2 text-sm text-neutral-700">
+                          Notes:{" "}
+                          <strong className="text-neutral-950">
+                            {returnRecord.notes || "-"}
+                          </strong>
+                        </p>
+                      </div>
+                    ),
+                  )}
+                </div>
+              ) : null}
+
+              <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Timeline
+                </p>
+
+                <div className="mt-4 grid gap-3">
+                  {timeline?.events?.length ? (
+                    timeline.events.map((event, index) => (
+                      <div
+                        key={`${event.type}-${event.at}-${index}`}
+                        className="flex items-start justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-neutral-950">
+                            {event.type.replaceAll("_", " ")}
+                          </p>
+
+                          {event.status ? (
+                            <p className="mt-1 text-xs text-neutral-500">
+                              Status: {event.status}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <p className="shrink-0 text-xs text-neutral-500">
+                          {formatBookingDateTime(event.at)}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-neutral-500">
+                      No timeline events found.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {isReturnFormOpen ? (
+                <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                  <p className="text-sm font-semibold text-orange-900">
+                    Process Rental Return
+                  </p>
+
+                  <div className="mt-4 grid gap-4">
+                    <Field label="Returned Condition" required>
+                      <select
+                        value={returnCondition}
+                        onChange={(event) =>
+                          setReturnCondition(
+                            event.target
+                              .value as RentalInventoryCondition,
+                          )
+                        }
+                        className="h-11 w-full rounded-2xl border border-orange-200 bg-white px-4 text-sm outline-none transition focus:border-orange-500"
+                      >
+                        {(
+                          rentalOptions?.inventoryConditions ?? []
+                        ).map((condition) => (
+                          <option
+                            key={condition}
+                            value={condition}
+                          >
+                            {condition}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
+                    <Field label="Return Notes">
+                      <textarea
+                        value={returnNotes}
+                        onChange={(event) =>
+                          setReturnNotes(event.target.value)
+                        }
+                        rows={3}
+                        placeholder="Add return inspection notes..."
+                        className="w-full rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500"
+                      />
+                    </Field>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setIsReturnFormOpen(false)
+                        }
+                        className="h-11 rounded-2xl border border-neutral-200 bg-white text-sm font-semibold text-neutral-700"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleReturnBooking()
+                        }
+                        disabled={
+                          actionBookingId ===
+                          selectedBooking.id
+                        }
+                        className="h-11 rounded-2xl bg-neutral-950 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {actionBookingId ===
+                        selectedBooking.id
+                          ? "Processing..."
+                          : "Confirm Return"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {!isReturnFormOpen ? (
+                <div className="mt-5 grid gap-3 border-t border-neutral-200 pt-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {selectedNextStatuses.map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() =>
+                        void handleBookingStatusChange(
+                          selectedBooking,
+                          status as RentalBookingStatus,
+                        )
+                      }
+                      disabled={
+                        actionBookingId ===
+                        selectedBooking.id
+                      }
+                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Mark as {status}
+                    </button>
+                  ))}
+
+                  {canProcessReturn ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setIsReturnFormOpen(true)
+                      }
+                      disabled={
+                        actionBookingId ===
+                        selectedBooking.id
+                      }
+                      className="h-11 rounded-2xl border border-orange-200 bg-orange-50 px-4 text-sm font-semibold text-orange-800 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Process Return
+                    </button>
+                  ) : null}
+
+                  {canCompleteCleaning ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleCompleteCleaning(
+                          selectedBooking,
+                        )
+                      }
+                      disabled={
+                        actionBookingId ===
+                        selectedBooking.id
+                      }
+                      className="h-11 rounded-2xl bg-neutral-950 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Complete Cleaning
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AssetsTab() {
 
   const [productSearch, setProductSearch] = useState("");
@@ -5126,14 +6312,14 @@ function RequestDetailItem({
   value: string;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+   <div className="min-w-0 rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5">
       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
         {label}
       </p>
 
       <p
         title={value}
-        className="mt-2 break-words text-sm font-medium text-neutral-900"
+       className="mt-1.5 break-words text-sm font-medium text-neutral-900"
       >
         {value}
       </p>

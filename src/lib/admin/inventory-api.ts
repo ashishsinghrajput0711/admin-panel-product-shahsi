@@ -276,6 +276,108 @@ export type RentalRequestQuery = {
   search?: string;
 };
 
+export type RentalBookingStatus =
+  | "PENDING"
+  | "RESERVED"
+  | "PAID"
+  | "SHIPPED"
+  | "ACTIVE"
+  | "RETURNED"
+  | "CLEANING"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type RentalBookingPayment = {
+  id: string;
+  bookingId: string;
+  subscriptionId?: string | null;
+  amount: number;
+  currency: string;
+  paymentType: string;
+  status: string;
+  stripePaymentIntentId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeInvoiceId?: string | null;
+  stripeRefundId?: string | null;
+  clientSecret?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type RentalBookingReturn = {
+  id: string;
+  bookingId: string;
+  receivedAt?: string | null;
+  condition?: RentalInventoryCondition | string | null;
+  notes?: string | null;
+  cleaningStartedAt?: string | null;
+  cleaningCompletedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type RentalBooking = {
+  id: string;
+  userId: string;
+  orderType: string;
+  productId: string;
+  variantId?: string | null;
+  inventoryUnitId?: string | null;
+  subscriptionId?: string | null;
+  subscriptionBoxId?: string | null;
+
+  rentalStartDate: string;
+  rentalEndDate: string;
+  returnDueDate?: string | null;
+  cleaningEndDate?: string | null;
+  rentalDays: number;
+
+  subtotal: number;
+  securityDeposit: number;
+  premiumSurcharge: number;
+  lateFee: number;
+  damageFee: number;
+  total: number;
+
+  status: RentalBookingStatus;
+  createdAt?: string;
+  updatedAt?: string;
+
+  inventoryUnit?: RentalInventoryUnit | null;
+  payments?: RentalBookingPayment[];
+  shipments?: Array<Record<string, unknown>>;
+  returns?: RentalBookingReturn[];
+  damageReports?: Array<Record<string, unknown>>;
+};
+
+export type RentalBookingQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+};
+
+export type RentalBookingTimelineEvent = {
+  type: string;
+  at: string;
+  status?: RentalBookingStatus | string;
+  id?: string;
+};
+
+export type RentalBookingTimeline = {
+  bookingId: string;
+  events: RentalBookingTimelineEvent[];
+};
+
+export type UpdateRentalBookingStatusPayload = {
+  status: RentalBookingStatus;
+};
+
+export type ReturnRentalBookingPayload = {
+  condition: RentalInventoryCondition;
+  notes?: string;
+};
+
 export type RentalInventoryUnit = {
   id: string;
   productId: string;
@@ -482,6 +584,29 @@ function buildRentalInventoryUnitQuery(
 
 function buildRentalRequestQuery(
   query?: RentalRequestQuery,
+) {
+  const params = new URLSearchParams();
+
+  Object.entries(query ?? {}).forEach(([key, value]) => {
+    if (
+      value === undefined ||
+      value === null ||
+      value === ""
+    ) {
+      return;
+    }
+
+    params.set(key, String(value));
+  });
+
+  const queryString = params.toString();
+
+  return queryString ? `?${queryString}` : "";
+}
+
+
+function buildRentalBookingQuery(
+  query?: RentalBookingQuery,
 ) {
   const params = new URLSearchParams();
 
@@ -901,4 +1026,81 @@ export async function declineRentalRequest(
   );
 
   return unwrapInventoryItem<RentalRequest>(response);
+}
+
+export async function getRentalBookings(
+  query?: RentalBookingQuery,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/bookings${buildRentalBookingQuery(query)}`,
+  );
+
+  return unwrapInventoryList<RentalBooking>(response);
+}
+
+export async function getRentalBookingById(
+  bookingId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/bookings/${encodeURIComponent(bookingId)}`,
+  );
+
+  return unwrapInventoryItem<RentalBooking>(response);
+}
+
+export async function getRentalBookingTimeline(
+  bookingId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/bookings/${encodeURIComponent(
+      bookingId,
+    )}/timeline`,
+  );
+
+  return unwrapInventoryItem<RentalBookingTimeline>(response);
+}
+
+export async function updateRentalBookingStatus(
+  bookingId: string,
+  payload: UpdateRentalBookingStatusPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/bookings/${encodeURIComponent(
+      bookingId,
+    )}/status`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalBooking>(response);
+}
+
+export async function returnRentalBooking(
+  bookingId: string,
+  payload: ReturnRentalBookingPayload,
+) {
+  return inventoryRequest<{ message?: string }>(
+    `/admin/rental/booking/${encodeURIComponent(
+      bookingId,
+    )}/return`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function completeRentalBookingCleaning(
+  bookingId: string,
+) {
+  return inventoryRequest<{ message?: string }>(
+    `/admin/rental/booking/${encodeURIComponent(
+      bookingId,
+    )}/cleaning-complete`,
+    {
+      method: "PATCH",
+    },
+  );
 }
