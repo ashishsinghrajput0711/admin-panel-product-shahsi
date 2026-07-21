@@ -452,6 +452,177 @@ export type RentalInventoryUnitQuery = {
   isActive?: boolean;
 };
 
+export type SubscriptionAdminPlanStatus =
+  | "DRAFT"
+  | "ACTIVE"
+  | "INACTIVE"
+  | "ARCHIVED";
+
+export type SubscriptionBillingInterval =
+  | "WEEKLY"
+  | "MONTHLY"
+  | "QUARTERLY"
+  | "SEASONAL"
+  | "YEARLY";
+
+export type CustomerSubscriptionStatus =
+  | "ACTIVE"
+  | "PAUSED"
+  | "SKIPPED"
+  | "PAYMENT_FAILED"
+  | "CANCELLED"
+  | "EXPIRED";
+
+export type SubscriptionAdminPlan = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: SubscriptionAdminPlanStatus;
+  billingInterval: SubscriptionBillingInterval;
+  price: string | number;
+  currency: string;
+  itemsPerCycle: number;
+  rentalDaysPerItem: number;
+  eligibleProductIds: string[];
+  eligibleCategoryIds: string[];
+  allowPause: boolean;
+  allowSkip: boolean;
+  metadata?: Record<string, unknown> | null;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomerSubscriptionActionLog = {
+  id: string;
+  subscriptionId: string;
+  actionType: string;
+  title: string;
+  description?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdBy?: string | null;
+  createdAt: string;
+};
+
+export type CustomerSubscriptionBillingAttempt = {
+  id?: string;
+  status?: string;
+  amount?: string | number;
+  currency?: string;
+  attemptedAt?: string;
+  failureReason?: string | null;
+  [key: string]: unknown;
+};
+export type SubscriptionProrationMode =
+  | "IMMEDIATE"
+  | "NEXT_CYCLE"
+  | "NONE";
+
+export type UpgradeCustomerSubscriptionPayload = {
+  newPlanId: string;
+  effectiveFrom: string;
+  prorationMode?: SubscriptionProrationMode;
+  note?: string;
+  updatedBy?: string;
+};
+export type CustomerSubscription = {
+  id: string;
+  subscriptionNumber: string;
+  customerId: string;
+  planId: string;
+  status: CustomerSubscriptionStatus;
+
+  startDate: string;
+  endDate?: string | null;
+
+  currentCycleStart: string;
+  currentCycleEnd: string;
+  nextBillingDate: string;
+
+  pausedUntil?: string | null;
+  cancelledAt?: string | null;
+
+  shippingAddressId?: string | null;
+  paymentMethodId?: string | null;
+
+  notes?: string | null;
+  metadata?: Record<string, unknown> | null;
+
+  createdBy?: string | null;
+  updatedBy?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+
+  plan: SubscriptionAdminPlan;
+
+  actionLogs?: CustomerSubscriptionActionLog[];
+  billingAttempts?: CustomerSubscriptionBillingAttempt[];
+};
+
+export type SubscriptionPaginationMeta = {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export type SubscriptionAdminPlanListResponse = {
+  items: SubscriptionAdminPlan[];
+  meta: SubscriptionPaginationMeta;
+};
+
+export type CustomerSubscriptionListResponse = {
+  items: CustomerSubscription[];
+  meta: SubscriptionPaginationMeta;
+};
+
+export type SubscriptionAdminPlanQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: SubscriptionAdminPlanStatus;
+  billingInterval?: SubscriptionBillingInterval;
+};
+
+export type CustomerSubscriptionListQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: CustomerSubscriptionStatus;
+  customerId?: string;
+  planId?: string;
+  from?: string;
+  to?: string;
+};
+
+export type CreateCustomerSubscriptionPayload = {
+  customerId: string;
+  planId: string;
+  status?: CustomerSubscriptionStatus;
+  startDate: string;
+  nextBillingDate?: string;
+  shippingAddressId?: string;
+  paymentMethodId?: string;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+  createdBy?: string;
+};
+
+export type PauseCustomerSubscriptionPayload = {
+  reason: string;
+  pauseUntil?: string;
+  note?: string;
+  updatedBy?: string;
+};
+
+export type SkipCustomerSubscriptionPayload = {
+  cycleDate: string;
+  reason: string;
+  note?: string;
+  updatedBy?: string;
+};
+
 export type RentalDamageStatus =
   | "OPEN"
   | "CHARGED"
@@ -1420,6 +1591,224 @@ export async function archiveRentalSubscriptionPlan(
   );
 
   return unwrapInventoryItem<RentalSubscriptionPlan>(
+    response,
+  );
+}
+
+function buildSubscriptionAdminQuery(
+  query:
+    | SubscriptionAdminPlanQuery
+    | CustomerSubscriptionListQuery,
+) {
+  const params = new URLSearchParams();
+
+  if (query.page) {
+    params.set("page", String(query.page));
+  }
+
+  if (query.limit) {
+    params.set("limit", String(query.limit));
+  }
+
+  if (query.search?.trim()) {
+    params.set("search", query.search.trim());
+  }
+
+  if (query.status) {
+    params.set("status", query.status);
+  }
+
+  if (
+    "billingInterval" in query &&
+    query.billingInterval
+  ) {
+    params.set(
+      "billingInterval",
+      query.billingInterval,
+    );
+  }
+
+  if ("customerId" in query && query.customerId) {
+    params.set("customerId", query.customerId);
+  }
+
+  if ("planId" in query && query.planId) {
+    params.set("planId", query.planId);
+  }
+
+  if ("from" in query && query.from) {
+    params.set("from", query.from);
+  }
+
+  if ("to" in query && query.to) {
+    params.set("to", query.to);
+  }
+
+  const value = params.toString();
+
+  return value ? `?${value}` : "";
+}
+
+function parseSubscriptionListResponse<T>(
+  response: unknown,
+  label: string,
+): {
+  items: T[];
+  meta: SubscriptionPaginationMeta;
+} {
+  if (
+    !response ||
+    typeof response !== "object"
+  ) {
+    throw new Error(`${label} response is invalid.`);
+  }
+
+  const value = response as {
+    items?: unknown;
+    meta?: Partial<SubscriptionPaginationMeta>;
+  };
+
+  if (!Array.isArray(value.items)) {
+    throw new Error(
+      `${label} response items are invalid.`,
+    );
+  }
+
+  if (
+    !value.meta ||
+    typeof value.meta !== "object"
+  ) {
+    throw new Error(
+      `${label} pagination response is invalid.`,
+    );
+  }
+
+  return {
+    items: value.items as T[],
+    meta: {
+      total: Number(value.meta.total || 0),
+      page: Number(value.meta.page || 1),
+      limit: Number(value.meta.limit || 20),
+      totalPages: Number(
+        value.meta.totalPages || 0,
+      ),
+    },
+  };
+}
+
+export async function getSubscriptionAdminPlans(
+  query: SubscriptionAdminPlanQuery = {},
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/subscriptions/plans${buildSubscriptionAdminQuery(
+      query,
+    )}`,
+  );
+
+  return parseSubscriptionListResponse<SubscriptionAdminPlan>(
+    response,
+    "Subscription plans",
+  );
+}
+
+export async function getCustomerSubscriptions(
+  query: CustomerSubscriptionListQuery = {},
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/subscriptions/customers${buildSubscriptionAdminQuery(
+      query,
+    )}`,
+  );
+
+  return parseSubscriptionListResponse<CustomerSubscription>(
+    response,
+    "Customer subscriptions",
+  );
+}
+
+export async function getCustomerSubscriptionById(
+  subscriptionId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/subscriptions/customers/${encodeURIComponent(
+      subscriptionId,
+    )}`,
+  );
+
+  return unwrapInventoryItem<CustomerSubscription>(
+    response,
+  );
+}
+
+export async function createCustomerSubscription(
+  payload: CreateCustomerSubscriptionPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    "/admin/subscriptions/customers",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<CustomerSubscription>(
+    response,
+  );
+}
+
+export async function pauseCustomerSubscription(
+  subscriptionId: string,
+  payload: PauseCustomerSubscriptionPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/subscriptions/${encodeURIComponent(
+      subscriptionId,
+    )}/pause`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<CustomerSubscription>(
+    response,
+  );
+}
+
+export async function skipCustomerSubscriptionCycle(
+  subscriptionId: string,
+  payload: SkipCustomerSubscriptionPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/subscriptions/${encodeURIComponent(
+      subscriptionId,
+    )}/skip`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<CustomerSubscription>(
+    response,
+  );
+}
+
+export async function upgradeCustomerSubscription(
+  subscriptionId: string,
+  payload: UpgradeCustomerSubscriptionPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/subscriptions/${encodeURIComponent(
+      subscriptionId,
+    )}/upgrade`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<CustomerSubscription>(
     response,
   );
 }

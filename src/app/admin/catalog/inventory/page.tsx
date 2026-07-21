@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { SubscriptionPlansTab } from "@/components/admin/catalog/inventory/subscription-plans-tab";
+import { CustomerSubscriptionsTab } from "@/components/admin/catalog/inventory/customer-subscriptions-tab";
 import {
   AlertCircle,
   Archive,
@@ -20,6 +21,7 @@ import {
   Search,
  Warehouse,
 PackagePlus,
+UsersRound,
 Wrench,
 X,
 } from "lucide-react";
@@ -95,6 +97,7 @@ type InventoryTab =
   | "subscriptionPlans"
   | "rentalDamageReports"
   | "locations"
+  | "customerSubscriptions"
   | "warehouses"
   | "bins";
 
@@ -127,6 +130,11 @@ const tabs: Array<{
   id: "subscriptionPlans",
   label: "Subscription Plans",
   icon: CreditCard,
+},
+{
+  id: "customerSubscriptions",
+  label: "Customer Subscriptions",
+  icon: UsersRound,
 },
 {
   id: "rentalDamageReports",
@@ -288,7 +296,7 @@ const [activeTab, setActiveTab] =
         </section>
 
         <section className="rounded-[2rem] border border-neutral-200 bg-white p-2 shadow-sm">
-<div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-9">
+<div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-10">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -322,6 +330,10 @@ const [activeTab, setActiveTab] =
 {activeTab === "rentalBookings" ? <RentalBookingsTab /> : null}
 {activeTab === "subscriptionPlans" ? (
   <SubscriptionPlansTab />
+) : null}
+
+{activeTab === "customerSubscriptions" ? (
+  <CustomerSubscriptionsTab />
 ) : null}
 {activeTab === "rentalDamageReports" ? (
   <DamageReportsTab />
