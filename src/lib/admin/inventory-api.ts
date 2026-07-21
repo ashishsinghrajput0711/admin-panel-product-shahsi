@@ -452,12 +452,136 @@ export type RentalInventoryUnitQuery = {
   isActive?: boolean;
 };
 
+export type RentalDamageStatus =
+  | "OPEN"
+  | "CHARGED"
+  | "WAIVED"
+  | "RESOLVED";
+
+export type RentalDamageBooking = {
+  id: string;
+  userId: string;
+  orderType: string;
+  productId: string;
+  variantId?: string | null;
+  inventoryUnitId?: string | null;
+  subscriptionId?: string | null;
+  subscriptionBoxId?: string | null;
+  rentalStartDate: string;
+  rentalEndDate: string;
+  returnDueDate?: string | null;
+  cleaningEndDate?: string | null;
+  rentalDays: number;
+  subtotal: number;
+  securityDeposit: number;
+  premiumSurcharge: number;
+  lateFee: number;
+  damageFee: number;
+  total: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RentalDamageReport = {
+  id: string;
+  bookingId: string;
+  inventoryUnitId?: string | null;
+  damageType: string;
+  notes?: string | null;
+  repairCost: number;
+  feeCharged: number;
+  status: RentalDamageStatus;
+  createdAt: string;
+  updatedAt: string;
+  booking?: RentalDamageBooking | null;
+};
+
+export type RentalDamageReportQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+};
+
+export type CreateRentalDamageReportPayload = {
+  bookingId: string;
+  inventoryUnitId?: string;
+  damageType: string;
+  notes?: string;
+  repairCost?: number;
+  feeCharged?: number;
+};
+
+export type UpdateRentalDamageReportPayload = {
+  notes?: string;
+  repairCost?: number;
+  feeCharged?: number;
+};
+
+export type UpdateRentalDamageStatusPayload = {
+  status: RentalDamageStatus;
+};
+
+export type RentalSubscriptionPlan = {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  itemCreditsPerCycle: number;
+  cycle: string;
+  pauseAllowed: boolean;
+  cancelAllowed: boolean;
+  swapAllowed: boolean;
+  refillAllowed: boolean;
+  shippingIncluded: boolean;
+  laundryIncluded: boolean;
+  damagePolicy?: string | null;
+  lateFeePolicy?: string | null;
+  stripePriceId?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateRentalSubscriptionPlanPayload = {
+  name: string;
+  price: number;
+  currency?: string;
+  itemCreditsPerCycle: number;
+  cycle?: string;
+  pauseAllowed?: boolean;
+  cancelAllowed?: boolean;
+  swapAllowed?: boolean;
+  shippingIncluded?: boolean;
+  laundryIncluded?: boolean;
+  damagePolicy?: string;
+  stripePriceId?: string | null;
+};
+
+export type UpdateRentalSubscriptionPlanPayload = {
+  name?: string;
+  price?: number;
+  currency?: string;
+  itemCreditsPerCycle?: number;
+  cycle?: string;
+  pauseAllowed?: boolean;
+  cancelAllowed?: boolean;
+  swapAllowed?: boolean;
+  refillAllowed?: boolean;
+  shippingIncluded?: boolean;
+  laundryIncluded?: boolean;
+  damagePolicy?: string | null;
+  lateFeePolicy?: string | null;
+  stripePriceId?: string | null;
+  isActive?: boolean;
+};
+
 export type RentalOptions = {
   inventoryUnitStatuses: string[];
   inventoryConditions: string[];
   requestStatuses: string[];
   bookingStatuses: string[];
-  damageStatuses: string[];
+damageStatuses: RentalDamageStatus[];
   validBookingTransitions: Record<
     string,
     string[]
@@ -604,6 +728,27 @@ function buildRentalRequestQuery(
   return queryString ? `?${queryString}` : "";
 }
 
+function buildRentalDamageReportQuery(
+  query?: RentalDamageReportQuery,
+) {
+  const params = new URLSearchParams();
+
+  Object.entries(query ?? {}).forEach(([key, value]) => {
+    if (
+      value === undefined ||
+      value === null ||
+      value === ""
+    ) {
+      return;
+    }
+
+    params.set(key, String(value));
+  });
+
+  const queryString = params.toString();
+
+  return queryString ? `?${queryString}` : "";
+}
 
 function buildRentalBookingQuery(
   query?: RentalBookingQuery,
@@ -1102,5 +1247,179 @@ export async function completeRentalBookingCleaning(
     {
       method: "PATCH",
     },
+  );
+}
+
+export async function createRentalDamageReport(
+  payload: CreateRentalDamageReportPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    "/admin/rental/damage-report",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalDamageReport>(
+    response,
+  );
+}
+
+export async function getRentalDamageReports(
+  query?: RentalDamageReportQuery,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/damage-reports${buildRentalDamageReportQuery(
+      query,
+    )}`,
+  );
+
+  return unwrapInventoryList<RentalDamageReport>(
+    response,
+  );
+}
+
+export async function getRentalDamageReportById(
+  damageReportId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/damage-reports/${encodeURIComponent(
+      damageReportId,
+    )}`,
+  );
+
+  return unwrapInventoryItem<RentalDamageReport>(
+    response,
+  );
+}
+
+export async function updateRentalDamageReport(
+  damageReportId: string,
+  payload: UpdateRentalDamageReportPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/damage-reports/${encodeURIComponent(
+      damageReportId,
+    )}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalDamageReport>(
+    response,
+  );
+}
+
+export async function updateRentalDamageReportStatus(
+  damageReportId: string,
+  payload: UpdateRentalDamageStatusPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/damage-reports/${encodeURIComponent(
+      damageReportId,
+    )}/status`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalDamageReport>(
+    response,
+  );
+}
+
+
+export async function createRentalSubscriptionPlan(
+  payload: CreateRentalSubscriptionPlanPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    "/admin/rental/subscription-plan",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalSubscriptionPlan>(
+    response,
+  );
+}
+
+export async function getRentalSubscriptionPlans() {
+  const response = await inventoryRequest<unknown>(
+    "/admin/rental/subscription-plan",
+  );
+
+  if (Array.isArray(response)) {
+    return response as RentalSubscriptionPlan[];
+  }
+
+  if (
+    response &&
+    typeof response === "object"
+  ) {
+    const value = response as {
+      data?: unknown;
+    };
+
+    if (Array.isArray(value.data)) {
+      return value.data as RentalSubscriptionPlan[];
+    }
+  }
+
+  return [];
+}
+
+export async function getRentalSubscriptionPlanById(
+  planId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/subscription-plan/${encodeURIComponent(
+      planId,
+    )}`,
+  );
+
+  return unwrapInventoryItem<RentalSubscriptionPlan>(
+    response,
+  );
+}
+
+export async function updateRentalSubscriptionPlan(
+  planId: string,
+  payload: UpdateRentalSubscriptionPlanPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/subscription-plan/${encodeURIComponent(
+      planId,
+    )}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<RentalSubscriptionPlan>(
+    response,
+  );
+}
+
+export async function archiveRentalSubscriptionPlan(
+  planId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/rental/subscription-plan/${encodeURIComponent(
+      planId,
+    )}`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  return unwrapInventoryItem<RentalSubscriptionPlan>(
+    response,
   );
 }

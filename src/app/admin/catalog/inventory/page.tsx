@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+
+import { SubscriptionPlansTab } from "@/components/admin/catalog/inventory/subscription-plans-tab";
 import {
   AlertCircle,
   Archive,
@@ -14,10 +16,12 @@ import {
   MapPin,
   Plus,
   RefreshCcw,
+  CreditCard,
   Search,
-  Warehouse,
-  PackagePlus,
-  X,
+ Warehouse,
+PackagePlus,
+Wrench,
+X,
 } from "lucide-react";
 
 import {
@@ -27,6 +31,7 @@ import {
   createAdminLocation,
   createAdminWarehouse,
   createInventoryAsset,
+  createRentalDamageReport,
   createRentalInventoryUnit,
   createWarehouseBin,
   declineRentalRequest,
@@ -41,6 +46,8 @@ import {
   getRentalBookingById,
   getRentalBookings,
   getRentalBookingTimeline,
+  getRentalDamageReportById,
+  getRentalDamageReports,
   getRentalInventoryUnits,
   getRentalOptions,
   getRentalRequestById,
@@ -49,8 +56,11 @@ import {
   returnRentalBooking,
   updateInventoryAsset,
   updateRentalBookingStatus,
+  updateRentalDamageReport,
+  updateRentalDamageReportStatus,
   updateRentalInventoryUnitCondition,
   updateRentalInventoryUnitStatus,
+
   type AdminCatalogVariant,
   type AdminLocation,
   type AdminProductPickerItem,
@@ -58,18 +68,22 @@ import {
   type CreateAdminLocationPayload,
   type CreateAdminWarehousePayload,
   type CreateInventoryAssetPayload,
+  type CreateRentalDamageReportPayload,
   type CreateWarehouseBinPayload,
   type InventoryAsset,
   type InventoryListMeta,
   type RentalBooking,
   type RentalBookingStatus,
   type RentalBookingTimeline,
+  type RentalDamageReport,
+  type RentalDamageStatus,
   type RentalInventoryCondition,
   type RentalInventoryUnit,
   type RentalInventoryUnitStatus,
   type RentalOptions,
   type RentalRequest,
   type UpdateInventoryAssetPayload,
+  type UpdateRentalDamageReportPayload,
   type WarehouseBin,
 } from "@/lib/admin/inventory-api";
 
@@ -78,6 +92,8 @@ type InventoryTab =
   | "rentalUnits"
   | "rentalRequests"
   | "rentalBookings"
+  | "subscriptionPlans"
+  | "rentalDamageReports"
   | "locations"
   | "warehouses"
   | "bins";
@@ -106,6 +122,16 @@ const tabs: Array<{
   id: "rentalBookings",
   label: "Rental Bookings",
   icon: CalendarDays,
+},
+{
+  id: "subscriptionPlans",
+  label: "Subscription Plans",
+  icon: CreditCard,
+},
+{
+  id: "rentalDamageReports",
+  label: "Damage Reports",
+  icon: Wrench,
 },
   {
     id: "locations",
@@ -185,6 +211,20 @@ const initialRentalUnitForm = {
   skuCode: "",
   condition: "",
 };
+const initialDamageReportForm = {
+  bookingId: "",
+  inventoryUnitId: "",
+  damageType: "",
+  notes: "",
+  repairCost: "",
+  feeCharged: "",
+};
+
+const initialDamageReportEditForm = {
+  notes: "",
+  repairCost: "",
+  feeCharged: "",
+};
 
 
 const initialAssetForm = {
@@ -248,7 +288,7 @@ const [activeTab, setActiveTab] =
         </section>
 
         <section className="rounded-[2rem] border border-neutral-200 bg-white p-2 shadow-sm">
-<div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-7">
+<div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-9">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -280,6 +320,12 @@ const [activeTab, setActiveTab] =
 {activeTab === "rentalUnits" ? <RentalUnitsTab /> : null}
 {activeTab === "rentalRequests" ? <RentalRequestsTab /> : null}
 {activeTab === "rentalBookings" ? <RentalBookingsTab /> : null}
+{activeTab === "subscriptionPlans" ? (
+  <SubscriptionPlansTab />
+) : null}
+{activeTab === "rentalDamageReports" ? (
+  <DamageReportsTab />
+) : null}
       </div>
     </main>
   );
@@ -5039,6 +5085,1158 @@ function RentalBookingsTab() {
     </section>
   );
 }
+
+
+function DamageReportsTab() {
+  const [reports, setReports] = useState<RentalDamageReport[]>([]);
+  const [bookingOptions, setBookingOptions] = useState<RentalBooking[]>([]);
+  const [rentalOptions, setRentalOptions] =
+    useState<RentalOptions | null>(null);
+
+  const [meta, setMeta] = useState<InventoryListMeta>(emptyMeta);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const [createForm, setCreateForm] =
+    useState(initialDamageReportForm);
+
+  const [editForm, setEditForm] =
+    useState(initialDamageReportEditForm);
+
+  const [selectedReport, setSelectedReport] =
+    useState<RentalDamageReport | null>(null);
+
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [actionReportId, setActionReportId] = useState("");
+
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const damageStatuses =
+    rentalOptions?.damageStatuses ?? [];
+
+  const openCount = useMemo(
+    () =>
+      reports.filter((report) => report.status === "OPEN").length,
+    [reports],
+  );
+
+  const processedCount = useMemo(
+    () =>
+      reports.filter((report) => report.status !== "OPEN").length,
+    [reports],
+  );
+
+  function formatDamageDate(value?: string | null) {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return value;
+
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(date);
+  }
+
+  function formatDamageDateTime(value?: string | null) {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return value;
+
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  }
+
+  function formatDamageAmount(value?: number | null) {
+    return Number(value || 0).toFixed(2);
+  }
+
+  function getDamageStatusClass(status: string) {
+    switch (status) {
+      case "OPEN":
+        return "border-amber-200 bg-amber-50 text-amber-800";
+
+      case "CHARGED":
+        return "border-red-200 bg-red-50 text-red-700";
+
+      case "WAIVED":
+        return "border-blue-200 bg-blue-50 text-blue-700";
+
+      case "RESOLVED":
+        return "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+      default:
+        return "border-neutral-200 bg-neutral-100 text-neutral-600";
+    }
+  }
+
+  async function loadDamageDependencies() {
+    try {
+      const [optionsResponse, bookingsResponse] =
+        await Promise.all([
+          getRentalOptions(),
+          getRentalBookings({
+            page: 1,
+            limit: 100,
+          }),
+        ]);
+
+      setRentalOptions(optionsResponse);
+      setBookingOptions(bookingsResponse.data);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load damage report dependencies.",
+      );
+    }
+  }
+
+  async function loadDamageReports(nextPage = page) {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const response = await getRentalDamageReports({
+        page: nextPage,
+        limit: 20,
+        search: search.trim() || undefined,
+      });
+
+      setReports(response.data);
+      setMeta(response.meta);
+      setPage(response.meta.page || nextPage);
+    } catch (err) {
+      setReports([]);
+      setMeta(emptyMeta);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load damage reports.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDamageDependencies();
+    void loadDamageReports(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSearch(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    await loadDamageReports(1);
+  }
+
+  function openCreateModal() {
+    setCreateForm(initialDamageReportForm);
+    setError("");
+    setSuccessMessage("");
+    setIsCreateOpen(true);
+  }
+
+  function closeCreateModal() {
+    setIsCreateOpen(false);
+    setCreateForm(initialDamageReportForm);
+  }
+
+  function handleBookingSelection(bookingId: string) {
+    const selectedBooking =
+      bookingOptions.find((booking) => booking.id === bookingId) ||
+      null;
+
+    setCreateForm((current) => ({
+      ...current,
+      bookingId,
+      inventoryUnitId:
+        selectedBooking?.inventoryUnitId ||
+        selectedBooking?.inventoryUnit?.id ||
+        "",
+    }));
+  }
+
+  async function handleCreateDamageReport(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    setError("");
+    setSuccessMessage("");
+
+    const bookingId = createForm.bookingId.trim();
+    const inventoryUnitId =
+      createForm.inventoryUnitId.trim();
+    const damageType = createForm.damageType.trim();
+    const notes = createForm.notes.trim();
+
+    if (!bookingId) {
+      setError("Please select a rental booking.");
+      return;
+    }
+
+    if (!damageType) {
+      setError("Damage type is required.");
+      return;
+    }
+
+    const repairCost = createForm.repairCost.trim();
+    const feeCharged = createForm.feeCharged.trim();
+
+    if (
+      repairCost &&
+      (!Number.isFinite(Number(repairCost)) ||
+        Number(repairCost) < 0)
+    ) {
+      setError("Repair cost must be a valid non-negative number.");
+      return;
+    }
+
+    if (
+      feeCharged &&
+      (!Number.isFinite(Number(feeCharged)) ||
+        Number(feeCharged) < 0)
+    ) {
+      setError("Fee charged must be a valid non-negative number.");
+      return;
+    }
+
+    const payload: CreateRentalDamageReportPayload = {
+      bookingId,
+      damageType,
+      ...(inventoryUnitId ? { inventoryUnitId } : {}),
+      ...(notes ? { notes } : {}),
+      ...(repairCost
+        ? { repairCost: Number(repairCost) }
+        : {}),
+      ...(feeCharged
+        ? { feeCharged: Number(feeCharged) }
+        : {}),
+    };
+
+    try {
+      setIsCreating(true);
+
+      await createRentalDamageReport(payload);
+
+      closeCreateModal();
+
+      setSuccessMessage(
+        "Damage report created successfully.",
+      );
+
+      await loadDamageReports(1);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to create the damage report.",
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  async function openDamageDetail(
+    report: RentalDamageReport,
+  ) {
+    try {
+      setSelectedReport(report);
+      setIsDetailOpen(true);
+      setIsDetailLoading(true);
+      setError("");
+
+      const detail = await getRentalDamageReportById(report.id);
+
+      if (!detail) {
+        throw new Error("Damage report detail not found.");
+      }
+
+      setSelectedReport(detail);
+
+      setEditForm({
+        notes: detail.notes || "",
+        repairCost: String(detail.repairCost ?? ""),
+        feeCharged: String(detail.feeCharged ?? ""),
+      });
+    } catch (err) {
+      setIsDetailOpen(false);
+      setSelectedReport(null);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load damage report detail.",
+      );
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
+
+  function closeDamageDetail() {
+    setIsDetailOpen(false);
+    setSelectedReport(null);
+    setEditForm(initialDamageReportEditForm);
+  }
+
+  async function handleUpdateDamageReport(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!selectedReport) return;
+
+    const repairCost = Number(editForm.repairCost || 0);
+    const feeCharged = Number(editForm.feeCharged || 0);
+
+    if (!Number.isFinite(repairCost) || repairCost < 0) {
+      setError("Repair cost must be a valid non-negative number.");
+      return;
+    }
+
+    if (!Number.isFinite(feeCharged) || feeCharged < 0) {
+      setError("Fee charged must be a valid non-negative number.");
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      setError("");
+      setSuccessMessage("");
+const updatedReport = await updateRentalDamageReport(
+  selectedReport.id,
+  {
+    notes: editForm.notes.trim(),
+    repairCost,
+    feeCharged,
+  },
+);
+
+if (!updatedReport) {
+  throw new Error(
+    "Updated damage report was not returned by the server.",
+  );
+}
+
+setSelectedReport(updatedReport);
+
+setEditForm({
+  notes: updatedReport.notes || "",
+  repairCost: String(updatedReport.repairCost ?? ""),
+  feeCharged: String(updatedReport.feeCharged ?? ""),
+});
+
+    
+
+
+      setSuccessMessage(
+        "Damage report updated successfully.",
+      );
+
+      await loadDamageReports(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update the damage report.",
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
+  async function handleDamageStatusChange(
+    report: RentalDamageReport,
+    nextStatus: RentalDamageStatus,
+  ) {
+    if (nextStatus === report.status) return;
+
+    const confirmed = window.confirm(
+      `Change damage report status from ${report.status} to ${nextStatus}?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setActionReportId(report.id);
+      setError("");
+      setSuccessMessage("");
+
+  const updatedReport =
+  await updateRentalDamageReportStatus(report.id, {
+    status: nextStatus,
+  });
+
+if (!updatedReport) {
+  throw new Error(
+    "Updated damage report status was not returned by the server.",
+  );
+}
+
+setSelectedReport((current) =>
+  current?.id === updatedReport.id
+    ? updatedReport
+    : current,
+);
+
+      setSuccessMessage(
+        `Damage report status updated to ${nextStatus}.`,
+      );
+
+      await loadDamageReports(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update damage report status.",
+      );
+    } finally {
+      setActionReportId("");
+    }
+  }
+
+  return (
+    <section className="min-w-0">
+      <div className="flex min-w-0 flex-col gap-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <StatsCard
+            label="Total Damage Reports"
+            value={meta.total}
+          />
+
+          <StatsCard
+            label="Open On This Page"
+            value={openCount}
+          />
+
+          <StatsCard
+            label="Processed On This Page"
+            value={processedCount}
+          />
+        </div>
+
+        <div className="min-w-0 rounded-[2rem] border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Management
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Damage Reports
+              </h2>
+
+              <p className="mt-1 text-sm text-neutral-500">
+                Record rental damage, repair costs, charged fees and resolution status.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-800"
+              >
+                <Plus className="h-4 w-4" />
+                Create Damage Report
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void loadDamageReports(page)}
+                disabled={isLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
+
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <form
+            onSubmit={handleSearch}
+            className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"
+          >
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search damage reports..."
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white pl-11 pr-4 text-sm outline-none transition focus:border-neutral-950"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="inline-flex h-11 items-center justify-center rounded-2xl bg-neutral-950 px-6 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Search
+            </button>
+          </form>
+
+          {error ? (
+            <AlertBox type="error" message={error} />
+          ) : null}
+
+          {successMessage ? (
+            <AlertBox
+              type="success"
+              message={successMessage}
+            />
+          ) : null}
+
+          <div className="mt-5 overflow-hidden rounded-3xl border border-neutral-200 bg-white">
+            <div className="w-full overflow-x-auto">
+              <table className="w-full min-w-[980px] table-fixed divide-y divide-neutral-200 text-sm xl:min-w-0">
+                <thead className="bg-neutral-50">
+                  <tr>
+                    <TableHead className="w-[13%]">
+                      Report
+                    </TableHead>
+
+                    <TableHead className="w-[18%]">
+                      Booking / Customer
+                    </TableHead>
+
+                    <TableHead className="w-[18%]">
+                      Product / Damage
+                    </TableHead>
+
+                    <TableHead className="w-[18%]">
+                      Inventory Unit
+                    </TableHead>
+
+                    <TableHead className="w-[13%]">
+                      Cost / Fee
+                    </TableHead>
+
+                    <TableHead className="w-[10%]">
+                      Status
+                    </TableHead>
+
+                    <TableHead className="w-[10%]">
+                      Actions
+                    </TableHead>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-neutral-100 bg-white">
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-12 text-center text-sm text-neutral-500"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Damage reports loading...
+                        </span>
+                      </td>
+                    </tr>
+                  ) : reports.length ? (
+                    reports.map((report) => {
+                      const isActing =
+                        actionReportId === report.id;
+
+                      return (
+                        <tr
+                          key={report.id}
+                          className="hover:bg-neutral-50/70"
+                        >
+                          <TableCell>
+                            <p
+                              title={report.id}
+                              className="truncate text-xs font-semibold text-neutral-950"
+                            >
+                              {report.id.slice(0, 8)}…
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-neutral-500">
+                              {formatDamageDate(report.createdAt)}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p
+                              title={report.bookingId}
+                              className="truncate text-xs font-semibold text-neutral-900"
+                            >
+                              {report.bookingId}
+                            </p>
+
+                            <p
+                              title={report.booking?.userId || ""}
+                              className="mt-1 truncate text-[10px] text-neutral-500"
+                            >
+                              Customer: {report.booking?.userId || "-"}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p
+                              title={report.booking?.productId || ""}
+                              className="truncate text-xs font-semibold text-neutral-900"
+                            >
+                              {report.booking?.productId || "-"}
+                            </p>
+
+                            <p className="mt-1 truncate text-[10px] text-neutral-500">
+                              {report.damageType}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p
+                              title={report.inventoryUnitId || ""}
+                              className="truncate text-xs font-semibold text-neutral-900"
+                            >
+                              {report.inventoryUnitId || "-"}
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-neutral-500">
+                              Booking: {report.booking?.status || "-"}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p className="text-xs font-semibold text-neutral-900">
+                              Repair:{" "}
+                              {formatDamageAmount(report.repairCost)}
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-neutral-500">
+                              Fee:{" "}
+                              {formatDamageAmount(report.feeCharged)}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <span
+                              className={[
+                                "inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold",
+                                getDamageStatusClass(report.status),
+                              ].join(" ")}
+                            >
+                              {report.status}
+                            </span>
+                          </TableCell>
+
+                          <TableCell>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void openDamageDetail(report)
+                              }
+                              disabled={isActing}
+                              className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-xl border border-neutral-200 bg-white px-2 text-[10px] font-semibold text-neutral-700 transition hover:border-neutral-400 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              View
+                            </button>
+                          </TableCell>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-12 text-center text-sm text-neutral-500"
+                      >
+                        No damage reports found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-neutral-500">
+              Page {meta.page} of {meta.totalPages || 1} · Total{" "}
+              {meta.total}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isLoading || page <= 1}
+                onClick={() =>
+                  void loadDamageReports(page - 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  isLoading ||
+                  page >= (meta.totalPages || 1)
+                }
+                onClick={() =>
+                  void loadDamageReports(page + 1)
+                }
+                className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Create Damage Report Modal */}
+      <div
+        className={[
+          "fixed inset-0 z-50 flex items-center justify-center p-4 transition",
+          isCreateOpen
+            ? "pointer-events-auto"
+            : "pointer-events-none",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          aria-label="Close create damage report"
+          onClick={closeCreateModal}
+          className={[
+            "absolute inset-0 bg-black/45 backdrop-blur-sm transition-opacity duration-300",
+            isCreateOpen ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
+
+        <form
+          onSubmit={handleCreateDamageReport}
+          className={[
+            "relative z-10 max-h-[86vh] w-full max-w-2xl overflow-y-auto rounded-[1.75rem] bg-white p-5 shadow-2xl transition-all duration-300",
+            isCreateOpen
+              ? "translate-y-0 scale-100 opacity-100"
+              : "translate-y-5 scale-95 opacity-0",
+          ].join(" ")}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Rental Management
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Create Damage Report
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeCreateModal}
+              className="rounded-2xl border border-neutral-200 bg-white p-2 text-neutral-600"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-4">
+            <Field label="Rental Booking" required>
+              <select
+                value={createForm.bookingId}
+                onChange={(event) =>
+                  handleBookingSelection(event.target.value)
+                }
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:border-neutral-950"
+              >
+                <option value="">Select rental booking</option>
+
+                {bookingOptions.map((booking) => (
+                  <option key={booking.id} value={booking.id}>
+                    {booking.id.slice(0, 8)}… ·{" "}
+                    {booking.productId.slice(0, 8)}… ·{" "}
+                    {booking.status}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Inventory Unit ID">
+              <input
+                value={createForm.inventoryUnitId}
+                onChange={(event) =>
+                  setCreateForm((current) => ({
+                    ...current,
+                    inventoryUnitId: event.target.value,
+                  }))
+                }
+                placeholder="Inventory unit ID"
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:border-neutral-950"
+              />
+            </Field>
+
+            <Field label="Damage Type" required>
+              <input
+                value={createForm.damageType}
+                onChange={(event) =>
+                  setCreateForm((current) => ({
+                    ...current,
+                    damageType: event.target.value,
+                  }))
+                }
+                placeholder="Example: zipper_damage"
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:border-neutral-950"
+              />
+            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Repair Cost">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={createForm.repairCost}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      repairCost: event.target.value,
+                    }))
+                  }
+                  className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:border-neutral-950"
+                />
+              </Field>
+
+              <Field label="Fee Charged">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={createForm.feeCharged}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      feeCharged: event.target.value,
+                    }))
+                  }
+                  className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:border-neutral-950"
+                />
+              </Field>
+            </div>
+
+            <Field label="Notes">
+              <textarea
+                rows={4}
+                value={createForm.notes}
+                onChange={(event) =>
+                  setCreateForm((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+                placeholder="Add damage inspection notes..."
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-neutral-950"
+              />
+            </Field>
+
+            <div className="grid gap-3 border-t border-neutral-200 pt-4 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                className="h-11 rounded-2xl border border-neutral-200 bg-white text-sm font-semibold text-neutral-700"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={isCreating}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-neutral-950 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {isCreating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+
+                {isCreating ? "Creating..." : "Create Report"}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Damage Report Detail Modal */}
+      <div
+        className={[
+          "fixed inset-0 z-50 flex items-center justify-center p-4 transition",
+          isDetailOpen
+            ? "pointer-events-auto"
+            : "pointer-events-none",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          aria-label="Close damage report detail"
+          onClick={closeDamageDetail}
+          className={[
+            "absolute inset-0 bg-black/45 backdrop-blur-sm transition-opacity duration-300",
+            isDetailOpen ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
+
+        <div
+          className={[
+            "relative z-10 max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-[1.75rem] bg-white p-5 shadow-2xl transition-all duration-300",
+            isDetailOpen
+              ? "translate-y-0 scale-100 opacity-100"
+              : "translate-y-5 scale-95 opacity-0",
+          ].join(" ")}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Damage Report
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold text-neutral-950">
+                Report Details
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeDamageDetail}
+              className="rounded-2xl border border-neutral-200 bg-white p-2 text-neutral-600"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {isDetailLoading ? (
+            <div className="flex min-h-72 items-center justify-center">
+              <span className="inline-flex items-center gap-2 text-sm text-neutral-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Damage report loading...
+              </span>
+            </div>
+          ) : selectedReport ? (
+            <>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <RequestDetailItem
+                  label="Report ID"
+                  value={selectedReport.id}
+                />
+
+                <RequestDetailItem
+                  label="Damage Type"
+                  value={selectedReport.damageType}
+                />
+
+                <RequestDetailItem
+                  label="Booking ID"
+                  value={selectedReport.bookingId}
+                />
+
+                <RequestDetailItem
+                  label="Inventory Unit"
+                  value={selectedReport.inventoryUnitId || "-"}
+                />
+
+                <RequestDetailItem
+                  label="Created"
+                  value={formatDamageDateTime(
+                    selectedReport.createdAt,
+                  )}
+                />
+
+                <div className="min-w-0 rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Status
+                  </p>
+
+                  <select
+                    value={selectedReport.status}
+                    disabled={
+                      actionReportId === selectedReport.id ||
+                      !damageStatuses.length
+                    }
+                    onChange={(event) =>
+                      void handleDamageStatusChange(
+                        selectedReport,
+                        event.target.value as RentalDamageStatus,
+                      )
+                    }
+                    className="mt-2 h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-neutral-950 disabled:opacity-60"
+                  >
+                    {!damageStatuses.includes(
+                      selectedReport.status,
+                    ) ? (
+                      <option value={selectedReport.status}>
+                        {selectedReport.status}
+                      </option>
+                    ) : null}
+
+                    {damageStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selectedReport.booking ? (
+                <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Linked Booking
+                  </p>
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <RequestDetailItem
+                      label="Customer ID"
+                      value={selectedReport.booking.userId}
+                    />
+
+                    <RequestDetailItem
+                      label="Product ID"
+                      value={selectedReport.booking.productId}
+                    />
+
+                    <RequestDetailItem
+                      label="Variant ID"
+                      value={
+                        selectedReport.booking.variantId || "-"
+                      }
+                    />
+
+                    <RequestDetailItem
+                      label="Rental Start"
+                      value={formatDamageDate(
+                        selectedReport.booking.rentalStartDate,
+                      )}
+                    />
+
+                    <RequestDetailItem
+                      label="Rental End"
+                      value={formatDamageDate(
+                        selectedReport.booking.rentalEndDate,
+                      )}
+                    />
+
+                    <RequestDetailItem
+                      label="Booking Status"
+                      value={selectedReport.booking.status}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <form
+                onSubmit={handleUpdateDamageReport}
+                className="mt-4 rounded-2xl border border-neutral-200 bg-white p-4"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Update Damage Report
+                </p>
+
+                <div className="mt-4 grid gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Repair Cost">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editForm.repairCost}
+                        onChange={(event) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            repairCost: event.target.value,
+                          }))
+                        }
+                        className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:border-neutral-950"
+                      />
+                    </Field>
+
+                    <Field label="Fee Charged">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editForm.feeCharged}
+                        onChange={(event) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            feeCharged: event.target.value,
+                          }))
+                        }
+                        className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none focus:border-neutral-950"
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="Notes">
+                    <textarea
+                      rows={4}
+                      value={editForm.notes}
+                      onChange={(event) =>
+                        setEditForm((current) => ({
+                          ...current,
+                          notes: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-neutral-950"
+                    />
+                  </Field>
+
+                  <button
+                    type="submit"
+                    disabled={isUpdating}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-neutral-950 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {isUpdating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+
+                    {isUpdating
+                      ? "Saving..."
+                      : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function AssetsTab() {
 
