@@ -39,6 +39,7 @@ export type AdminLocation = {
   isDefault?: boolean;
   metadata?: Record<string, unknown> | null;
   createdBy?: string | null;
+  updatedBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -46,7 +47,7 @@ export type AdminLocation = {
 export type CreateAdminLocationPayload = {
   name: string;
   code: string;
-  type: string;
+  type?: string;
   country?: string;
   state?: string;
   city?: string;
@@ -62,6 +63,9 @@ export type CreateAdminLocationPayload = {
   metadata?: Record<string, unknown>;
   createdBy?: string;
 };
+
+export type UpdateAdminLocationPayload =
+  Partial<CreateAdminLocationPayload>;
 
 export type WarehouseType = "MAIN" | "STORE" | "FULFILLMENT" | "RETURN" | string;
 
@@ -303,6 +307,25 @@ export type RentalBookingPayment = {
   clientSecret?: string | null;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type InventoryQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  type?: string;
+  locationId?: string;
+  warehouseId?: string;
+  productId?: string;
+  variantId?: string;
+
+  code?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  isActive?: boolean;
 };
 
 export type RentalBookingReturn = {
@@ -1102,6 +1125,56 @@ export async function createAdminLocation(payload: CreateAdminLocationPayload) {
     method: "POST",
     body: payload,
   });
+}
+
+export async function getAdminLocationById(
+  locationId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/locations/${encodeURIComponent(
+      locationId,
+    )}`,
+  );
+
+  return unwrapInventoryItem<AdminLocation>(
+    response,
+  );
+}
+
+export async function updateAdminLocation(
+  locationId: string,
+  payload: UpdateAdminLocationPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/locations/${encodeURIComponent(
+      locationId,
+    )}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<AdminLocation>(
+    response,
+  );
+}
+
+export async function deleteAdminLocation(
+  locationId: string,
+) {
+  const response = await inventoryRequest<unknown>(
+    `/admin/locations/${encodeURIComponent(
+      locationId,
+    )}`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  return unwrapInventoryItem<AdminLocation>(
+    response,
+  );
 }
 
 export async function getAdminWarehouses(query?: InventoryQuery) {
