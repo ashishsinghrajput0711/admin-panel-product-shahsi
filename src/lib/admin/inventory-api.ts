@@ -504,15 +504,64 @@ export type CustomerSubscriptionActionLog = {
   createdAt: string;
 };
 
+export type SubscriptionBillingRetryMode =
+  | "MANUAL"
+  | "AUTO";
+
 export type CustomerSubscriptionBillingAttempt = {
-  id?: string;
-  status?: string;
-  amount?: string | number;
-  currency?: string;
-  attemptedAt?: string;
-  failureReason?: string | null;
-  [key: string]: unknown;
+  id: string;
+  subscriptionId: string;
+  paymentIntentId?: string | null;
+  retryMode: SubscriptionBillingRetryMode;
+  status: string;
+  note?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdBy?: string | null;
+  processedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
+
+export type BillingRetryPayload = {
+  subscriptionId: string;
+  paymentIntentId?: string;
+  retryMode?: SubscriptionBillingRetryMode;
+  note?: string;
+  createdBy?: string;
+};
+
+export type SubscriptionInventoryForecastPayload = {
+  from: string;
+  to: string;
+  planIds?: string[];
+  categoryIds?: string[];
+  locationId?: string;
+  createdBy?: string;
+};
+
+export type SubscriptionInventoryForecastPlan = {
+  planId: string;
+  planName: string;
+  billingInterval: SubscriptionBillingInterval;
+  subscriptions: number;
+  itemsPerCycle: number;
+  itemsRequired: number;
+  eligibleProductIds: string[];
+  eligibleCategoryIds: string[];
+};
+
+export type SubscriptionInventoryForecast = {
+  from: string;
+  to: string;
+  planIds: string[];
+  categoryIds: string[];
+  totalSubscriptions: number;
+  totalItemsRequired: number;
+  byPlan: SubscriptionInventoryForecastPlan[];
+  forecastRunId: string;
+};
+
+
 export type SubscriptionProrationMode =
   | "IMMEDIATE"
   | "NEXT_CYCLE"
@@ -1809,6 +1858,39 @@ export async function upgradeCustomerSubscription(
   );
 
   return unwrapInventoryItem<CustomerSubscription>(
+    response,
+  );
+}
+
+export async function retryCustomerSubscriptionBilling(
+  payload: BillingRetryPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    "/admin/subscriptions/billing-retry",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<CustomerSubscriptionBillingAttempt>(
+    response,
+  );
+}
+
+
+export async function forecastSubscriptionInventory(
+  payload: SubscriptionInventoryForecastPayload,
+) {
+  const response = await inventoryRequest<unknown>(
+    "/admin/subscriptions/inventory-forecast",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+
+  return unwrapInventoryItem<SubscriptionInventoryForecast>(
     response,
   );
 }

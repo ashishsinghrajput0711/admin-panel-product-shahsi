@@ -28,12 +28,16 @@ import {
   pauseCustomerSubscription,
   skipCustomerSubscriptionCycle,
   upgradeCustomerSubscription,
+  retryCustomerSubscriptionBilling,
+  forecastSubscriptionInventory,
   type CustomerSubscription,
   type CustomerSubscriptionStatus,
   type CreateCustomerSubscriptionPayload,
   type SubscriptionAdminPlan,
   type SubscriptionPaginationMeta,
   type SubscriptionProrationMode,
+  type SubscriptionBillingRetryMode,
+  type SubscriptionInventoryForecast,
 } from "@/lib/admin/inventory-api";
 
 const PAGE_LIMIT = 20;
@@ -79,6 +83,19 @@ const initialUpgradeForm = {
   note: "",
 };
 
+const initialBillingRetryForm = {
+  paymentIntentId: "",
+  retryMode:
+    "MANUAL" as SubscriptionBillingRetryMode,
+  note: "",
+};
+
+const initialForecastForm = {
+  from: "",
+  to: "",
+  planIds: [] as string[],
+};
+
 function dateInputToIso(value: string) {
   const parsed = new Date(
     `${value}T00:00:00.000Z`,
@@ -86,6 +103,18 @@ function dateInputToIso(value: string) {
 
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid date selected.");
+  }
+
+  return parsed.toISOString();
+}
+
+function dateInputToEndOfDayIso(value: string) {
+  const parsed = new Date(
+    `${value}T23:59:59.999Z`,
+  );
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Invalid end date selected.");
   }
 
   return parsed.toISOString();
@@ -102,11 +131,12 @@ function formatSubscriptionDate(
     return value;
   }
 
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+return new Intl.DateTimeFormat("en-IN", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+}).format(date);
 }
 
 function formatSubscriptionDateTime(
@@ -212,9 +242,15 @@ export function CustomerSubscriptionsTab() {
 
   const [isDetailOpen, setIsDetailOpen] =
     useState(false);
+const [isForecastOpen, setIsForecastOpen] =
+  useState(false);
 
 const [actionMode, setActionMode] = useState<
-  "pause" | "skip" | "upgrade" | null
+  | "pause"
+  | "skip"
+  | "upgrade"
+  | "billingRetry"
+  | null
 >(null);
 
   const [createForm, setCreateForm] =
@@ -228,6 +264,29 @@ const [actionMode, setActionMode] = useState<
 
     const [upgradeForm, setUpgradeForm] =
   useState(initialUpgradeForm);
+
+  const [
+  billingRetryForm,
+  setBillingRetryForm,
+] = useState(initialBillingRetryForm);
+
+
+const [forecastForm, setForecastForm] =
+  useState(initialForecastForm);
+
+const [forecastResult, setForecastResult] =
+  useState<SubscriptionInventoryForecast | null>(
+    null,
+  );
+
+const [isForecastLoading, setIsForecastLoading] =
+  useState(false);
+
+const [forecastError, setForecastError] =
+  useState("");
+
+const [forecastSuccess, setForecastSuccess] =
+  useState("");
 
   const [isLoading, setIsLoading] =
     useState(true);
@@ -366,6 +425,9 @@ const [actionMode, setActionMode] = useState<
       setPauseForm(initialPauseForm);
       setSkipForm(initialSkipForm);
       setUpgradeForm(initialUpgradeForm);
+      setBillingRetryForm(initialBillingRetryForm);
+      
+      
       setError("");
       setSuccessMessage("");
 
@@ -698,6 +760,147 @@ const [actionMode, setActionMode] = useState<
   }
 }
 
+async function handleBillingRetry(
+  event: FormEvent<HTMLFormElement>,
+) {
+  event.preventDefault();
+
+  if (!selectedSubscription) return;
+
+  if (
+    selectedSubscription.status !==
+    "PAYMENT_FAILED"
+  ) {
+    setError(
+      "Billing retry is only available for payment failed subscriptions.",
+    );
+    return;
+  }
+
+  try {
+    setIsActionLoading(true);
+    setError("");
+    setSuccessMessage("");
+
+    const attempt =
+      await retryCustomerSubscriptionBilling({
+        subscriptionId:
+          selectedSubscription.id,
+        retryMode:
+          billingRetryForm.retryMode,
+        ...(billingRetryForm.paymentIntentId.trim()
+          ? {
+              paymentIntentId:
+                billingRetryForm.paymentIntentId.trim(),
+            }
+          : {}),
+        ...(billingRetryForm.note.trim()
+          ? {
+              note: billingRetryForm.note.trim(),
+            }
+          : {}),
+      });
+
+    if (!attempt) {
+      throw new Error(
+        "Billing retry attempt was not returned by the server.",
+      );
+    }
+
+    await reloadSelectedSubscription(
+      selectedSubscription.id,
+    );
+
+    await loadSubscriptions(page);
+
+    setActionMode(null);
+    setBillingRetryForm(
+      initialBillingRetryForm,
+    );
+
+    setSuccessMessage(
+      "Billing retry queued successfully.",
+    );
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to queue billing retry.",
+    );
+  } finally {
+    setIsActionLoading(false);
+  }
+}
+
+async function handleInventoryForecast(
+  event: FormEvent<HTMLFormElement>,
+) {
+  event.preventDefault();
+
+  if (!forecastForm.from) {
+    setForecastError("From date is required.");
+    return;
+  }
+
+  if (!forecastForm.to) {
+    setForecastError("To date is required.");
+    return;
+  }
+
+  if (
+    new Date(forecastForm.to).getTime() <
+    new Date(forecastForm.from).getTime()
+  ) {
+    setForecastError(
+      "To date cannot be before From date.",
+    );
+    return;
+  }
+
+  try {
+    setIsForecastLoading(true);
+    setForecastError("");
+    setForecastSuccess("");
+
+    const result =
+      await forecastSubscriptionInventory({
+        from: dateInputToIso(
+          forecastForm.from,
+        ),
+        to: dateInputToEndOfDayIso(
+          forecastForm.to,
+        ),
+        ...(forecastForm.planIds.length
+          ? {
+              planIds: forecastForm.planIds,
+            }
+          : {}),
+      });
+
+    if (!result) {
+      throw new Error(
+        "Inventory forecast was not returned by the server.",
+      );
+    }
+
+    setForecastResult(result);
+
+    setForecastSuccess(
+      "Inventory forecast generated successfully.",
+    );
+  } catch (err) {
+    setForecastResult(null);
+
+    setForecastError(
+      err instanceof Error
+        ? err.message
+        : "Failed to generate inventory forecast.",
+    );
+  } finally {
+    setIsForecastLoading(false);
+  }
+}
+
   function handleSearch(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -749,6 +952,22 @@ const [actionMode, setActionMode] = useState<
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+  type="button"
+  onClick={() => {
+    setForecastForm(initialForecastForm);
+    setForecastResult(null);
+    setForecastError("");
+    setForecastSuccess("");
+    setIsForecastOpen(true);
+
+    void loadPlans();
+  }}
+  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-800"
+>
+  <CalendarClock className="h-4 w-4" />
+  Inventory Forecast
+</button>
             <button
               type="button"
               onClick={() => {
@@ -1062,6 +1281,278 @@ const [actionMode, setActionMode] = useState<
           </div>
         </div>
       </div>
+
+      {isForecastOpen ? (
+  <ModalShell
+    title="Subscription Inventory Forecast"
+    eyebrow="Subscription Management"
+    onClose={() => {
+      setIsForecastOpen(false);
+      setForecastForm(initialForecastForm);
+      setForecastResult(null);
+      setForecastError("");
+      setForecastSuccess("");
+    }}
+  >
+    <form
+      onSubmit={handleInventoryForecast}
+      className="mt-5 grid gap-5"
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="From Date" required>
+          <input
+            type="date"
+            value={forecastForm.from}
+            onChange={(event) =>
+              setForecastForm((current) => ({
+                ...current,
+                from: event.target.value,
+              }))
+            }
+            className="form-control"
+          />
+        </Field>
+
+        <Field label="To Date" required>
+          <input
+            type="date"
+            value={forecastForm.to}
+            onChange={(event) =>
+              setForecastForm((current) => ({
+                ...current,
+                to: event.target.value,
+              }))
+            }
+            className="form-control"
+          />
+        </Field>
+      </div>
+
+      <div>
+        <p className="text-sm font-semibold text-neutral-700">
+          Subscription Plans
+        </p>
+
+        <p className="mt-1 text-xs text-neutral-500">
+          Leave all plans unchecked to include every
+          active subscription plan.
+        </p>
+
+        <div className="mt-3 grid max-h-64 gap-3 overflow-y-auto rounded-2xl border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-2">
+          {plans.length ? (
+            plans.map((plan) => {
+              const isSelected =
+                forecastForm.planIds.includes(
+                  plan.id,
+                );
+
+              return (
+                <label
+                  key={plan.id}
+                  className="flex cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-white p-4"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() =>
+                      setForecastForm(
+                        (current) => ({
+                          ...current,
+                          planIds: isSelected
+                            ? current.planIds.filter(
+                                (id) =>
+                                  id !== plan.id,
+                              )
+                            : [
+                                ...current.planIds,
+                                plan.id,
+                              ],
+                        }),
+                      )
+                    }
+                    className="mt-1 h-4 w-4"
+                  />
+
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-neutral-950">
+                      {plan.name}
+                    </span>
+
+                    <span className="mt-1 block text-xs text-neutral-500">
+                      {plan.billingInterval}
+                      {" · "}
+                      {plan.itemsPerCycle} items per
+                      cycle
+                    </span>
+                  </span>
+                </label>
+              );
+            })
+          ) : (
+            <p className="text-sm text-neutral-500">
+              No active subscription plans found.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {forecastError ? (
+        <Alert
+          type="error"
+          message={forecastError}
+        />
+      ) : null}
+
+      {forecastSuccess ? (
+        <Alert
+          type="success"
+          message={forecastSuccess}
+        />
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={isForecastLoading}
+        className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-neutral-950 text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {isForecastLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <CalendarClock className="h-4 w-4" />
+        )}
+
+        {isForecastLoading
+          ? "Generating Forecast..."
+          : "Generate Inventory Forecast"}
+      </button>
+    </form>
+
+    {forecastResult ? (
+      <div className="mt-6 grid gap-5 border-t border-neutral-200 pt-6">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <InfoCard
+            label="Total Subscriptions"
+            value={String(
+              forecastResult.totalSubscriptions,
+            )}
+          />
+
+          <InfoCard
+            label="Total Items Required"
+            value={String(
+              forecastResult.totalItemsRequired,
+            )}
+          />
+
+          <InfoCard
+            label="Plans Included"
+            value={String(
+              forecastResult.byPlan.length,
+            )}
+          />
+
+          <InfoCard
+            label="Forecast Run ID"
+            value={forecastResult.forecastRunId}
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <InfoCard
+            label="Forecast From"
+            value={formatSubscriptionDate(
+              forecastResult.from,
+            )}
+          />
+
+          <InfoCard
+            label="Forecast To"
+            value={formatSubscriptionDate(
+              forecastResult.to,
+            )}
+          />
+        </div>
+
+        <div>
+          <h3 className="text-lg font-semibold text-neutral-950">
+            Plan Requirements
+          </h3>
+
+          <div className="mt-3 grid gap-4">
+            {forecastResult.byPlan.length ? (
+              forecastResult.byPlan.map(
+                (planForecast) => (
+                  <div
+                    key={planForecast.planId}
+                    className="rounded-3xl border border-neutral-200 bg-neutral-50 p-4"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-neutral-950">
+                          {planForecast.planName}
+                        </p>
+
+                        <p className="mt-1 text-sm text-neutral-500">
+                          {
+                            planForecast.billingInterval
+                          }
+                        </p>
+                      </div>
+
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                        {
+                          planForecast.itemsRequired
+                        }{" "}
+                        items required
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <InfoCard
+                        label="Subscriptions"
+                        value={String(
+                          planForecast.subscriptions,
+                        )}
+                      />
+
+                      <InfoCard
+                        label="Items Per Cycle"
+                        value={String(
+                          planForecast.itemsPerCycle,
+                        )}
+                      />
+
+                      <InfoCard
+                        label="Eligible Products"
+                        value={String(
+                          planForecast
+                            .eligibleProductIds.length,
+                        )}
+                      />
+
+                      <InfoCard
+                        label="Eligible Categories"
+                        value={String(
+                          planForecast
+                            .eligibleCategoryIds.length,
+                        )}
+                      />
+                    </div>
+                  </div>
+                ),
+              )
+            ) : (
+              <p className="text-sm text-neutral-500">
+                No subscription inventory requirement
+                was found for this date range.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    ) : null}
+  </ModalShell>
+) : null}
 
       {isCreateOpen ? (
         <ModalShell
@@ -1422,6 +1913,31 @@ const [actionMode, setActionMode] = useState<
                 </div>
               ) : null}
 
+              {selectedSubscription.status ===
+"PAYMENT_FAILED" ? (
+  <button
+    type="button"
+    onClick={() => {
+      setError("");
+      setSuccessMessage("");
+
+      setBillingRetryForm(
+        initialBillingRetryForm,
+      );
+
+      setActionMode(
+        actionMode === "billingRetry"
+          ? null
+          : "billingRetry",
+      );
+    }}
+    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 text-sm font-semibold text-red-700"
+  >
+    <RefreshCcw className="h-4 w-4" />
+    Retry Billing
+  </button>
+) : null}
+
               {actionMode === "pause" ? (
                 <form
                   onSubmit={
@@ -1748,6 +2264,176 @@ const [actionMode, setActionMode] = useState<
                   </button>
                 </form>
               ) : null}
+
+              {actionMode === "billingRetry" ? (
+  <form
+    onSubmit={handleBillingRetry}
+    className="grid gap-4 rounded-3xl border border-red-200 bg-red-50/40 p-4"
+  >
+    <div>
+      <h3 className="font-semibold text-neutral-950">
+        Retry Subscription Billing
+      </h3>
+
+      <p className="mt-1 text-sm text-neutral-600">
+        Queue another billing attempt for{" "}
+        {
+          selectedSubscription.subscriptionNumber
+        }
+        .
+      </p>
+    </div>
+
+    <Field label="Payment Intent ID">
+      <input
+        value={
+          billingRetryForm.paymentIntentId
+        }
+        onChange={(event) =>
+          setBillingRetryForm((current) => ({
+            ...current,
+            paymentIntentId:
+              event.target.value,
+          }))
+        }
+        placeholder="Optional Stripe payment intent ID"
+        className="form-control"
+      />
+    </Field>
+
+    <Field label="Retry Mode">
+      <select
+        value={billingRetryForm.retryMode}
+        onChange={(event) =>
+          setBillingRetryForm((current) => ({
+            ...current,
+            retryMode:
+              event.target
+                .value as SubscriptionBillingRetryMode,
+          }))
+        }
+        className="form-control"
+      >
+        <option value="MANUAL">
+          Manual
+        </option>
+
+        <option value="AUTO">
+          Automatic
+        </option>
+      </select>
+    </Field>
+
+    <Field label="Action Note">
+      <textarea
+        rows={3}
+        value={billingRetryForm.note}
+        onChange={(event) =>
+          setBillingRetryForm((current) => ({
+            ...current,
+            note: event.target.value,
+          }))
+        }
+        placeholder="Add an internal note for this billing retry."
+        className="form-control py-3"
+      />
+    </Field>
+
+    <button
+      type="submit"
+      disabled={isActionLoading}
+      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-neutral-950 text-sm font-semibold text-white disabled:opacity-50"
+    >
+      {isActionLoading ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <RefreshCcw className="h-4 w-4" />
+      )}
+
+      {isActionLoading
+        ? "Queueing Retry..."
+        : "Queue Billing Retry"}
+    </button>
+  </form>
+) : null}
+
+<div>
+  <div className="flex items-center gap-2">
+    <CalendarClock className="h-5 w-5 text-neutral-500" />
+
+    <h3 className="text-lg font-semibold">
+      Billing Attempts
+    </h3>
+  </div>
+
+  <div className="mt-3 grid gap-3">
+    {selectedSubscription.billingAttempts
+      ?.length ? (
+      selectedSubscription.billingAttempts.map(
+        (attempt) => (
+          <div
+            key={attempt.id}
+            className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-neutral-950">
+                    Billing Retry
+                  </p>
+
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
+                    {attempt.status}
+                  </span>
+                </div>
+
+                <p className="mt-2 text-sm text-neutral-600">
+                  {attempt.note || "-"}
+                </p>
+              </div>
+
+              <span className="text-xs text-neutral-500">
+                {formatSubscriptionDateTime(
+                  attempt.createdAt,
+                )}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <InfoCard
+                label="Attempt ID"
+                value={attempt.id}
+              />
+
+              <InfoCard
+                label="Retry Mode"
+                value={attempt.retryMode}
+              />
+
+              <InfoCard
+                label="Payment Intent ID"
+                value={
+                  attempt.paymentIntentId || "-"
+                }
+              />
+
+              <InfoCard
+                label="Processed At"
+                value={formatSubscriptionDateTime(
+                  attempt.processedAt,
+                )}
+              />
+            </div>
+          </div>
+        ),
+      )
+    ) : (
+      <p className="text-sm text-neutral-500">
+        No billing attempts available.
+      </p>
+    )}
+  </div>
+</div>
 
               <div>
                 <h3 className="text-lg font-semibold">
