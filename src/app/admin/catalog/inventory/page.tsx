@@ -24,6 +24,8 @@ PackagePlus,
 UsersRound,
 Wrench,
 X,
+Pencil,
+Trash2,
 } from "lucide-react";
 
 import {
@@ -62,12 +64,16 @@ import {
   updateRentalDamageReportStatus,
   updateRentalInventoryUnitCondition,
   updateRentalInventoryUnitStatus,
+  deleteAdminLocation,
+getAdminLocationById,
+updateAdminLocation,
 
   type AdminCatalogVariant,
   type AdminLocation,
   type AdminProductPickerItem,
   type AdminWarehouse,
   type CreateAdminLocationPayload,
+  type UpdateAdminLocationPayload,
   type CreateAdminWarehousePayload,
   type CreateInventoryAssetPayload,
   type CreateRentalDamageReportPayload,
@@ -347,6 +353,9 @@ function LocationsTab() {
   const [locations, setLocations] = useState<AdminLocation[]>([]);
   const [meta, setMeta] = useState<InventoryListMeta>(emptyMeta);
   const [search, setSearch] = useState("");
+  const [searchField, setSearchField] = useState<
+  "code" | "city" | "state" | "country" | "pincode"
+>("code");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">(
     "ALL"
   );
@@ -355,6 +364,15 @@ function LocationsTab() {
   const [form, setForm] = useState(initialLocationForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+
+  const [editingLocationId, setEditingLocationId] =
+  useState("");
+
+const [loadingLocationId, setLoadingLocationId] =
+  useState("");
+
+const [deletingLocationId, setDeletingLocationId] =
+  useState("");
   const [isLocationDrawerOpen, setIsLocationDrawerOpen] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -370,35 +388,58 @@ function LocationsTab() {
   );
 
   async function loadLocations(nextPage = page) {
-    try {
-      setIsLoading(true);
-      setError("");
+  try {
+    setIsLoading(true);
+    setError("");
 
-      const response = await getAdminLocations({
-        page: nextPage,
-        limit: 20,
-        search: search.trim() || undefined,
-        status:
-          statusFilter === "ALL"
-            ? undefined
-            : statusFilter === "ACTIVE"
-              ? "ACTIVE"
-              : "INACTIVE",
-      });
+    const cleanSearch = search.trim();
 
-      setLocations(response.data);
-      setMeta(response.meta);
-      setPage(response.meta.page || nextPage);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Locations load karte time error aa gaya."
-      );
-    } finally {
-      setIsLoading(false);
-    }
+    const response = await getAdminLocations({
+      page: nextPage,
+      limit: 20,
+
+      ...(cleanSearch && searchField === "code"
+        ? { code: cleanSearch }
+        : {}),
+
+      ...(cleanSearch && searchField === "city"
+        ? { city: cleanSearch }
+        : {}),
+
+      ...(cleanSearch && searchField === "state"
+        ? { state: cleanSearch }
+        : {}),
+
+      ...(cleanSearch && searchField === "country"
+        ? { country: cleanSearch }
+        : {}),
+
+      ...(cleanSearch && searchField === "pincode"
+        ? { pincode: cleanSearch }
+        : {}),
+
+      isActive:
+        statusFilter === "ALL"
+          ? undefined
+          : statusFilter === "ACTIVE",
+    });
+
+    setLocations(response.data);
+    setMeta(response.meta);
+    setPage(response.meta.page || nextPage);
+  } catch (err) {
+    setLocations([]);
+    setMeta(emptyMeta);
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to load locations.",
+    );
+  } finally {
+    setIsLoading(false);
   }
+}
 
   useEffect(() => {
     loadLocations(1);
@@ -410,65 +451,179 @@ function LocationsTab() {
     await loadLocations(1);
   }
 
-  async function handleCreateLocation(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function openCreateLocationDrawer() {
+  setEditingLocationId("");
+  setForm(initialLocationForm);
+  setError("");
+  setSuccessMessage("");
+  setIsLocationDrawerOpen(true);
+}
 
+function closeLocationDrawer() {
+  setIsLocationDrawerOpen(false);
+  setEditingLocationId("");
+  setForm(initialLocationForm);
+}
+
+async function openEditLocationDrawer(
+  location: AdminLocation,
+) {
+  try {
+    setLoadingLocationId(location.id);
     setError("");
     setSuccessMessage("");
 
-    if (!cleanText(form.name)) {
-      setError("Location name required hai.");
-      return;
+    const detail = await getAdminLocationById(
+      location.id,
+    );
+
+    if (!detail) {
+      throw new Error("Location detail not found.");
     }
 
-    if (!cleanText(form.code)) {
-      setError("Location code required hai.");
-      return;
-    }
+    setEditingLocationId(detail.id);
 
-    if (!cleanText(form.type)) {
-      setError("Location type required hai.");
-      return;
-    }
+    setForm({
+      name: detail.name || "",
+      code: detail.code || "",
+      type: detail.type || "STORE",
+      country: detail.country || "",
+      state: detail.state || "",
+      city: detail.city || "",
+      pincode: detail.pincode || "",
+      addressLine1: detail.addressLine1 || "",
+      addressLine2: detail.addressLine2 || "",
+      phone: detail.phone || "",
+      email: detail.email || "",
+      isActive: detail.isActive !== false,
+      isDefault: detail.isDefault === true,
+    });
 
-    const payload: CreateAdminLocationPayload = {
-      name: cleanText(form.name),
-      code: cleanText(form.code),
-      type: cleanText(form.type),
-      country: optionalText(form.country),
-      state: optionalText(form.state),
-      city: optionalText(form.city),
-      pincode: optionalText(form.pincode),
-      addressLine1: optionalText(form.addressLine1),
-      addressLine2: optionalText(form.addressLine2),
-      phone: optionalText(form.phone),
-      email: optionalText(form.email),
-      isActive: form.isActive,
-      isDefault: form.isDefault,
-      metadata: {},
-      createdBy: "admin",
-    };
+    setIsLocationDrawerOpen(true);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to load location detail.",
+    );
+  } finally {
+    setLoadingLocationId("");
+  }
+}
 
-    try {
-      setIsCreating(true);
+ async function handleSaveLocation(
+  event: FormEvent<HTMLFormElement>,
+) {
+  event.preventDefault();
 
-      await createAdminLocation(payload);
+  setError("");
+  setSuccessMessage("");
 
-    setForm(initialLocationForm);
-setSuccessMessage("Location create ho gayi.");
-setIsLocationDrawerOpen(false);
-await loadLocations(1);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Location create karte time error aa gaya."
-      );
-    } finally {
-      setIsCreating(false);
-    }
+  if (!cleanText(form.name)) {
+    setError("Location name is required.");
+    return;
   }
 
+  if (!cleanText(form.code)) {
+    setError("Location code is required.");
+    return;
+  }
+
+  const payload:
+    | CreateAdminLocationPayload
+    | UpdateAdminLocationPayload = {
+    name: cleanText(form.name),
+    code: cleanText(form.code),
+    type: optionalText(form.type),
+    country: optionalText(form.country),
+    state: optionalText(form.state),
+    city: optionalText(form.city),
+    pincode: optionalText(form.pincode),
+    addressLine1: optionalText(
+      form.addressLine1,
+    ),
+    addressLine2: optionalText(
+      form.addressLine2,
+    ),
+    phone: optionalText(form.phone),
+    email: optionalText(form.email),
+    isActive: form.isActive,
+    isDefault: form.isDefault,
+  };
+
+  const isEditing = Boolean(editingLocationId);
+
+  try {
+    setIsCreating(true);
+
+    if (editingLocationId) {
+      await updateAdminLocation(
+        editingLocationId,
+        payload,
+      );
+    } else {
+      await createAdminLocation(
+        payload as CreateAdminLocationPayload,
+      );
+    }
+
+    closeLocationDrawer();
+
+    setSuccessMessage(
+      isEditing
+        ? "Location updated successfully."
+        : "Location created successfully.",
+    );
+
+    await loadLocations(isEditing ? page : 1);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : isEditing
+          ? "Failed to update location."
+          : "Failed to create location.",
+    );
+  } finally {
+    setIsCreating(false);
+  }
+}
+async function handleDeleteLocation(
+  location: AdminLocation,
+) {
+  const confirmed = window.confirm(
+    `Delete location "${location.name}"?`,
+  );
+
+  if (!confirmed) return;
+
+  try {
+    setDeletingLocationId(location.id);
+    setError("");
+    setSuccessMessage("");
+
+    await deleteAdminLocation(location.id);
+
+    const nextPage =
+      locations.length === 1 && page > 1
+        ? page - 1
+        : page;
+
+    setSuccessMessage(
+      "Location deleted successfully.",
+    );
+
+    await loadLocations(nextPage);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to delete location.",
+    );
+  } finally {
+    setDeletingLocationId("");
+  }
+}
   return (
    <section className="min-w-0">
   <div className="flex min-w-0 flex-col gap-6">
@@ -496,7 +651,7 @@ await loadLocations(1);
            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
   <button
     type="button"
-    onClick={() => setIsLocationDrawerOpen(true)}
+  onClick={openCreateLocationDrawer}
     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-800"
   >
     <Plus className="h-4 w-4" />
@@ -521,14 +676,32 @@ await loadLocations(1);
 
           <form
             onSubmit={handleSearchSubmit}
-            className="mt-5 grid gap-3 lg:grid-cols-[1fr_180px_auto]"
+         className="mt-5 grid gap-3 lg:grid-cols-[170px_minmax(0,1fr)_180px_auto]"
+
+         
           >
+
+            <select
+  value={searchField}
+  onChange={(event) =>
+    setSearchField(
+      event.target.value as typeof searchField,
+    )
+  }
+  className="h-11 rounded-2xl border border-neutral-200 bg-white px-4 text-sm outline-none transition focus:border-neutral-950"
+>
+  <option value="code">Code</option>
+  <option value="city">City</option>
+  <option value="state">State</option>
+  <option value="country">Country</option>
+  <option value="pincode">Pincode</option>
+</select>
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, code, city..."
+             placeholder={`Search by ${searchField}...`}
                 className="h-11 w-full rounded-2xl border border-neutral-200 bg-white pl-11 pr-4 text-sm outline-none transition focus:border-neutral-950"
               />
             </div>
@@ -563,7 +736,7 @@ await loadLocations(1);
 
        <div className="mt-5 overflow-hidden rounded-3xl border border-neutral-200 bg-white">
          <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[760px] divide-y divide-neutral-200 text-sm">
+      <table className="w-full min-w-[920px] divide-y divide-neutral-200 text-sm">
                 <thead className="bg-neutral-50">
                   <tr>
                     <TableHead>Name</TableHead>
@@ -572,16 +745,17 @@ await loadLocations(1);
                     <TableHead>City</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Default</TableHead>
+                    <TableHead>Actions</TableHead>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-neutral-100 bg-white">
                   {isLoading ? (
                     <tr>
-                      <td
-                        colSpan={6}
-                        className="px-4 py-10 text-center text-sm text-neutral-500"
-                      >
+                   <td
+  colSpan={7}
+  className="px-4 py-10 text-center text-sm text-neutral-500"
+>
                         <div className="inline-flex items-center gap-2">
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Locations loading...
@@ -616,14 +790,59 @@ await loadLocations(1);
                             <span className="text-neutral-400">-</span>
                           )}
                         </TableCell>
+                        <TableCell>
+  <div className="flex items-center gap-2 whitespace-nowrap">
+    <button
+      type="button"
+      onClick={() => {
+        void openEditLocationDrawer(location);
+      }}
+      disabled={
+        loadingLocationId === location.id ||
+        deletingLocationId === location.id
+      }
+      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {loadingLocationId === location.id ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Pencil className="h-3.5 w-3.5" />
+      )}
+
+      Edit
+    </button>
+
+    <button
+      type="button"
+      onClick={() => {
+        void handleDeleteLocation(location);
+      }}
+      disabled={
+        loadingLocationId === location.id ||
+        deletingLocationId === location.id
+      }
+      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {deletingLocationId === location.id ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Trash2 className="h-3.5 w-3.5" />
+      )}
+
+      {deletingLocationId === location.id
+        ? "Deleting..."
+        : "Delete"}
+    </button>
+  </div>
+</TableCell>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td
-                        colSpan={6}
-                        className="px-4 py-10 text-center text-sm text-neutral-500"
-                      >
+                    <td
+  colSpan={7}
+  className="px-4 py-10 text-center text-sm text-neutral-500"
+>
                         No locations found.
                       </td>
                     </tr>
@@ -669,15 +888,15 @@ await loadLocations(1);
   <button
     type="button"
     aria-label="Close create location drawer"
-    onClick={() => setIsLocationDrawerOpen(false)}
+onClick={closeLocationDrawer}
     className={[
       "absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ease-out",
       isLocationDrawerOpen ? "opacity-100" : "opacity-0",
     ].join(" ")}
   />
 
-  <form
-    onSubmit={handleCreateLocation}
+<form
+  onSubmit={handleSaveLocation}
     className={[
       "absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-white p-5 shadow-2xl transition-all duration-300 ease-out",
       isLocationDrawerOpen
@@ -687,17 +906,22 @@ await loadLocations(1);
   >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-neutral-950">
-              Create Location
-            </h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Confirmed Swagger payload ke fields use ho rahe hain.
-            </p>
+           <h2 className="text-lg font-semibold text-neutral-950">
+  {editingLocationId
+    ? "Edit Location"
+    : "Create Location"}
+</h2>
+
+<p className="mt-1 text-sm text-neutral-500">
+  {editingLocationId
+    ? "Update the selected stock location."
+    : "Create a new stock location."}
+</p>
           </div>
 
-        <button
+     <button
   type="button"
-  onClick={() => setIsLocationDrawerOpen(false)}
+  onClick={closeLocationDrawer}
   className="rounded-2xl border border-neutral-200 bg-white p-2 text-neutral-600 transition hover:bg-neutral-50 hover:text-neutral-950"
 >
   <X className="h-5 w-5" />
@@ -879,12 +1103,21 @@ await loadLocations(1);
             disabled={isCreating}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-neutral-950 px-5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isCreating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            Create Location
+          {isCreating ? (
+  <Loader2 className="h-4 w-4 animate-spin" />
+) : editingLocationId ? (
+  <Pencil className="h-4 w-4" />
+) : (
+  <Plus className="h-4 w-4" />
+)}
+
+{isCreating
+  ? editingLocationId
+    ? "Saving..."
+    : "Creating..."
+  : editingLocationId
+    ? "Save Changes"
+    : "Create Location"}
           </button>
         </div>
             </form>

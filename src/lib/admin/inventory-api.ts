@@ -205,10 +205,18 @@ export type InventoryQuery = {
   search?: string;
   status?: string;
   type?: string;
+
   locationId?: string;
   warehouseId?: string;
   productId?: string;
   variantId?: string;
+
+  code?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  isActive?: boolean;
 };
 
 
@@ -309,24 +317,7 @@ export type RentalBookingPayment = {
   updatedAt?: string;
 };
 
-export type InventoryQuery = {
-  page?: number;
-  limit?: number;
-  search?: string;
-  status?: string;
-  type?: string;
-  locationId?: string;
-  warehouseId?: string;
-  productId?: string;
-  variantId?: string;
 
-  code?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-  pincode?: string;
-  isActive?: boolean;
-};
 
 export type RentalBookingReturn = {
   id: string;
